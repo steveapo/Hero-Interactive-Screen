@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Ellipsis } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Ellipsis, SquarePen, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { CodebaseFrame, CANVAS_ZOOM } from "./codebase-frame"
 import { CodebaseSettingsPanel } from "./codebase-settings-panel"
@@ -9,9 +9,110 @@ import { LeftSidebar } from "./left-sidebar"
 
 type Tool = "select" | "frame" | "text" | "code"
 
+/* ------------------------------ Camera limits ------------------------------ */
+// The hero canvas is a showcase, not an infinite canvas: zoom and pan are both bounded.
+
+/** Furthest the user can zoom out / in. */
+const MIN_ZOOM = 0.25
+const MAX_ZOOM = 1.5
+
+/**
+ * Max distance (in canvas units, i.e. frame px at 100%) the frame's centre can move from the
+ * viewport centre. Roughly half the 1440×900 frame, so its centre can pan up to its edge and the
+ * frame never leaves view. Multiplied by the zoom to get screen px.
+ */
+const PAN_LIMIT_X = 740
+const PAN_LIMIT_Y = 460
+
+/** Wheel → zoom sensitivity for pinch / ⌘-scroll. */
+const WHEEL_ZOOM_SPEED = 0.01
+
+/** x/y: screen-px offset of the frame's centre from the viewport centre. */
+type Camera = { x: number; y: number; zoom: number }
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function clampCamera({ x, y, zoom }: Camera): Camera {
+  const z = clamp(zoom, MIN_ZOOM, MAX_ZOOM)
+  return {
+    zoom: z,
+    x: clamp(x, -PAN_LIMIT_X * z, PAN_LIMIT_X * z),
+    y: clamp(y, -PAN_LIMIT_Y * z, PAN_LIMIT_Y * z),
+  }
+}
+
+/** Zoom to `nextZoom`, keeping the point under the cursor (px, py from viewport centre) fixed. */
+function zoomAt(camera: Camera, nextZoom: number, px: number, py: number): Camera {
+  const zoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM)
+  const ratio = zoom / camera.zoom
+  return clampCamera({ zoom, x: px - (px - camera.x) * ratio, y: py - (py - camera.y) * ratio })
+}
+
+/** Safari's trackpad-pinch event (not in lib.dom). */
+type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number }
+
 export function HeroScreen() {
   const [tool, setTool] = useState<Tool>("select")
   const [codebaseSelected, setCodebaseSelected] = useState(false)
+  const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: CANVAS_ZOOM })
+  const [panning, setPanning] = useState(false)
+  const canvasRef = useRef<HTMLDivElement>(null)
+  const lastPointer = useRef<{ x: number; y: number } | null>(null)
+
+  // Scroll / trackpad pans; pinch or ⌘/Ctrl + scroll zooms toward the cursor.
+  // Registered natively so preventDefault works (React wheel listeners are passive).
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const canvas = el
+
+    function fromCentre(clientX: number, clientY: number) {
+      const rect = canvas.getBoundingClientRect()
+      return { px: clientX - rect.left - rect.width / 2, py: clientY - rect.top - rect.height / 2 }
+    }
+
+    function onWheel(e: WheelEvent) {
+      e.preventDefault()
+      const unit = e.deltaMode === 1 ? 16 : 1 // line-based deltas (some mice) → px
+      if (e.ctrlKey || e.metaKey) {
+        const { px, py } = fromCentre(e.clientX, e.clientY)
+        setCamera((c) => zoomAt(c, c.zoom * Math.exp(-e.deltaY * unit * WHEEL_ZOOM_SPEED), px, py))
+      } else {
+        setCamera((c) => clampCamera({ ...c, x: c.x - e.deltaX * unit, y: c.y - e.deltaY * unit }))
+      }
+    }
+
+    // Safari reports trackpad pinch as gesture events instead of ctrl + wheel.
+    let lastScale = 1
+    function onGestureStart(e: Event) {
+      e.preventDefault()
+      lastScale = 1
+    }
+    function onGestureChange(e: Event) {
+      e.preventDefault()
+      const g = e as GestureEvent
+      const factor = g.scale / lastScale
+      lastScale = g.scale
+      const { px, py } = fromCentre(g.clientX, g.clientY)
+      setCamera((c) => zoomAt(c, c.zoom * factor, px, py))
+    }
+
+    canvas.addEventListener("wheel", onWheel, { passive: false })
+    canvas.addEventListener("gesturestart", onGestureStart)
+    canvas.addEventListener("gesturechange", onGestureChange)
+    return () => {
+      canvas.removeEventListener("wheel", onWheel)
+      canvas.removeEventListener("gesturestart", onGestureStart)
+      canvas.removeEventListener("gesturechange", onGestureChange)
+    }
+  }, [])
+
+  function endPan() {
+    lastPointer.current = null
+    setPanning(false)
+  }
 
   // Single-key tool shortcuts shown in the toolbar labels (V, F, T, P)
   useEffect(() => {
@@ -28,9 +129,35 @@ export function HeroScreen() {
 
   return (
     <div className="relative h-dvh w-full select-none overflow-hidden bg-mi-canvas">
-      {/* Canvas: clicking empty space clears the selection */}
-      <div className="absolute inset-0" onPointerDown={() => setCodebaseSelected(false)}>
-        <CodebaseFrame selected={codebaseSelected} onSelect={() => setCodebaseSelected(true)} />
+      {/* Canvas: clicking empty space clears the selection; dragging it pans (within limits) */}
+      <div
+        ref={canvasRef}
+        className={cn("absolute inset-0 touch-none", panning ? "cursor-grabbing" : "cursor-grab")}
+        onPointerDown={(e) => {
+          setCodebaseSelected(false)
+          if (e.button !== 0 && e.button !== 1) return
+          lastPointer.current = { x: e.clientX, y: e.clientY }
+          e.currentTarget.setPointerCapture(e.pointerId)
+          setPanning(true)
+        }}
+        onPointerMove={(e) => {
+          const last = lastPointer.current
+          if (!last) return
+          const dx = e.clientX - last.x
+          const dy = e.clientY - last.y
+          lastPointer.current = { x: e.clientX, y: e.clientY }
+          setCamera((c) => clampCamera({ ...c, x: c.x + dx, y: c.y + dy }))
+        }}
+        onPointerUp={endPan}
+        onPointerCancel={endPan}
+      >
+        <CodebaseFrame
+          selected={codebaseSelected}
+          onSelect={() => setCodebaseSelected(true)}
+          zoom={camera.zoom}
+          offsetX={camera.x}
+          offsetY={camera.y}
+        />
       </div>
 
       {/* Top bar */}
@@ -43,16 +170,7 @@ export function HeroScreen() {
           >
             <HomeIcon />
           </button>
-          <span className="max-w-[140px] truncate pl-0.5 text-px-13 font-medium text-stone-900">
-            Hero Interactive Screen
-          </span>
-          <button
-            type="button"
-            aria-label="File menu"
-            className="ml-4 flex size-8 items-center justify-center rounded-md text-stone-700 hover:bg-stone-700/5"
-          >
-            <Ellipsis className="size-4" />
-          </button>
+          <CanvasTitle />
         </div>
 
         <div className="flex items-center gap-1">
@@ -98,15 +216,18 @@ export function HeroScreen() {
           </button>
           <button
             type="button"
+            data-cursor-id="share"
             className="ml-0.5 flex h-8 items-center rounded-md bg-mi-lime px-3 text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] hover:bg-mi-lime-deep"
           >
             Share
           </button>
-          <img
-            src="/avatars/modeinspect-avatar.png"
-            alt="Your profile"
-            className="ml-1 size-6 shrink-0 overflow-hidden rounded-full bg-stone-200 object-cover"
-          />
+          <span className="ml-1 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-stone-200">
+            <img
+              src="/avatars/modeinspect-avatar.png"
+              alt="Your profile"
+              className="size-[80%] object-contain"
+            />
+          </span>
         </div>
       </header>
 
@@ -116,6 +237,7 @@ export function HeroScreen() {
           <button
             key={id}
             type="button"
+            data-cursor-id={`tool-${id}`}
             aria-label={label}
             aria-keyshortcuts={shortcut}
             aria-pressed={tool === id}
@@ -137,9 +259,124 @@ export function HeroScreen() {
 
       {/* Zoom */}
       <div className="absolute bottom-3 right-3 z-20 rounded-md border border-stone-700/10 bg-white/90 px-1.5 py-0.5 text-px-10 font-medium tabular-nums text-stone-700 shadow-[0_1px_2px_rgba(17,17,16,0.06)]">
-        {Math.round(CANVAS_ZOOM * 100)}%
+        {Math.round(camera.zoom * 100)}%
       </div>
     </div>
+  )
+}
+
+/* ------------------------------ Canvas title ------------------------------- */
+
+/** Canvas name + file menu. "Rename" turns the name into an input: Enter/blur saves, Escape cancels. */
+function CanvasTitle() {
+  const [name, setName] = useState("Hero Interactive Screen")
+  const [draft, setDraft] = useState(name)
+  const [editing, setEditing] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Close the menu on outside click or Escape
+  useEffect(() => {
+    if (!menuOpen) return
+    function onPointerDown(e: PointerEvent) {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenuOpen(false)
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
+    }
+  }, [menuOpen])
+
+  // Focus and select the name when rename starts
+  useEffect(() => {
+    if (editing) inputRef.current?.select()
+  }, [editing])
+
+  function startRename() {
+    setMenuOpen(false)
+    setDraft(name)
+    setEditing(true)
+  }
+
+  function commitRename() {
+    const next = draft.trim()
+    if (next) setName(next)
+    setEditing(false)
+  }
+
+  return (
+    <>
+      {editing ? (
+        <input
+          ref={inputRef}
+          aria-label="Canvas name"
+          value={draft}
+          size={Math.max(draft.length, 1)}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitRename}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitRename()
+            if (e.key === "Escape") setEditing(false)
+          }}
+          className="-my-1 max-w-[220px] select-text rounded-md bg-white px-1.5 py-1 text-px-13 font-medium text-stone-900 shadow-[0_0_0_1px_rgba(47,107,246,0.6)] outline-none"
+        />
+      ) : (
+        <span
+          onDoubleClick={startRename}
+          className="max-w-[140px] truncate pl-0.5 text-px-13 font-medium text-stone-900"
+        >
+          {name}
+        </span>
+      )}
+
+      <div ref={menuRef} className="relative ml-4">
+        <button
+          type="button"
+          aria-label="File menu"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((open) => !open)}
+          className={cn(
+            "flex size-8 items-center justify-center rounded-md text-stone-700 hover:bg-stone-700/5",
+            menuOpen && "bg-stone-700/5",
+          )}
+        >
+          <Ellipsis className="size-4" />
+        </button>
+
+        {menuOpen && (
+          <div
+            role="menu"
+            className="absolute left-0 top-full z-50 mt-1 flex min-w-[160px] flex-col rounded-lg border border-stone-700/10 bg-white p-1 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in slide-in-from-top-1 duration-150"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              onClick={startRename}
+              className="flex h-8 items-center gap-2 rounded-md px-2 text-px-13 text-stone-800 hover:bg-stone-700/5"
+            >
+              <SquarePen className="size-3.5" strokeWidth={1.5} />
+              Rename
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => setMenuOpen(false)}
+              className="flex h-8 items-center gap-2 rounded-md px-2 text-px-13 text-red-600 hover:bg-red-50"
+            >
+              <X className="size-3.5" strokeWidth={1.5} />
+              Delete canvas
+            </button>
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 
