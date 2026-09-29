@@ -2,7 +2,7 @@
 
 import { Play, ScanLine, SquareDashedMousePointer } from "lucide-react"
 
-/** The canvas renders at this zoom — shown in the bottom-right zoom badge. */
+/** The canvas opens at this zoom; the user can then zoom between the hero's min/max. */
 export const CANVAS_ZOOM = 0.54
 
 const SCREEN_WIDTH = 1440
@@ -15,14 +15,28 @@ const LABEL_GREY = "#78716c"
 export function CodebaseFrame({
   selected,
   onSelect,
+  zoom,
+  offsetX,
+  offsetY,
 }: {
   selected: boolean
   onSelect: () => void
+  /** Current canvas zoom — scales the frame; labels stay screen-sized. */
+  zoom: number
+  /** Screen-px offset of the frame's centre from the viewport centre (canvas pan). */
+  offsetX: number
+  offsetY: number
 }) {
   return (
     <div
-      className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-      style={{ width: SCREEN_WIDTH * CANVAS_ZOOM, height: SCREEN_HEIGHT * CANVAS_ZOOM }}
+      data-cursor-id="codebase-frame"
+      className="absolute -translate-x-1/2 -translate-y-1/2"
+      style={{
+        left: `calc(50% + ${offsetX}px)`,
+        top: `calc(50% + ${offsetY}px)`,
+        width: SCREEN_WIDTH * zoom,
+        height: SCREEN_HEIGHT * zoom,
+      }}
       onPointerDown={(e) => {
         e.stopPropagation()
         onSelect()

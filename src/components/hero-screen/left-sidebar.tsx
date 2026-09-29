@@ -27,6 +27,7 @@ export function LeftSidebar() {
           <button
             key={id}
             type="button"
+            data-cursor-id={`sidebar-${id}`}
             aria-label={label}
             aria-pressed={panel === id}
             onClick={() => setPanel((current) => (current === id ? null : id))}
