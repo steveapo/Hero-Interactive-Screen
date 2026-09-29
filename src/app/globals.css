@@ -48,6 +48,25 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Modeinspect marketing / hero-canvas tokens */
+@theme {
+  --color-mi-ink: #111110;
+  --color-mi-sand: #e0dad5;
+  --color-mi-canvas: #f3f2f0;
+  --color-mi-lime: #c2ec66;
+  --color-mi-lime-deep: #b1dc52;
+  --color-mi-lime-ink: #16210a;
+  --color-mi-select: #0d7bff;
+  --color-mi-selected: #bfd8f8;
+  --color-mi-token: #7c5cff;
+  --color-mi-add: #16a34a;
+  --color-mi-remove: #dc2626;
+  --text-px-10: 10px;
+  --text-px-11: 11px;
+  --text-px-12: 12px;
+  --text-px-13: 13px;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
