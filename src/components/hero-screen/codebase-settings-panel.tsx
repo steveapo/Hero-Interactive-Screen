@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { ChevronDown, Laptop, Link, Monitor, Scaling, Smartphone, Tablet, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
 
 const PREVIEW_PATH = "/"
 
@@ -69,13 +70,15 @@ type Resolution = { id: string; name: string; width: number; height: number; ico
 const RESOLUTIONS: Resolution[] = [
   { id: "mobile", name: "Mobile", width: 390, height: 844, icon: Smartphone },
   { id: "tablet", name: "Tablet", width: 768, height: 1024, icon: Tablet },
+  { id: "ipad-pro", name: "iPad Pro 12.9″", width: CODEBASE_WIDTH, height: CODEBASE_HEIGHT, icon: Tablet },
   { id: "laptop", name: "Laptop", width: 1280, height: 800, icon: Laptop },
   { id: "desktop", name: "Desktop", width: 1440, height: 900, icon: Monitor },
 ]
 
 function ResolutionSelect() {
   const [open, setOpen] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null) // null = "Custom"
+  // The Codebase frame previews the iPad Calendar at iPad Pro resolution; null = "Custom".
+  const [selectedId, setSelectedId] = useState<string | null>("ipad-pro")
   const rootRef = useRef<HTMLDivElement>(null)
 
   const selected = RESOLUTIONS.find((r) => r.id === selectedId)

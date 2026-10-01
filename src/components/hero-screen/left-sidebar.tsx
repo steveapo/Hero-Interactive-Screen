@@ -3,18 +3,21 @@
 import { useState } from "react"
 import { FileText, Layers, MessageCircleQuestionMark, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { CALENDAR_ELEMENTS } from "./calendar-elements"
 import { COMPONENT_PREVIEWS } from "./component-previews"
+import { FrameGlyph } from "./planner-frame"
 
 export type RailPanel = "layers" | "components" | "help"
 
 const PANEL_BG = "bg-[#f2f2f1]"
 
-export function LeftSidebar() {
+export function LeftSidebar({ ref }: { ref?: React.Ref<HTMLElement> }) {
   const [panel, setPanel] = useState<RailPanel | null>(null)
   const open = panel === "layers" || panel === "components"
 
   return (
     <aside
+      ref={ref}
       className={cn(
         "absolute left-1 top-[46px] z-30 flex overflow-hidden rounded-xl border border-stone-700/10 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]",
         PANEL_BG,
@@ -72,7 +75,7 @@ function LayersPanel() {
         </button>
       </section>
 
-      <section className="flex min-h-0 flex-1 flex-col border-t border-stone-700/10 px-1.5 pt-2.5">
+      <section className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-stone-700/10 px-1.5 pt-2.5">
         <div className="mb-1.5 flex items-center justify-between pl-1 pr-0.5">
           <h2 className="text-px-11 font-semibold text-stone-900">Layers</h2>
           <Layers className="size-3.5 text-stone-500" strokeWidth={1.5} />
@@ -84,6 +87,16 @@ function LayersPanel() {
           <CodebaseIcon />
           Codebase
         </button>
+        {CALENDAR_ELEMENTS.map((el) => (
+          <button
+            key={el.id}
+            type="button"
+            className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md pl-4 pr-2 text-left text-px-12 text-stone-900 hover:bg-stone-700/5"
+          >
+            <FrameGlyph />
+            <span className="truncate">{el.name}</span>
+          </button>
+        ))}
       </section>
     </div>
   )

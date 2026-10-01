@@ -65,6 +65,44 @@
   --text-px-11: 11px;
   --text-px-12: 12px;
   --text-px-13: 13px;
+
+  /* Build Agent working state: marching dashed outline + diagonal shine over "Working..." */
+  --animate-mi-march: mi-march 0.8s linear infinite;
+  --animate-mi-shine: mi-shine 1.8s linear infinite;
+
+  @keyframes mi-march {
+    to {
+      /* One dash + gap (10 + 6) forward along the path = clockwise */
+      stroke-dashoffset: -16;
+    }
+  }
+
+  @keyframes mi-shine {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: 0 0;
+    }
+  }
+
+  /* Portal capture: the captured element / page flashes a blue overlay, holds, then fades */
+  --animate-mi-capture-pulse: mi-capture-pulse 1.1s ease-out forwards;
+
+  @keyframes mi-capture-pulse {
+    0% {
+      opacity: 0;
+    }
+    15% {
+      opacity: 1;
+    }
+    55% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
 }
 
 :root {

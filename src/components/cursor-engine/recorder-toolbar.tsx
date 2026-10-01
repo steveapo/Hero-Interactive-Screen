@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Check, Circle, Copy, Download, Play, Square, Trash2, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { isStopShortcut } from "./recorder"
 import type { CursorRecording } from "./types"
 
 type RecorderToolbarProps = {
@@ -18,17 +19,18 @@ type RecorderToolbarProps = {
 
 /**
  * Dev-only controls, shown by <CursorStage> when the URL has `?record=true` (hide with × or
- * `?record=false`). Record → interact with the stage → Stop (or Esc). Play previews the smoothed
+ * `?record=false`). Record → interact with the stage → Stop (or ⇧Esc). Play previews the smoothed
  * result. Copy / Download export the JSON to paste into the recording file used in production.
  */
 export function RecorderToolbar({ mode, take, onRecord, onStop, onPlay, onClear, onClose }: RecorderToolbarProps) {
   const [copied, setCopied] = useState(false)
 
-  // Esc ends a recording without the trip to the Stop button being recorded.
+  // ⇧Esc ends a recording without the trip to the Stop button being recorded. (Plain Escape is
+  // left to the app, e.g. closing popovers, so it can be recorded like any other key.)
   useEffect(() => {
     if (mode !== "recording") return
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onStop()
+      if (isStopShortcut(e)) onStop()
     }
     window.addEventListener("keydown", onKeyDown, true)
     return () => window.removeEventListener("keydown", onKeyDown, true)
@@ -63,7 +65,7 @@ export function RecorderToolbar({ mode, take, onRecord, onStop, onPlay, onClear,
       {mode === "recording" ? (
         <button type="button" onClick={onStop} className={cn(button, "text-red-600")}>
           <Square className="size-3.5 fill-current" />
-          Stop <kbd className="text-px-10 text-stone-500">Esc</kbd>
+          Stop <kbd className="text-px-10 text-stone-500">⇧Esc</kbd>
         </button>
       ) : (
         <button type="button" onClick={onRecord} disabled={mode === "playing"} className={button}>

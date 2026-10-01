@@ -3,7 +3,7 @@
  * turn a recorded before → after edit into steady, length-aware playback.
  */
 
-import { resolveAnchorElement } from "./anchors"
+import { inScope, resolveAnchorElement } from "./anchors"
 import type { CursorAnchor, SmoothingOptions } from "./types"
 
 export type EditableElement = HTMLInputElement | HTMLTextAreaElement | HTMLElement
@@ -12,7 +12,8 @@ const TEXT_INPUT_TYPES = new Set(["text", "search", "email", "url", "tel", "pass
 
 /**
  * The field a typing run or key targets at playback: its anchor (or an editable inside it, when
- * the anchor is a tagged container), falling back to whichever field inside the stage has focus.
+ * the anchor is a tagged container), falling back to whichever field in the stage (or one of its
+ * portals) has focus.
  */
 export function resolveField(stage: HTMLElement, anchor: CursorAnchor | undefined): EditableElement | null {
   const el = anchor ? resolveAnchorElement(stage, anchor) : null
@@ -20,7 +21,7 @@ export function resolveField(stage: HTMLElement, anchor: CursorAnchor | undefine
     findEditable(el) ?? findEditable(el?.querySelector('input, textarea, [contenteditable]:not([contenteditable="false"])') ?? null)
   if (fromAnchor) return fromAnchor
   const focused = findEditable(document.activeElement)
-  return focused && stage.contains(focused) ? focused : null
+  return focused && inScope(stage, focused) ? focused : null
 }
 
 /** The editable field `target` belongs to (text input, textarea or contenteditable), if any. */

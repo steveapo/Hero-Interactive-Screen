@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { cn } from "./utils";
 import { usePlannerIntro, useDayTransition } from "./use-planner-intro";
@@ -20,17 +20,17 @@ import {
  */
 
 // Visible slice of the day, in minutes since midnight (10:50 -> 14:25).
-const DAY_START = 10 * 60 + 50;
-const DAY_END = 14 * 60 + 25;
+export const DAY_START = 10 * 60 + 50;
+export const DAY_END = 14 * 60 + 25;
 /** The reader's own clock: the same moment whichever day is on screen. */
-const NOW = 11 * 60 + 31;
+export const NOW = 11 * 60 + 31;
 
-const toPct = (minutes: number) =>
+export const toPct = (minutes: number) =>
   ((minutes - DAY_START) / (DAY_END - DAY_START)) * 100;
 
-const GRID_LINES = [11 * 60, 11 * 60 + 30, 12 * 60, 12 * 60 + 30, 13 * 60, 13 * 60 + 30, 14 * 60];
+export const GRID_LINES = [11 * 60, 11 * 60 + 30, 12 * 60, 12 * 60 + 30, 13 * 60, 13 * 60 + 30, 14 * 60];
 
-const formatLabel = (minutes: number) =>
+export const formatLabel = (minutes: number) =>
   `${Math.floor(minutes / 60)}.${String(minutes % 60).padStart(2, "0")}`;
 
 /**
@@ -43,7 +43,7 @@ const formatLabel = (minutes: number) =>
  * opening day it comes out at 0.07, the sliver the design starts with.
  */
 const WEEK_LENGTH = 7;
-const weekBehind = (index: number) => (index + NOW / (24 * 60)) / WEEK_LENGTH;
+export const weekBehind = (index: number) => (index + NOW / (24 * 60)) / WEEK_LENGTH;
 
 /**
  * Rank of every event in the day, earliest first (ties broken left to right).
@@ -380,107 +380,126 @@ function DayLayer({ day }: { day: PlannerDay }) {
     <div data-anim="day-layer" className="absolute inset-0">
       {/* events — each one reshaped around the blocks that sit on top of it */}
       <div className="absolute inset-y-0 left-[7%] right-[4.5%]">
-        {events.map((event) => {
-          const blockers = events.filter((other) => other.layer > event.layer);
-          const segments = resolveSegments(event, blockers);
-          // the title sits in the roomiest slice, the duration always at the very bottom
-          const titleIndex = roomiestSegment(segments);
-          const durationIndex = segments.length - 1;
-          const eventOrder = order.get(event.label) ?? 0;
-
-          return (
-            <Fragment key={event.label}>
-              {segments.map((segment, index) => (
-                <div
-                  key={`${segment.start}:${segment.startGaps}`}
-                  data-anim="block"
-                  data-order={eventOrder}
-                  style={{
-                    top: withGaps(toPct(segment.start), segment.startGaps),
-                    height: withGaps(
-                      toPct(segment.end) - toPct(segment.start),
-                      segment.endGaps - segment.startGaps,
-                    ),
-                    left: withGaps(segment.left, segment.leftGaps),
-                    width: withGaps(segment.right - segment.left, segment.rightGaps - segment.leftGaps),
-                    borderRadius: segmentRadii(segments, index, event.radius),
-                  }}
-                  className={cn("absolute overflow-hidden", event.background, event.surface)}
-                >
-                  {index === titleIndex && (
-                    <div
-                      data-anim="title"
-                      data-order={eventOrder}
-                      className={cn("absolute inset-x-0 top-0 leading-[1.3]", EVENT_PADDING)}
-                    >
-                      <p className={cn("text-[1.55cqw] font-bold tracking-tight", event.titleClass)}>
-                        {event.label}
-                      </p>
-                      {event.lines.map((line) => (
-                        <p
-                          key={line}
-                          className={cn(
-                            "text-[1.55cqw] font-bold tracking-tight",
-                            event.subtitleClass,
-                          )}
-                        >
-                          {line}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                  {index === durationIndex && (
-                    <div
-                      data-anim="duration"
-                      data-order={eventOrder}
-                      className={cn(
-                        "absolute inset-x-0 bottom-0 flex items-start gap-[0.5cqw]",
-                        EVENT_PADDING,
-                        event.numberClass,
-                      )}
-                    >
-                      <span
-                        data-count={event.duration}
-                        data-order={eventOrder}
-                        className="text-[6.4cqw] leading-[0.78] font-medium tracking-[-0.045em]"
-                      >
-                        {event.duration}
-                      </span>
-                      <span className="text-[1.15cqw] font-bold">MIN</span>
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              {resolveFillets(segments, blockers).map((fillet) => {
-                const x = withGaps(fillet.x, fillet.xGaps);
-                const y = withGaps(toPct(fillet.time), fillet.timeGaps);
-                // the stop straddles the arc by half a pixel either side: a gradient
-                // hard stop is not antialiased, this hands the curve a soft edge
-                const bite = `radial-gradient(circle ${fillet.radius} at ${fillet.corner}, transparent calc(100% - 0.5px), #000 calc(100% + 0.5px))`;
-
-                return (
-                  <div
-                    key={`${fillet.time}-${fillet.corner}`}
-                    data-anim="fillet"
-                    data-order={eventOrder}
-                    style={{
-                      width: fillet.radius,
-                      height: fillet.radius,
-                      left: fillet.corner.endsWith("left") ? `calc(${x} - ${fillet.radius})` : x,
-                      top: fillet.corner.startsWith("top") ? `calc(${y} - ${fillet.radius})` : y,
-                      maskImage: bite,
-                      WebkitMaskImage: bite,
-                    }}
-                    className={cn("absolute", event.background)}
-                  />
-                );
-              })}
-            </Fragment>
-          );
-        })}
+        {events.map((event) => (
+          <EventShape
+            key={event.label}
+            event={event}
+            events={events}
+            order={order.get(event.label) ?? 0}
+          />
+        ))}
       </div>
     </div>
+  );
+}
+
+/**
+ * One event as it is painted: its slices and concave corners, reshaped around the
+ * blocks of the same day that sit on top of it. Positioned within the day's event area.
+ */
+export function EventShape({
+  event,
+  events,
+  order: eventOrder,
+}: {
+  event: PlannerEvent;
+  /** every event of the day — the ones on a higher layer carve this one */
+  events: PlannerEvent[];
+  /** chronological rank, for the load-in stagger */
+  order: number;
+}) {
+  const blockers = events.filter((other) => other.layer > event.layer);
+  const segments = resolveSegments(event, blockers);
+  // the title sits in the roomiest slice, the duration always at the very bottom
+  const titleIndex = roomiestSegment(segments);
+  const durationIndex = segments.length - 1;
+
+  return (
+    <>
+      {segments.map((segment, index) => (
+        <div
+          key={`${segment.start}:${segment.startGaps}`}
+          data-anim="block"
+          data-order={eventOrder}
+          style={{
+            top: withGaps(toPct(segment.start), segment.startGaps),
+            height: withGaps(
+              toPct(segment.end) - toPct(segment.start),
+              segment.endGaps - segment.startGaps,
+            ),
+            left: withGaps(segment.left, segment.leftGaps),
+            width: withGaps(segment.right - segment.left, segment.rightGaps - segment.leftGaps),
+            borderRadius: segmentRadii(segments, index, event.radius),
+          }}
+          className={cn("absolute overflow-hidden", event.background, event.surface)}
+        >
+          {index === titleIndex && (
+            <div
+              data-anim="title"
+              data-order={eventOrder}
+              className={cn("absolute inset-x-0 top-0 leading-[1.3]", EVENT_PADDING)}
+            >
+              <p className={cn("text-[1.55cqw] font-bold tracking-tight", event.titleClass)}>
+                {event.label}
+              </p>
+              {event.lines.map((line) => (
+                <p
+                  key={line}
+                  className={cn("text-[1.55cqw] font-bold tracking-tight", event.subtitleClass)}
+                >
+                  {line}
+                </p>
+              ))}
+            </div>
+          )}
+          {index === durationIndex && (
+            <div
+              data-anim="duration"
+              data-order={eventOrder}
+              className={cn(
+                "absolute inset-x-0 bottom-0 flex items-start gap-[0.5cqw]",
+                EVENT_PADDING,
+                event.numberClass,
+              )}
+            >
+              <span
+                data-count={event.duration}
+                data-order={eventOrder}
+                className="text-[6.4cqw] leading-[0.78] font-medium tracking-[-0.045em]"
+              >
+                {event.duration}
+              </span>
+              <span className="text-[1.15cqw] font-bold">MIN</span>
+            </div>
+          )}
+        </div>
+      ))}
+
+      {resolveFillets(segments, blockers).map((fillet) => {
+        const x = withGaps(fillet.x, fillet.xGaps);
+        const y = withGaps(toPct(fillet.time), fillet.timeGaps);
+        // the stop straddles the arc by half a pixel either side: a gradient
+        // hard stop is not antialiased, this hands the curve a soft edge
+        const bite = `radial-gradient(circle ${fillet.radius} at ${fillet.corner}, transparent calc(100% - 0.5px), #000 calc(100% + 0.5px))`;
+
+        return (
+          <div
+            key={`${fillet.time}-${fillet.corner}`}
+            data-anim="fillet"
+            data-order={eventOrder}
+            style={{
+              width: fillet.radius,
+              height: fillet.radius,
+              left: fillet.corner.endsWith("left") ? `calc(${x} - ${fillet.radius})` : x,
+              top: fillet.corner.startsWith("top") ? `calc(${y} - ${fillet.radius})` : y,
+              maskImage: bite,
+              WebkitMaskImage: bite,
+            }}
+            className={cn("absolute", event.background)}
+          />
+        );
+      })}
+    </>
   );
 }
 
@@ -643,13 +662,18 @@ function BottomBar({
   );
 }
 
-export function PlannerScreen() {
+export function PlannerScreen({
+  introSpeed = 1,
+}: {
+  /** Playback rate of the opening animation: 0.5 = half speed. */
+  introSpeed?: number;
+} = {}) {
   const root = useRef<HTMLDivElement>(null);
   /** which day is open, and which way the last step went */
   const [{ index, direction }, setDay] = useState({ index: 0, direction: 1 });
   const day = PLANNER_DAYS[index];
 
-  usePlannerIntro(root);
+  usePlannerIntro(root, introSpeed);
   useDayTransition(root, index, direction);
 
   const canSkip = (step: -1 | 1) => index + step >= 0 && index + step < PLANNER_DAYS.length;
