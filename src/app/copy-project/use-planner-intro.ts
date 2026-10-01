@@ -121,7 +121,7 @@ const orderDelay = (element: HTMLElement, step: number) =>
 export const useIsomorphicLayoutEffect =
   typeof window === "undefined" ? useEffect : useLayoutEffect;
 
-export function usePlannerIntro(root: RefObject<HTMLDivElement | null>) {
+export function usePlannerIntro(root: RefObject<HTMLDivElement | null>, speed = 1) {
   useIsomorphicLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -147,6 +147,7 @@ export function usePlannerIntro(root: RefObject<HTMLDivElement | null>) {
         }
 
         const timeline = gsap.timeline({ defaults: { ease: EASE.fade } });
+        timeline.timeScale(speed);
 
         // 1 — the screen itself lights up
         timeline.fromTo(
@@ -304,7 +305,7 @@ export function usePlannerIntro(root: RefObject<HTMLDivElement | null>) {
     );
 
     return () => media.revert();
-  }, [root]);
+  }, [root, speed]);
 }
 
 /** Every piece of one event carries the same `data-order`: this is the event. */

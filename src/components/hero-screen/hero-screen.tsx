@@ -1,53 +1,106 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Ellipsis, SquarePen, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { CodebaseFrame, CANVAS_ZOOM } from "./codebase-frame"
+import { BuildAgentComposer, COMPOSER_HEIGHT, COMPOSER_WIDTH } from "./build-agent-composer"
+import { CALENDAR_ELEMENTS } from "./calendar-elements"
+import { CanvasText, DrawnFrame, TEXT_LINE_HEIGHT, type CanvasElement } from "./canvas-elements"
+import { CodeChangesPopover, CODE_CHANGES_TOTAL } from "./code-changes-popover"
+import { CodebaseFrame, CANVAS_ZOOM, CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
 import { CodebaseSettingsPanel } from "./codebase-settings-panel"
+import { trackDrag, useMeasuredRect, type CanvasRect } from "./drag"
+import { FrameSettingsPanel } from "./frame-settings-panel"
+import { GithubButton } from "./github-popover"
 import { LeftSidebar } from "./left-sidebar"
+import { DesignFrame, type Corner } from "./planner-frame"
+import { PortalView } from "./portal-view"
+import { ShareButton } from "./share-popover"
+import { TextSettingsPanel } from "./text-settings-panel"
 
 type Tool = "select" | "frame" | "text" | "code"
 
 /* ------------------------------ Camera limits ------------------------------ */
 // The hero canvas is a showcase, not an infinite canvas: zoom and pan are both bounded.
 
-/** Furthest the user can zoom out / in. */
-const MIN_ZOOM = 0.25
+/**
+ * Furthest the user can zoom out / in. The floor reads as 0% in the zoom readout; it stays just
+ * above a true 0 because zoom is multiplicative (0 × anything = 0, so it could never zoom back in).
+ */
+const MIN_ZOOM = 0.004
 const MAX_ZOOM = 1.5
 
 /**
- * Max distance (in canvas units, i.e. frame px at 100%) the frame's centre can move from the
- * viewport centre. Roughly half the 1440×900 frame, so its centre can pan up to its edge and the
- * frame never leaves view. Multiplied by the zoom to get screen px.
+ * Pan limits follow the frames: the viewport centre can travel over the area the frames cover
+ * (plus this margin, in canvas units), so a moved frame can never end up out of reach.
  */
-const PAN_LIMIT_X = 740
-const PAN_LIMIT_Y = 460
+const PAN_MARGIN_X = 20
+const PAN_MARGIN_Y = 10
 
 /** Wheel → zoom sensitivity for pinch / ⌘-scroll. */
 const WHEEL_ZOOM_SPEED = 0.01
 
-/** x/y: screen-px offset of the frame's centre from the viewport centre. */
+/** Smallest a frame can be resized to, in canvas units. */
+const MIN_FRAME_SIZE = 80
+
+/** Frames drawn with the Frame tool: a plain click makes one this size; resizing stops at the min. */
+const DEFAULT_NEW_FRAME_SIZE = 100
+const MIN_NEW_FRAME_SIZE = 1
+
+/** Centre-based rect of a top-left-positioned drawn element (for bounds and hit tests). */
+function elementRect(el: CanvasElement): CanvasRect {
+  return { x: el.x + el.w / 2, y: el.y + el.h / 2, w: el.w, h: el.h }
+}
+
+/** Screen-px gap between the Build Agent input and the frame / side panels / screen edges. */
+const COMPOSER_GAP = 12
+/** Top bar height: the input never slides under it. */
+const TOP_BAR_HEIGHT = 44
+
+/** x/y: screen-px offset of the canvas origin from the viewport centre. */
 type Camera = { x: number; y: number; zoom: number }
+
+/** Canvas-unit area the viewport centre may pan over. */
+type Bounds = { minX: number; maxX: number; minY: number; maxY: number }
+
+/** Selection box in screen px. */
+type Marquee = { left: number; top: number; width: number; height: number }
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function clampCamera({ x, y, zoom }: Camera): Camera {
+function frameBounds(rects: CanvasRect[]): Bounds {
+  return {
+    minX: Math.min(...rects.map((r) => r.x - r.w / 2)) - PAN_MARGIN_X,
+    maxX: Math.max(...rects.map((r) => r.x + r.w / 2)) + PAN_MARGIN_X,
+    minY: Math.min(...rects.map((r) => r.y - r.h / 2)) - PAN_MARGIN_Y,
+    maxY: Math.max(...rects.map((r) => r.y + r.h / 2)) + PAN_MARGIN_Y,
+  }
+}
+
+function clampCamera({ x, y, zoom }: Camera, bounds: Bounds): Camera {
   const z = clamp(zoom, MIN_ZOOM, MAX_ZOOM)
   return {
     zoom: z,
-    x: clamp(x, -PAN_LIMIT_X * z, PAN_LIMIT_X * z),
-    y: clamp(y, -PAN_LIMIT_Y * z, PAN_LIMIT_Y * z),
+    x: clamp(x, -bounds.maxX * z, -bounds.minX * z),
+    y: clamp(y, -bounds.maxY * z, -bounds.minY * z),
   }
 }
 
 /** Zoom to `nextZoom`, keeping the point under the cursor (px, py from viewport centre) fixed. */
-function zoomAt(camera: Camera, nextZoom: number, px: number, py: number): Camera {
+function zoomAt(camera: Camera, nextZoom: number, px: number, py: number, bounds: Bounds): Camera {
   const zoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM)
   const ratio = zoom / camera.zoom
-  return clampCamera({ zoom, x: px - (px - camera.x) * ratio, y: py - (py - camera.y) * ratio })
+  return clampCamera({ zoom, x: px - (px - camera.x) * ratio, y: py - (py - camera.y) * ratio }, bounds)
+}
+
+/**
+ * Opening view: the Codebase frame (centred on the canvas origin) centred in the viewport, with
+ * the iPad Calendar elements spread around it.
+ */
+function initialCamera(): Camera {
+  return { zoom: CANVAS_ZOOM, x: 0, y: 0 }
 }
 
 /** Safari's trackpad-pinch event (not in lib.dom). */
@@ -56,10 +109,289 @@ type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number 
 export function HeroScreen() {
   const [tool, setTool] = useState<Tool>("select")
   const [codebaseSelected, setCodebaseSelected] = useState(false)
-  const [camera, setCamera] = useState<Camera>({ x: 0, y: 0, zoom: CANVAS_ZOOM })
+  /** Ids of the selected iPad Calendar element frames. */
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [agentOpen, setAgentOpen] = useState(false)
+  /** The Build Agent is "working" on the active frame (its prompt was sent, no reply yet). */
+  const [agentWorking, setAgentWorking] = useState(false)
+  /** Rendered Build Agent height (it grows with the chat), so it can be kept on screen. */
+  const [composerHeight, setComposerHeight] = useState(COMPOSER_HEIGHT)
+  const [changesOpen, setChangesOpen] = useState(false)
+  const closeChanges = useCallback(() => setChangesOpen(false), [])
+  /** The Codebase frame is open in the Portal View (double-click the frame). */
+  const [portalOpen, setPortalOpen] = useState(false)
+  const closePortal = useCallback(() => setPortalOpen(false), [])
+  const [camera, setCamera] = useState<Camera>(initialCamera)
   const [panning, setPanning] = useState(false)
+  /** Select-tool selection box, in screen px relative to the hero root. */
+  const [marquee, setMarquee] = useState<Marquee | null>(null)
+  /** Frame positions/sizes in canvas units (centre-based); the Codebase frame starts at the origin. */
+  const [codebaseRect, setCodebaseRect] = useState<CanvasRect>({ x: 0, y: 0, w: CODEBASE_WIDTH, h: CODEBASE_HEIGHT })
+  const [elementRects, setElementRects] = useState<Record<string, CanvasRect>>(() =>
+    Object.fromEntries(CALENDAR_ELEMENTS.map((el) => [el.id, el.rect])),
+  )
+  /** Corner radius per iPad Calendar element frame, in canvas units (null = square); editable via the radius thumbs. */
+  const [elementRadii, setElementRadii] = useState<Record<string, number | null>>(() =>
+    Object.fromEntries(CALENDAR_ELEMENTS.map((el) => [el.id, el.radius])),
+  )
   const canvasRef = useRef<HTMLDivElement>(null)
   const lastPointer = useRef<{ x: number; y: number } | null>(null)
+  /** Frames and text the user adds with the Frame / Text tools (selected via `selectedIds` too). */
+  const [drawnElements, setDrawnElements] = useState<CanvasElement[]>([])
+  /** Text element whose content is being typed. */
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const nextDrawnId = useRef(1)
+  const frameCount = useRef(0)
+  const [rootRef, rootRect] = useMeasuredRect()
+  const [sidebarRef, sidebarRect] = useMeasuredRect()
+  const [panelRef, panelRect] = useMeasuredRect()
+
+  /** The one element frame that owns the settings panel and Build Agent (single selection only). */
+  const activeElement =
+    !codebaseSelected && selectedIds.length === 1 ? CALENDAR_ELEMENTS.find((el) => el.id === selectedIds[0]) : undefined
+  const activeRect = activeElement ? elementRects[activeElement.id] : undefined
+  /** A single selected drawn frame / text (its settings panel shows). */
+  const activeDrawn =
+    !codebaseSelected && selectedIds.length === 1 ? drawnElements.find((el) => el.id === selectedIds[0]) : undefined
+
+  // The native wheel/gesture listeners are registered once, so they read the bounds from a ref.
+  const bounds = frameBounds([codebaseRect, ...Object.values(elementRects), ...drawnElements.map(elementRect)])
+  const boundsRef = useRef(bounds)
+  useEffect(() => {
+    boundsRef.current = bounds
+  })
+
+  // Clicking a frame that's already part of the selection keeps the selection (so a
+  // multi-selection can be dragged together); clicking an unselected frame selects only it.
+  function selectCodebase() {
+    if (codebaseSelected) return
+    setCodebaseSelected(true)
+    setSelectedIds([])
+    setAgentOpen(false)
+  }
+
+  function selectElement(id: string) {
+    if (selectedIds.includes(id)) return
+    setAgentOpen(false)
+    setSelectedIds([id])
+    setCodebaseSelected(false)
+  }
+
+  /**
+   * Drag a frame with the Select tool: screen-px movement ÷ zoom = canvas units. Pressing a frame
+   * that was already selected moves every selected frame; otherwise only the pressed one.
+   */
+  function startMove(e: React.PointerEvent, frame: "codebase" | { elementId: string }) {
+    if (tool !== "select" || e.button !== 0) return
+    const zoom = camera.zoom
+    const pressedId = frame === "codebase" ? null : frame.elementId
+    const wasSelected = pressedId === null ? codebaseSelected : selectedIds.includes(pressedId)
+    const moveCodebase = pressedId === null || (wasSelected && codebaseSelected)
+    const movedIds = wasSelected ? selectedIds : pressedId === null ? [] : [pressedId]
+    const fromCodebase = codebaseRect
+    const fromElements = elementRects
+    const fromDrawn = drawnElements
+    trackDrag(e, (dx, dy) => {
+      if (moveCodebase) setCodebaseRect({ ...fromCodebase, x: fromCodebase.x + dx / zoom, y: fromCodebase.y + dy / zoom })
+      if (movedIds.length === 0) return
+      setElementRects((current) => {
+        const next = { ...current }
+        for (const id of movedIds) {
+          const from = fromElements[id]
+          if (!from) continue // a drawn element, moved below
+          next[id] = { ...from, x: from.x + dx / zoom, y: from.y + dy / zoom }
+        }
+        return next
+      })
+      const moved = new Map(
+        fromDrawn.filter((el) => movedIds.includes(el.id)).map((el) => [el.id, { x: el.x + dx / zoom, y: el.y + dy / zoom }]),
+      )
+      if (moved.size > 0) setDrawnElements((els) => els.map((el) => (moved.has(el.id) ? { ...el, ...moved.get(el.id) } : el)))
+    })
+  }
+
+  /** Screen point → canvas units. */
+  function toCanvas(clientX: number, clientY: number) {
+    const r = rootRect!
+    return {
+      x: (clientX - r.left - r.width / 2 - camera.x) / camera.zoom,
+      y: (clientY - r.top - r.height / 2 - camera.y) / camera.zoom,
+    }
+  }
+
+  /**
+   * Frame / Text tool press anywhere on the canvas. Frame: drag to draw (a click drops a default
+   * size frame). Text: place a text element and start typing. Either way, the new element gets
+   * selected and the tool returns to Select.
+   */
+  function startCreate(e: React.PointerEvent) {
+    if (!rootRect) return
+    const origin = toCanvas(e.clientX, e.clientY)
+    const id = `drawn-${nextDrawnId.current++}`
+    setCodebaseSelected(false)
+    setAgentOpen(false)
+
+    if (tool === "text") {
+      // Keep focus off the canvas so the new text can take it.
+      e.preventDefault()
+      setDrawnElements((els) => [
+        ...els,
+        { id, kind: "text", name: "Text", content: "", x: origin.x, y: origin.y - TEXT_LINE_HEIGHT / 2, w: 0, h: TEXT_LINE_HEIGHT },
+      ])
+      setSelectedIds([id])
+      setEditingId(id)
+      setTool("select")
+      return
+    }
+
+    const name = `Frame ${++frameCount.current}`
+    const zoom = camera.zoom
+    let drawn = false
+    setSelectedIds([])
+    trackDrag(
+      e,
+      (dx, dy) => {
+        const box = {
+          x: origin.x + Math.min(0, dx) / zoom,
+          y: origin.y + Math.min(0, dy) / zoom,
+          w: Math.max(MIN_NEW_FRAME_SIZE, Math.abs(dx) / zoom),
+          h: Math.max(MIN_NEW_FRAME_SIZE, Math.abs(dy) / zoom),
+        }
+        if (!drawn) {
+          drawn = true
+          setDrawnElements((els) => [...els, { id, kind: "frame", name, ...box }])
+          setSelectedIds([id])
+        } else {
+          setDrawnElements((els) => els.map((el) => (el.id === id ? { ...el, ...box } : el)))
+        }
+      },
+      () => {
+        if (!drawn) {
+          setDrawnElements((els) => [
+            ...els,
+            { id, kind: "frame", name, x: origin.x, y: origin.y, w: DEFAULT_NEW_FRAME_SIZE, h: DEFAULT_NEW_FRAME_SIZE },
+          ])
+        }
+        setSelectedIds([id])
+        setTool("select")
+      },
+    )
+  }
+
+  /** Finish typing: empty text is removed, otherwise the content is saved. */
+  function commitText(id: string, content: string) {
+    setEditingId((current) => (current === id ? null : current))
+    if (content.trim() === "") {
+      setDrawnElements((els) => els.filter((el) => el.id !== id))
+      setSelectedIds((ids) => ids.filter((i) => i !== id))
+      return
+    }
+    setDrawnElements((els) => els.map((el) => (el.id === id && el.kind === "text" ? { ...el, content } : el)))
+  }
+
+  function measureText(id: string, w: number, h: number) {
+    setDrawnElements((els) => els.map((el) => (el.id === id && (el.w !== w || el.h !== h) ? { ...el, w, h } : el)))
+  }
+
+  /** Drag a corner thumb of a drawn frame: the opposite corner stays put. */
+  function startDrawnResize(e: React.PointerEvent, id: string, { sx, sy }: Corner) {
+    if (e.button !== 0) return
+    const from = drawnElements.find((el) => el.id === id)
+    if (!from) return
+    const zoom = camera.zoom
+    trackDrag(e, (dx, dy) => {
+      const w = Math.max(MIN_NEW_FRAME_SIZE, from.w + (sx * dx) / zoom)
+      const h = Math.max(MIN_NEW_FRAME_SIZE, from.h + (sy * dy) / zoom)
+      const box = { w, h, x: sx < 0 ? from.x + from.w - w : from.x, y: sy < 0 ? from.y + from.h - h : from.y }
+      setDrawnElements((els) => els.map((el) => (el.id === id ? { ...el, ...box } : el)))
+    })
+  }
+
+  /** Select tool drag on empty canvas: draw a selection box; frames it touches get selected. */
+  function startMarquee(e: React.PointerEvent) {
+    if (!rootRect) return
+    const originX = e.clientX - rootRect.left
+    const originY = e.clientY - rootRect.top
+    const z = camera.zoom
+    const centreX = rootRect.width / 2 + camera.x
+    const centreY = rootRect.height / 2 + camera.y
+    const touches = (r: CanvasRect, box: Marquee) =>
+      centreX + (r.x - r.w / 2) * z < box.left + box.width &&
+      centreX + (r.x + r.w / 2) * z > box.left &&
+      centreY + (r.y - r.h / 2) * z < box.top + box.height &&
+      centreY + (r.y + r.h / 2) * z > box.top
+    trackDrag(
+      e,
+      (dx, dy) => {
+        const box = {
+          left: Math.min(originX, originX + dx),
+          top: Math.min(originY, originY + dy),
+          width: Math.abs(dx),
+          height: Math.abs(dy),
+        }
+        setMarquee(box)
+        setCodebaseSelected(touches(codebaseRect, box))
+        setSelectedIds([
+          ...CALENDAR_ELEMENTS.filter((el) => touches(elementRects[el.id], box)).map((el) => el.id),
+          ...drawnElements.filter((el) => touches(elementRect(el), box)).map((el) => el.id),
+        ])
+      },
+      () => setMarquee(null),
+    )
+  }
+
+  /** Drag a corner thumb: the opposite corner stays put. */
+  function startResize(e: React.PointerEvent, { sx, sy }: Corner, elementId: string) {
+    if (e.button !== 0) return
+    const zoom = camera.zoom
+    const from = elementRects[elementId]
+    trackDrag(e, (dx, dy) => {
+      const w = Math.max(MIN_FRAME_SIZE, from.w + (sx * dx) / zoom)
+      const h = Math.max(MIN_FRAME_SIZE, from.h + (sy * dy) / zoom)
+      setElementRects((current) => ({
+        ...current,
+        [elementId]: { w, h, x: from.x + (sx * (w - from.w)) / 2, y: from.y + (sy * (h - from.h)) / 2 },
+      }))
+    })
+  }
+
+  /**
+   * Drag a radius thumb: movement diagonally toward the frame's centre (the average of the two
+   * axes, in screen px ÷ zoom) grows the radius of all four corners; away from it shrinks it.
+   * The radius stays between 0 and half the frame's shorter side, in whole canvas units.
+   */
+  function startRadiusDrag(
+    e: React.PointerEvent,
+    { sx, sy }: Corner,
+    from: { w: number; h: number; radius: number },
+    apply: (radius: number) => void,
+  ) {
+    if (e.button !== 0) return
+    const zoom = camera.zoom
+    const maxRadius = Math.min(from.w, from.h) / 2
+    trackDrag(e, (dx, dy) => {
+      const inward = (-sx * dx - sy * dy) / 2
+      apply(Math.round(clamp(from.radius + inward / zoom, 0, maxRadius)))
+    })
+  }
+
+  /**
+   * Build Agent input: sits right of the frame's top-right corner. The shift keeps it clear of the
+   * left sidebar, the settings panel and the top bar; it's animated so the input glides aside.
+   */
+  let composer: { left: number; top: number; shiftX: number; shiftY: number } | null = null
+  if (activeRect && agentOpen && rootRect) {
+    const z = camera.zoom
+    const left = rootRect.width / 2 + camera.x + (activeRect.x + activeRect.w / 2) * z + COMPOSER_GAP
+    const top = rootRect.height / 2 + camera.y + (activeRect.y - activeRect.h / 2) * z
+    const minLeft = (sidebarRect ? sidebarRect.right - rootRect.left : 0) + COMPOSER_GAP
+    const maxLeft = (panelRect ? panelRect.left - rootRect.left : rootRect.width) - COMPOSER_GAP - COMPOSER_WIDTH
+    const minTop = TOP_BAR_HEIGHT + COMPOSER_GAP
+    const maxTop = rootRect.height - COMPOSER_GAP - composerHeight
+    const clampedLeft = Math.max(minLeft, Math.min(left, maxLeft))
+    const clampedTop = Math.max(minTop, Math.min(top, maxTop))
+    composer = { left, top, shiftX: clampedLeft - left, shiftY: clampedTop - top }
+  }
 
   // Scroll / trackpad pans; pinch or ⌘/Ctrl + scroll zooms toward the cursor.
   // Registered natively so preventDefault works (React wheel listeners are passive).
@@ -78,9 +410,9 @@ export function HeroScreen() {
       const unit = e.deltaMode === 1 ? 16 : 1 // line-based deltas (some mice) → px
       if (e.ctrlKey || e.metaKey) {
         const { px, py } = fromCentre(e.clientX, e.clientY)
-        setCamera((c) => zoomAt(c, c.zoom * Math.exp(-e.deltaY * unit * WHEEL_ZOOM_SPEED), px, py))
+        setCamera((c) => zoomAt(c, c.zoom * Math.exp(-e.deltaY * unit * WHEEL_ZOOM_SPEED), px, py, boundsRef.current))
       } else {
-        setCamera((c) => clampCamera({ ...c, x: c.x - e.deltaX * unit, y: c.y - e.deltaY * unit }))
+        setCamera((c) => clampCamera({ ...c, x: c.x - e.deltaX * unit, y: c.y - e.deltaY * unit }, boundsRef.current))
       }
     }
 
@@ -96,7 +428,7 @@ export function HeroScreen() {
       const factor = g.scale / lastScale
       lastScale = g.scale
       const { px, py } = fromCentre(g.clientX, g.clientY)
-      setCamera((c) => zoomAt(c, c.zoom * factor, px, py))
+      setCamera((c) => zoomAt(c, c.zoom * factor, px, py, boundsRef.current))
     }
 
     canvas.addEventListener("wheel", onWheel, { passive: false })
@@ -128,13 +460,40 @@ export function HeroScreen() {
   }, [])
 
   return (
-    <div className="relative h-dvh w-full select-none overflow-hidden bg-mi-canvas">
-      {/* Canvas: clicking empty space clears the selection; dragging it pans (within limits) */}
+    <div ref={rootRef} className="relative h-dvh w-full select-none overflow-hidden bg-mi-canvas">
+      {/*
+        Canvas: clicking empty space clears the selection. With the Select tool, dragging empty
+        space draws a selection box; the Frame / Text tools create an element wherever they're
+        pressed (even over another frame); other tools (or the middle button) pan.
+        Scroll / trackpad always pans.
+      */}
       <div
         ref={canvasRef}
-        className={cn("absolute inset-0 touch-none", panning ? "cursor-grabbing" : "cursor-grab")}
+        className={cn(
+          "absolute inset-0 touch-none",
+          panning
+            ? "cursor-grabbing"
+            : tool === "select"
+              ? "cursor-default"
+              : tool === "frame"
+                ? "cursor-crosshair"
+                : tool === "text"
+                  ? "cursor-text"
+                  : "cursor-grab",
+        )}
+        onPointerDownCapture={(e) => {
+          if (e.button !== 0 || (tool !== "frame" && tool !== "text")) return
+          e.stopPropagation()
+          startCreate(e)
+        }}
         onPointerDown={(e) => {
           setCodebaseSelected(false)
+          setSelectedIds([])
+          setAgentOpen(false)
+          if (e.button === 0 && tool === "select") {
+            startMarquee(e)
+            return
+          }
           if (e.button !== 0 && e.button !== 1) return
           lastPointer.current = { x: e.clientX, y: e.clientY }
           e.currentTarget.setPointerCapture(e.pointerId)
@@ -146,19 +505,108 @@ export function HeroScreen() {
           const dx = e.clientX - last.x
           const dy = e.clientY - last.y
           lastPointer.current = { x: e.clientX, y: e.clientY }
-          setCamera((c) => clampCamera({ ...c, x: c.x + dx, y: c.y + dy }))
+          setCamera((c) => clampCamera({ ...c, x: c.x + dx, y: c.y + dy }, bounds))
         }}
         onPointerUp={endPan}
         onPointerCancel={endPan}
       >
         <CodebaseFrame
           selected={codebaseSelected}
-          onSelect={() => setCodebaseSelected(true)}
+          onSelect={selectCodebase}
+          onMoveStart={(e) => startMove(e, "codebase")}
+          onOpen={() => setPortalOpen(true)}
           zoom={camera.zoom}
-          offsetX={camera.x}
-          offsetY={camera.y}
+          offsetX={camera.x + codebaseRect.x * camera.zoom}
+          offsetY={camera.y + codebaseRect.y * camera.zoom}
         />
+        {CALENDAR_ELEMENTS.map((el) => (
+          <DesignFrame
+            key={el.id}
+            id={el.id}
+            label={el.name}
+            rect={elementRects[el.id]}
+            naturalSize={el.rect}
+            fill={el.fill}
+            radius={elementRadii[el.id]}
+            border={el.border}
+            bare={el.bare}
+            labelOnSelect={el.labelOnSelect}
+            selected={selectedIds.includes(el.id)}
+            onSelect={() => selectElement(el.id)}
+            onMoveStart={(e) => startMove(e, { elementId: el.id })}
+            onResizeStart={(e, corner) => startResize(e, corner, el.id)}
+            onRadiusStart={(e, corner) => {
+              const { w, h } = elementRects[el.id]
+              startRadiusDrag(e, corner, { w, h, radius: elementRadii[el.id] ?? 0 }, (radius) =>
+                setElementRadii((current) => ({ ...current, [el.id]: radius })),
+              )
+            }}
+            showAgentButton={activeElement?.id === el.id && !agentOpen}
+            onOpenAgent={() => setAgentOpen(true)}
+            working={agentOpen && agentWorking && activeElement?.id === el.id}
+            zoom={camera.zoom}
+            offsetX={camera.x}
+            offsetY={camera.y}
+          >
+            {el.content}
+          </DesignFrame>
+        ))}
+        {drawnElements.map((el) =>
+          el.kind === "frame" ? (
+            <DrawnFrame
+              key={el.id}
+              el={el}
+              camera={camera}
+              selected={selectedIds.includes(el.id)}
+              onPointerDown={(e) => {
+                selectElement(el.id)
+                startMove(e, { elementId: el.id })
+              }}
+              onResizeStart={(e, corner) => startDrawnResize(e, el.id, corner)}
+              onRadiusStart={(e, corner) =>
+                startRadiusDrag(e, corner, { w: el.w, h: el.h, radius: el.radius ?? 0 }, (radius) =>
+                  setDrawnElements((els) => els.map((d) => (d.id === el.id && d.kind === "frame" ? { ...d, radius } : d))),
+                )
+              }
+            />
+          ) : (
+            <CanvasText
+              key={el.id}
+              el={el}
+              camera={camera}
+              selected={selectedIds.includes(el.id)}
+              editing={editingId === el.id}
+              onPointerDown={(e) => {
+                selectElement(el.id)
+                startMove(e, { elementId: el.id })
+              }}
+              onStartEditing={() => {
+                selectElement(el.id)
+                setEditingId(el.id)
+              }}
+              onCommit={(content) => commitText(el.id, content)}
+              onMeasure={(w, h) => measureText(el.id, w, h)}
+            />
+          ),
+        )}
       </div>
+
+      {marquee && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute z-10 border border-[#2f6bf6] bg-[#2f6bf6]/10"
+          style={marquee}
+        />
+      )}
+
+      {composer && (
+        <BuildAgentComposer
+          {...composer}
+          onClose={() => setAgentOpen(false)}
+          onWorkingChange={setAgentWorking}
+          onHeightChange={setComposerHeight}
+        />
+      )}
 
       {/* Top bar */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-11 items-center justify-between pl-2 pr-3 *:pointer-events-auto">
@@ -193,10 +641,16 @@ export function HeroScreen() {
           <button
             type="button"
             aria-label="View code changes"
-            className="group relative flex h-8 items-center gap-1.5 rounded-md px-2 text-px-11 font-medium tabular-nums hover:bg-stone-700/5"
+            aria-haspopup="dialog"
+            aria-expanded={changesOpen}
+            onClick={() => setChangesOpen((open) => !open)}
+            className={cn(
+              "group relative flex h-8 items-center gap-1.5 rounded-md px-2 text-px-11 font-medium tabular-nums hover:bg-stone-700/5",
+              changesOpen && "bg-stone-700/5",
+            )}
           >
-            <span className="text-green-700">+1302</span>
-            <span className="text-red-600">−1</span>
+            <span className="text-green-700">+{CODE_CHANGES_TOTAL.added}</span>
+            <span className="text-red-600">−{CODE_CHANGES_TOTAL.removed}</span>
             <Tooltip label="View code changes" />
           </button>
           <button
@@ -207,20 +661,13 @@ export function HeroScreen() {
             <PlayCircleIcon />
             <Tooltip label="Open preview" />
           </button>
-          <button
-            type="button"
-            aria-label="GitHub"
-            className="flex size-8 items-center justify-center rounded-md bg-stone-700/5 text-stone-800 hover:bg-stone-700/10"
-          >
-            <GithubIcon />
-          </button>
-          <button
-            type="button"
-            data-cursor-id="share"
-            className="ml-0.5 flex h-8 items-center rounded-md bg-mi-lime px-3 text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] hover:bg-mi-lime-deep"
-          >
-            Share
-          </button>
+          {/* Draft project: no repo linked yet, so the button offers to create one */}
+          <GithubButton connected={false} defaultRepoName="Hero-Interactive-Screen" />
+          {/* Any drawn element or moved/resized frame since the last publish makes the preview outdated */}
+          <ShareButton
+            previewUrl="https://hero-interactive-screen.modeinspect.app"
+            changes={[drawnElements, elementRects, elementRadii]}
+          />
           <span className="ml-1 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-stone-200">
             <img
               src="/avatars/modeinspect-avatar.png"
@@ -230,6 +677,8 @@ export function HeroScreen() {
           </span>
         </div>
       </header>
+
+      {changesOpen && <CodeChangesPopover onClose={closeChanges} />}
 
       {/* Tool bar */}
       <div className="absolute left-1/2 top-2.5 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md">
@@ -253,14 +702,58 @@ export function HeroScreen() {
         ))}
       </div>
 
-      <LeftSidebar />
+      <LeftSidebar ref={sidebarRef} />
 
-      {codebaseSelected && <CodebaseSettingsPanel />}
+      {/* Settings show for a single selection only */}
+      {codebaseSelected && selectedIds.length === 0 && <CodebaseSettingsPanel />}
+      {activeElement && activeRect && (
+        <FrameSettingsPanel
+          key={activeElement.id}
+          ref={panelRef}
+          x={activeRect.x - activeRect.w / 2 - (codebaseRect.x - codebaseRect.w / 2)}
+          y={activeRect.y - activeRect.h / 2 - (codebaseRect.y - codebaseRect.h / 2)}
+          width={activeRect.w}
+          height={activeRect.h}
+          fill={activeElement.fill}
+          radius={elementRadii[activeElement.id]}
+          border={activeElement.border}
+          tag={activeElement.tag}
+          position={activeElement.position}
+          inset={activeElement.inset}
+          layout={activeElement.layout}
+          padding={activeElement.padding}
+          clip={activeElement.clip}
+          colors={activeElement.colors}
+        />
+      )}
+      {activeDrawn?.kind === "frame" && (
+        <FrameSettingsPanel
+          key={activeDrawn.id}
+          x={activeDrawn.x - (codebaseRect.x - codebaseRect.w / 2)}
+          y={activeDrawn.y - (codebaseRect.y - codebaseRect.h / 2)}
+          width={activeDrawn.w}
+          height={activeDrawn.h}
+          fill="#ffffff"
+          radius={activeDrawn.radius ?? null}
+          border={null}
+        />
+      )}
+      {activeDrawn?.kind === "text" && (
+        <TextSettingsPanel
+          key={activeDrawn.id}
+          x={activeDrawn.x - (codebaseRect.x - codebaseRect.w / 2)}
+          y={activeDrawn.y - (codebaseRect.y - codebaseRect.h / 2)}
+          width={activeDrawn.w}
+          height={activeDrawn.h}
+        />
+      )}
 
       {/* Zoom */}
       <div className="absolute bottom-3 right-3 z-20 rounded-md border border-stone-700/10 bg-white/90 px-1.5 py-0.5 text-px-10 font-medium tabular-nums text-stone-700 shadow-[0_1px_2px_rgba(17,17,16,0.06)]">
         {Math.round(camera.zoom * 100)}%
       </div>
+
+      {portalOpen && <PortalView onClose={closePortal} />}
     </div>
   )
 }
@@ -470,18 +963,6 @@ function PlayCircleIcon() {
     <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
       <circle cx="7" cy="7" r="6.5" fill="currentColor" />
       <path d="M5.6 4.4v5.2L9.6 7z" fill="white" />
-    </svg>
-  )
-}
-
-function GithubIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor">
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M16 0C7.16 0 0 7.3411 0 16.4047C0 23.6638 4.58 29.795 10.94 31.9687C11.74 32.1122 12.04 31.6201 12.04 31.1894C12.04 30.7998 12.02 29.508 12.02 28.1341C8 28.8928 6.96 27.1293 6.64 26.2065C6.46 25.7349 5.68 24.279 5 23.8893C4.44 23.5818 3.64 22.823 4.98 22.8025C6.24 22.782 7.14 23.9919 7.44 24.484C8.88 26.9652 11.18 26.268 12.1 25.8374C12.24 24.7711 12.66 24.0534 13.12 23.6433C9.56 23.2332 5.84 21.8183 5.84 15.5435C5.84 13.7594 6.46 12.283 7.48 11.1347C7.32 10.7246 6.76 9.04309 7.64 6.78745C7.64 6.78745 8.98 6.35682 12.04 8.46893C13.32 8.09982 14.68 7.91527 16.04 7.91527C17.4 7.91527 18.76 8.09982 20.04 8.46893C23.1 6.33632 24.44 6.78745 24.44 6.78745C25.32 9.04309 24.76 10.7246 24.6 11.1347C25.62 12.283 26.24 13.7389 26.24 15.5435C26.24 21.8388 22.5 23.2332 18.94 23.6433C19.52 24.1559 20.02 25.1402 20.02 26.6781C20.02 28.8723 20 30.6358 20 31.1894C20 31.6201 20.3 32.1327 21.1 31.9687C27.42 29.795 32 23.6433 32 16.4047C32 7.3411 24.84 0 16 0Z"
-      />
     </svg>
   )
 }

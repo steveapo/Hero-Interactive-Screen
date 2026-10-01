@@ -1,0 +1,239 @@
+"use client"
+
+import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { ExternalLink, GitBranch } from "lucide-react"
+import { cn } from "@/lib/utils"
+
+/**
+ * Top-bar GitHub control.
+ * - `connected`: the project is linked to a repo → a "Github Sync" popover to push the changes.
+ * - not connected (draft project): a "Create a GitHub project" dialog. Creating one links the repo,
+ *   so the next click shows the sync popover.
+ */
+export function GithubButton({
+  connected: initiallyConnected,
+  defaultRepoName,
+  branch = "main",
+}: {
+  connected: boolean
+  /** Prefilled repository name in the create dialog. */
+  defaultRepoName: string
+  /** Branch the project was imported from (connected state). */
+  branch?: string
+}) {
+  const [connected, setConnected] = useState(initiallyConnected)
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
+
+  // Close the sync popover on outside click or Escape (the dialog handles its own dismissal)
+  useEffect(() => {
+    if (!open || !connected) return
+    function onPointerDown(e: PointerEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false)
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    document.addEventListener("keydown", onKeyDown)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown)
+      document.removeEventListener("keydown", onKeyDown)
+    }
+  }, [open, connected])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        aria-label="GitHub"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          "flex size-8 items-center justify-center rounded-md bg-stone-700/5 text-stone-800 hover:bg-stone-700/10",
+          open && "bg-stone-700/10",
+        )}
+      >
+        <GithubIcon />
+      </button>
+
+      {open && connected && <GithubSyncPopover branch={branch} onSync={() => setOpen(false)} />}
+      {open && !connected && (
+        <CreateGithubProjectDialog
+          defaultName={defaultRepoName}
+          onCancel={() => setOpen(false)}
+          onCreate={() => {
+            setConnected(true)
+            setOpen(false)
+          }}
+        />
+      )}
+    </div>
+  )
+}
+
+/* ------------------------------ Connected state ----------------------------- */
+
+function GithubSyncPopover({ branch, onSync }: { branch: string; onSync: () => void }) {
+  return (
+    <div
+      role="dialog"
+      aria-label="Github Sync"
+      className="absolute right-0 top-full z-50 mt-1.5 flex w-64 flex-col rounded-xl border border-stone-700/10 bg-[#f3f3f1] p-3 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in slide-in-from-top-1 duration-150"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-px-13 font-medium text-stone-900">Github Sync</h2>
+        <a
+          href="https://github.com"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Open repository on GitHub"
+          className="-mr-1 flex size-6 items-center justify-center rounded-md text-stone-500 hover:bg-stone-700/5 hover:text-stone-800"
+        >
+          <ExternalLink className="size-3.5" strokeWidth={1.5} />
+        </a>
+      </div>
+      <p className="mt-1.5 flex items-center gap-1.5 text-px-12 text-stone-700">
+        <GitBranch className="size-3.5 text-stone-500" strokeWidth={1.5} />
+        Imported from {branch}
+      </p>
+
+      <div className="my-3 h-px bg-stone-700/10" />
+
+      <button
+        type="button"
+        onClick={onSync}
+        className="flex h-8 w-full items-center justify-center rounded-md bg-mi-lime text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] hover:bg-mi-lime-deep"
+      >
+        Sync to Github
+      </button>
+      <p className="mt-2.5 text-px-12 text-stone-500">Changes sync as a new branch.</p>
+    </div>
+  )
+}
+
+/* ---------------------------- Not connected state --------------------------- */
+
+function CreateGithubProjectDialog({
+  defaultName,
+  onCancel,
+  onCreate,
+}: {
+  defaultName: string
+  onCancel: () => void
+  onCreate: () => void
+}) {
+  const [name, setName] = useState(defaultName)
+  const [isPublic, setIsPublic] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  // Select the prefilled name so it can be typed over straight away
+  useEffect(() => {
+    inputRef.current?.select()
+  }, [])
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onCancel()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [onCancel])
+
+  // Portalled to <body>: the top bar is its own stacking context, which would let the toolbar sit above the backdrop
+  return createPortal(
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/10 p-4 animate-in fade-in duration-150"
+      onPointerDown={onCancel}
+    >
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="create-github-project-title"
+        onPointerDown={(e) => e.stopPropagation()}
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (name.trim()) onCreate()
+        }}
+        className="flex w-full max-w-[460px] flex-col rounded-2xl bg-[#f3f3f1] p-4 shadow-[0_12px_40px_-8px_rgba(17,17,16,0.25),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in zoom-in-95 duration-150"
+      >
+        <h2 id="create-github-project-title" className="text-[15px] font-medium leading-5 text-stone-900">
+          Create a GitHub project
+        </h2>
+
+        <label htmlFor="github-repo-name" className="mt-4 text-px-13 font-medium text-stone-900">
+          Name
+        </label>
+        <input
+          ref={inputRef}
+          id="github-repo-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          spellCheck={false}
+          className="mt-1.5 h-9 w-full select-text rounded-lg border border-stone-700/15 bg-white px-2.5 text-px-13 text-stone-900 outline-none selection:bg-mi-lime/70 focus:border-stone-700/30"
+        />
+
+        <div className="mt-3 flex items-center justify-between gap-4 rounded-lg bg-stone-700/5 px-3 py-2.5">
+          <div className="flex flex-col gap-0.5">
+            <span id="github-public-label" className="text-px-13 font-medium text-stone-900">
+              Public repository
+            </span>
+            <span className="text-px-12 text-stone-700">Anyone on GitHub can see your code.</span>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={isPublic}
+            aria-labelledby="github-public-label"
+            onClick={() => setIsPublic((v) => !v)}
+            className={cn(
+              "relative h-[18px] w-8 shrink-0 rounded-full transition-colors",
+              isPublic ? "bg-stone-900" : "bg-stone-700/15",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute left-0.5 top-0.5 size-[14px] rounded-full bg-white shadow-[0_1px_2px_rgba(17,17,16,0.2)] transition-transform",
+                isPublic && "translate-x-[14px]",
+              )}
+            />
+          </button>
+        </div>
+
+        <div className="my-3 h-px bg-stone-700/10" />
+
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex h-8 items-center rounded-md bg-stone-700/5 px-3.5 text-px-13 font-medium text-stone-800 hover:bg-stone-700/10"
+          >
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!name.trim()}
+            className="flex h-8 items-center rounded-md bg-white px-3.5 text-px-13 font-medium text-stone-900 shadow-[0_1px_3px_rgba(17,17,16,0.12)] hover:bg-stone-50 disabled:opacity-50"
+          >
+            Create
+          </button>
+        </div>
+      </form>
+    </div>,
+    document.body,
+  )
+}
+
+function GithubIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 32 32" fill="currentColor" aria-hidden="true">
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M16 0C7.16 0 0 7.3411 0 16.4047C0 23.6638 4.58 29.795 10.94 31.9687C11.74 32.1122 12.04 31.6201 12.04 31.1894C12.04 30.7998 12.02 29.508 12.02 28.1341C8 28.8928 6.96 27.1293 6.64 26.2065C6.46 25.7349 5.68 24.279 5 23.8893C4.44 23.5818 3.64 22.823 4.98 22.8025C6.24 22.782 7.14 23.9919 7.44 24.484C8.88 26.9652 11.18 26.268 12.1 25.8374C12.24 24.7711 12.66 24.0534 13.12 23.6433C9.56 23.2332 5.84 21.8183 5.84 15.5435C5.84 13.7594 6.46 12.283 7.48 11.1347C7.32 10.7246 6.76 9.04309 7.64 6.78745C7.64 6.78745 8.98 6.35682 12.04 8.46893C13.32 8.09982 14.68 7.91527 16.04 7.91527C17.4 7.91527 18.76 8.09982 20.04 8.46893C23.1 6.33632 24.44 6.78745 24.44 6.78745C25.32 9.04309 24.76 10.7246 24.6 11.1347C25.62 12.283 26.24 13.7389 26.24 15.5435C26.24 21.8388 22.5 23.2332 18.94 23.6433C19.52 24.1559 20.02 25.1402 20.02 26.6781C20.02 28.8723 20 30.6358 20 31.1894C20 31.6201 20.3 32.1327 21.1 31.9687C27.42 29.795 32 23.6433 32 16.4047C32 7.3411 24.84 0 16 0Z"
+      />
+    </svg>
+  )
+}

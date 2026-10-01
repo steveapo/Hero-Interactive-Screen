@@ -1,10 +1,10 @@
 "use client"
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react"
-import { Check, Copy, Pause, Play, RotateCcw, Trash2, X, ZoomIn } from "lucide-react"
+import { Check, Copy, MousePointerClick, Pause, Play, RotateCcw, Trash2, X, ZoomIn } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { toBakedTime, toSourceTime } from "./smoothing"
-import type { BakedTrack, CursorEdits, CursorRecording, SmoothingOptions, ZoomSegment } from "./types"
+import type { BakedTrack, CursorEdits, CursorKeyEvent, CursorRecording, SmoothingOptions, ZoomSegment } from "./types"
 
 type EditorPanelProps = {
   /** The take being edited (with its current edits). */
@@ -38,15 +38,45 @@ type ZoomDrag = {
 
 const MIN_ZOOM_LENGTH = 400
 const NEW_ZOOM_LENGTH = 2000
+/**
+ * Auto-zoom around clicks (baked ms): start zooming in this long before the press, so the
+ * camera (600 ms ease-in) is fully zoomed when the click lands, and stay in for a while after.
+ */
+const AUTO_ZOOM_BEFORE = 900
+const AUTO_ZOOM_AFTER = 1200
+/** Clicks whose zooms would be closer than this (ms) share one zoom instead of zooming out and back in. */
+const AUTO_ZOOM_MERGE_GAP = 800
+const AUTO_ZOOM_SCALE = 1.8
 const TYPING_SPEEDS = [0.5, 0.75, 1, 1.5, 2, 3]
 const PLAYBACK_SPEEDS = [0.75, 1, 1.25, 1.5, 2]
 
 const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
 
+const KEY_SYMBOLS: Record<string, string> = {
+  Enter: "↵",
+  Escape: "Esc",
+  Tab: "⇥",
+  Backspace: "⌫",
+  Delete: "⌦",
+  ArrowLeft: "←",
+  ArrowRight: "→",
+  ArrowUp: "↑",
+  ArrowDown: "↓",
+  " ": "Space",
+}
+
+/** Short label for a key press on the timeline, e.g. "↵", "⌘Z", "V". */
+function keyLabel(e: CursorKeyEvent) {
+  const mods = `${e.mods?.ctrl ? "⌃" : ""}${e.mods?.alt ? "⌥" : ""}${e.mods?.shift ? "⇧" : ""}${e.mods?.meta ? "⌘" : ""}`
+  const key = KEY_SYMBOLS[e.key] ?? (e.key.length === 1 ? e.key.toUpperCase() : e.key)
+  return mods + key
+}
+
 /**
  * Post-production editor, shown by <CursorStage> when the URL has `?edit=true` (hide with × or
  * `?edit=false`). A timeline of the take with:
  * - Zoom lane: add a zoom at the playhead, drag to move, drag its edges to trim, set its level.
+ *   "Auto-zoom clicks" adds a zoom around every click, starting before the press.
  * - Typing lane: select a run to change its typing speed.
  * - Clicks lane: where presses and keys happen.
  * - Global pacing: playback speed, typing pace, cursor smoothing.
@@ -154,6 +184,32 @@ export function EditorPanel({
     setSelected({ kind: "zoom", id: zoom.id })
   }
 
+  /**
+   * One zoom per click, from AUTO_ZOOM_BEFORE before the press to AUTO_ZOOM_AFTER after it;
+   * clicks close together are merged into one zoom. Replaces earlier auto zooms, keeps manual ones.
+   */
+  function autoZoomClicks() {
+    if (!track) return
+    const presses = track.events.filter((e) => e.type === "down").map((e) => e.t)
+    const spans: { start: number; end: number }[] = []
+    for (const t of presses) {
+      const start = Math.max(0, t - AUTO_ZOOM_BEFORE)
+      const end = Math.min(duration, t + AUTO_ZOOM_AFTER)
+      const last = spans.at(-1)
+      if (last && start - last.end < AUTO_ZOOM_MERGE_GAP) last.end = Math.max(last.end, end)
+      else spans.push({ start, end })
+    }
+    const generated: ZoomSegment[] = spans.map((span) => ({
+      id: Math.random().toString(36).slice(2, 10),
+      start: toSourceTime(track, span.start),
+      end: toSourceTime(track, span.end),
+      scale: AUTO_ZOOM_SCALE,
+      auto: true,
+    }))
+    setZooms([...zooms.filter((z) => !z.auto), ...generated])
+    setSelected(null)
+  }
+
   function startZoomDrag(e: ReactPointerEvent<HTMLElement>, zoom: ZoomSegment, handle: ZoomDrag["handle"]) {
     if (!track) return
     e.stopPropagation()
@@ -183,9 +239,12 @@ export function EditorPanel({
     } else {
       end = Math.max(Math.min(drag.end + dt, duration), drag.start + MIN_ZOOM_LENGTH)
     }
+    // A hand-adjusted auto zoom becomes a manual one, so regenerating won't discard the change.
     setZooms(
       zooms.map((z) =>
-        z.id === drag.id ? { ...z, start: toSourceTime(track, start), end: toSourceTime(track, end) } : z,
+        z.id === drag.id
+          ? { ...z, start: toSourceTime(track, start), end: toSourceTime(track, end), auto: undefined }
+          : z,
       ),
     )
   }
@@ -242,6 +301,16 @@ export function EditorPanel({
         <button type="button" onClick={addZoom} disabled={!track} className={iconButton}>
           <ZoomIn className="size-3.5" />
           Add zoom
+        </button>
+        <button
+          type="button"
+          onClick={autoZoomClicks}
+          disabled={!track || !track.events.some((e) => e.type === "down")}
+          title="Zoom in around every click (replaces earlier auto zooms)"
+          className={iconButton}
+        >
+          <MousePointerClick className="size-3.5" />
+          Auto-zoom clicks
         </button>
         <div className="ml-auto flex items-center gap-1">
           <button type="button" onClick={() => onEditsChange({}, true)} className={iconButton}>
@@ -343,10 +412,11 @@ export function EditorPanel({
           {keys.map((e, i) => (
             <span
               key={`k${i}`}
-              className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 text-px-11 font-semibold text-stone-800"
+              title={e.type === "key" ? e.key : undefined}
+              className="absolute top-1/2 -translate-x-1/2 -translate-y-1/2 whitespace-nowrap text-px-11 font-semibold text-stone-800"
               style={{ left: pct(e.t) }}
             >
-              ↵
+              {e.type === "key" ? keyLabel(e) : null}
             </span>
           ))}
         </Lane>
@@ -366,7 +436,11 @@ export function EditorPanel({
                 step={0.05}
                 value={selectedZoom.scale}
                 onChange={(e) =>
-                  setZooms(zooms.map((z) => (z.id === selectedZoom.id ? { ...z, scale: Number(e.target.value) } : z)))
+                  setZooms(
+                    zooms.map((z) =>
+                      z.id === selectedZoom.id ? { ...z, scale: Number(e.target.value), auto: undefined } : z,
+                    ),
+                  )
                 }
                 className="w-28 accent-mi-select"
               />
@@ -454,6 +528,35 @@ export function EditorPanel({
               onChange={(e) => setSetting("simplifyTolerance", Number(e.target.value))}
               className="w-20 accent-stone-800"
             />
+          </label>
+          <label className="flex items-center gap-2" title="Pauses longer than this are shortened to it">
+            Max pause
+            <input
+              type="range"
+              min={250}
+              max={10000}
+              step={250}
+              value={options.maxIdle}
+              onChange={(e) => setSetting("maxIdle", Number(e.target.value))}
+              className="w-20 accent-stone-800"
+            />
+            <span className="w-9 tabular-nums">{seconds(options.maxIdle)}</span>
+          </label>
+          <label
+            className="flex items-center gap-2"
+            title="How long the cursor takes to ease onto a new path when its target moves during playback"
+          >
+            Re-aim ease
+            <input
+              type="range"
+              min={0}
+              max={1500}
+              step={20}
+              value={options.reaimBlend}
+              onChange={(e) => setSetting("reaimBlend", Number(e.target.value))}
+              className="w-20 accent-stone-800"
+            />
+            <span className="w-9 tabular-nums">{seconds(options.reaimBlend)}</span>
           </label>
         </div>
       </div>

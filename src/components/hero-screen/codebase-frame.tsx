@@ -1,12 +1,20 @@
 "use client"
 
 import { Play, ScanLine, SquareDashedMousePointer } from "lucide-react"
+import { PlannerScreen } from "@/app/copy-project/planner-screen"
 
 /** The canvas opens at this zoom; the user can then zoom between the hero's min/max. */
-export const CANVAS_ZOOM = 0.54
+export const CANVAS_ZOOM = 0.3
 
-const SCREEN_WIDTH = 1440
-const SCREEN_HEIGHT = 900
+/** The Codebase frame's opening animation plays at this rate (1 = the planner's own pace). */
+const CODEBASE_INTRO_SPEED = 0.6
+
+/**
+ * Canvas-unit size of the Codebase frame: the iPad Pro 12.9″ preview resolution (2048×2732 @2x).
+ * Its centre is the canvas origin at load.
+ */
+export const CODEBASE_WIDTH = 1024
+export const CODEBASE_HEIGHT = 1366
 
 /** Focus colour for the Codebase frame: label, icon, border and size tag. */
 const CODEBASE_GREEN = "#1fc15a"
@@ -15,15 +23,21 @@ const LABEL_GREY = "#78716c"
 export function CodebaseFrame({
   selected,
   onSelect,
+  onMoveStart,
+  onOpen,
   zoom,
   offsetX,
   offsetY,
 }: {
   selected: boolean
   onSelect: () => void
+  /** Double-click: open the frame in the Portal View. */
+  onOpen: () => void
+  /** Pointer pressed on the frame: the canvas may start dragging it. */
+  onMoveStart: (e: React.PointerEvent) => void
   /** Current canvas zoom — scales the frame; labels stay screen-sized. */
   zoom: number
-  /** Screen-px offset of the frame's centre from the viewport centre (canvas pan). */
+  /** Screen-px offset of the frame's centre from the viewport centre (canvas pan + frame position). */
   offsetX: number
   offsetY: number
 }) {
@@ -34,13 +48,15 @@ export function CodebaseFrame({
       style={{
         left: `calc(50% + ${offsetX}px)`,
         top: `calc(50% + ${offsetY}px)`,
-        width: SCREEN_WIDTH * zoom,
-        height: SCREEN_HEIGHT * zoom,
+        width: CODEBASE_WIDTH * zoom,
+        height: CODEBASE_HEIGHT * zoom,
       }}
       onPointerDown={(e) => {
         e.stopPropagation()
         onSelect()
+        onMoveStart(e)
       }}
+      onDoubleClick={onOpen}
     >
       {/* Label row */}
       <div className="absolute inset-x-0 -top-7 flex h-6 items-center justify-between">
@@ -67,9 +83,14 @@ export function CodebaseFrame({
         )}
       </div>
 
-      {/* Device bezel + screen (empty for now) */}
+      {/*
+        Device bezel + screen: the live, functional iPad Calendar. It is authored in cqw units,
+        so the screen is a size container and the app scales with zoom.
+      */}
       <div className="size-full cursor-default rounded-lg bg-black p-2 shadow-[0_12px_32px_-12px_rgba(17,17,16,0.3)]">
-        <div className="size-full rounded-[2px] bg-white" />
+        <div className="@container size-full overflow-hidden rounded-[2px] bg-white">
+          <PlannerScreen introSpeed={CODEBASE_INTRO_SPEED} />
+        </div>
       </div>
 
       {selected && (
@@ -82,7 +103,7 @@ export function CodebaseFrame({
             className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-[2px] px-1 py-px font-mono font-semibold tabular-nums text-white"
             style={{ background: CODEBASE_GREEN, fontSize: 10, lineHeight: "16px" }}
           >
-            {SCREEN_WIDTH} × {SCREEN_HEIGHT}
+            {CODEBASE_WIDTH} × {CODEBASE_HEIGHT}
           </span>
         </>
       )}

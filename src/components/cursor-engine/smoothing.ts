@@ -4,9 +4,13 @@ import type {
   BakedEvent,
   BakedTrack,
   BakedTyping,
-  CursorAnchor,
+  CursorGestureEvent,
+  CursorKeyEvent,
   CursorRecording,
+  CursorScrollEvent,
   CursorTypingRun,
+  CursorWheelEvent,
+  PressTarget,
   SmoothingOptions,
 } from "./types"
 
@@ -16,9 +20,10 @@ import type {
  *
  *  1. Re-target: rescale to the current stage size and warp the path so each press lands on
  *     its anchor element's current position. Typing runs and keys become timeline markers.
- *  2. Trim idle: pauses longer than `maxIdle` are shortened, then `speed` is applied. Each typing
- *     run's recorded span (pauses included) is replaced by its length-based typing duration,
- *     and the cursor holds still for it.
+ *  2. Trim idle: pauses longer than `maxIdle` are shortened, then `speed` is applied — except
+ *     waits for the app (content still changing after the previous action), kept in real time.
+ *     Each typing run's recorded span (pauses included) is replaced by its length-based typing
+ *     duration; cursor moves made meanwhile keep their own pace alongside it.
  *  3. Simplify: Ramer–Douglas–Peucker removes hand jitter while keeping presses and pauses.
  *  4. Dwell: the cursor holds still on its target for `clickDwell` ms before each press.
  *  5. Curve: time-parameterised cubic Hermite (Catmull-Rom tangents) through the keyframes,
@@ -45,31 +50,77 @@ const DOUBLE_CLICK_GAP = 400
  * - type: a typing run starts (lasting `duration` ms on the baked timeline)
  * - hold: the end of a typing run (the cursor stays put until here)
  * - key: a key press
+ * - scroll / wheel / gesture: "side" input that doesn't move the cursor. Kept on the timeline so
+ *   idle trimming treats it as activity (a pinch-zoom with a still cursor isn't a pause), then
+ *   taken out before the path is simplified.
  */
 type Mark =
   | { kind: "type"; run: CursorTypingRun; index: number; duration: number }
   | { kind: "hold" }
-  | { kind: "key"; key: string; anchor?: CursorAnchor }
+  | { kind: "key"; key: CursorKeyEvent }
+  | { kind: "scroll"; scroll: CursorScrollEvent }
+  | { kind: "wheel"; wheel: CursorWheelEvent }
+  | { kind: "gesture"; gesture: CursorGestureEvent }
 
-/** `t` is the point's time on the current timeline; `src` its recorded time (set from step 2 on). */
-type Point = { t: number; src?: number; x: number; y: number; press?: "down" | "up"; mark?: Mark }
+const isSide = (p: Point) => p.mark?.kind === "scroll" || p.mark?.kind === "wheel" || p.mark?.kind === "gesture"
+
+/**
+ * `t` is the point's time on the current timeline; `src` its recorded time (set from step 2 on).
+ * `source` is a press's index in the recording's `events`, `button` its mouse button.
+ */
+type Point = {
+  t: number
+  src?: number
+  x: number
+  y: number
+  press?: "down" | "up"
+  source?: number
+  button?: number
+  mark?: Mark
+}
 type Keyframe = Point & { stop: boolean }
 
+/**
+ * `pinned`: targets to reuse instead of measuring the layout, by recording press index. The
+ * player pins presses that have already fired, so re-baking mid-playback (after the screen's
+ * layout changed, e.g. an element was dragged) only re-aims the presses still to come.
+ */
 export function bakeTrack(
   recording: CursorRecording,
   stage: HTMLElement,
   options: SmoothingOptions,
+  pinned?: ReadonlyMap<number, PressTarget>,
 ): BakedTrack {
-  const merged = retarget(recording, stage, options)
-  const timed = trimIdle(merged, options.maxIdle, options.speed)
-  const simplified = simplify(timed, options.simplifyTolerance)
-  const { keyframes, events, typing } = addDwell(simplified, options.clickDwell)
-  return springBake(keyframes, events, typing, options)
+  const { points: merged, targets } = retarget(recording, stage, options, pinned)
+  const timed = trimIdle(merged, options.maxIdle, options.speed, recording.changes ?? [])
+  // Side input doesn't shape the cursor path: set it aside, keeping its trimmed times.
+  const sidePoints = timed.filter(isSide)
+  const simplified = simplify(
+    timed.filter((p) => !isSide(p)),
+    options.simplifyTolerance,
+  )
+  const { keyframes, events, typing, dwells } = addDwell(simplified, options.clickDwell)
+  // Shift side input by the click dwells inserted before it, so it stays in sync with the clicks.
+  const side: SideInput = { scrolls: [], wheels: [], gestures: [] }
+  for (const p of sidePoints) {
+    const t = p.t + dwells.reduce((sum, d) => (d.at < p.t ? sum + d.amount : sum), 0)
+    if (p.mark?.kind === "scroll") side.scrolls.push({ ...p.mark.scroll, t })
+    else if (p.mark?.kind === "wheel") side.wheels.push({ ...p.mark.wheel, t })
+    else if (p.mark?.kind === "gesture") side.gestures.push({ ...p.mark.gesture, t })
+  }
+  return springBake(keyframes, events, typing, side, targets, options)
 }
+
+type SideInput = { scrolls: CursorScrollEvent[]; wheels: CursorWheelEvent[]; gestures: CursorGestureEvent[] }
 
 /* ------------------------------ 1. Re-target ------------------------------- */
 
-function retarget(recording: CursorRecording, stage: HTMLElement, options: SmoothingOptions): Point[] {
+function retarget(
+  recording: CursorRecording,
+  stage: HTMLElement,
+  options: SmoothingOptions,
+  pinned?: ReadonlyMap<number, PressTarget>,
+): { points: Point[]; targets: PressTarget[] } {
   const rect = stage.getBoundingClientRect()
   const sx = rect.width / (recording.stage.width || rect.width)
   const sy = rect.height / (recording.stage.height || rect.height)
@@ -77,27 +128,60 @@ function retarget(recording: CursorRecording, stage: HTMLElement, options: Smoot
   // Offset (resolved − recorded) at each press. A release that ends a drag keeps the drag's
   // shape by reusing its press offset instead of snapping to whatever it was released over.
   const offsets: { t: number; dx: number; dy: number }[] = []
+  const targets: PressTarget[] = []
   let lastDown: { x: number; y: number; dx: number; dy: number } | null = null
-  for (const e of recording.events) {
+  recording.events.forEach((e, i) => {
     const x = e.x * sx
     const y = e.y * sy
     const isDrag = e.type === "up" && lastDown && Math.hypot(x - lastDown.x, y - lastDown.y) > CLICK_RADIUS
     let dx = 0
     let dy = 0
+    let target: PressTarget = null
     if (isDrag && lastDown) {
       dx = lastDown.dx
       dy = lastDown.dy
     } else if (e.anchor) {
-      const resolved = resolveAnchor(stage, e.anchor)
-      if (resolved) {
-        dx = resolved.x - x
-        dy = resolved.y - y
+      target = pinned?.has(i) ? pinned.get(i)! : resolveAnchor(stage, e.anchor)
+      if (target) {
+        dx = target.x - x
+        dy = target.y - y
       }
     }
+    targets.push(target)
     offsets.push({ t: e.t, dx, dy })
     if (e.type === "down") lastDown = { x, y, dx, dy }
+  })
+
+  // Distance the recorded cursor had travelled by each sample (stage px), for spreading offsets.
+  const samples = [...recording.samples].sort((a, b) => a[0] - b[0])
+  const travelled: number[] = []
+  samples.forEach(([, x, y], i) => {
+    const prev = samples[i - 1]
+    travelled.push(i === 0 ? 0 : travelled[i - 1] + Math.hypot((x - prev[1]) * sx, (y - prev[2]) * sy))
+  })
+  /** Distance travelled by recorded time t (interpolated between samples). */
+  function travelledAt(t: number) {
+    let lo = 0
+    let hi = samples.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (samples[mid][0] <= t) lo = mid + 1
+      else hi = mid
+    }
+    const i = lo - 1
+    if (i < 0) return 0
+    if (i >= samples.length - 1) return travelled[samples.length - 1] ?? 0
+    const [ta] = samples[i]
+    const [tb] = samples[i + 1]
+    const k = tb === ta ? 1 : (t - ta) / (tb - ta)
+    return travelled[i] + (travelled[i + 1] - travelled[i]) * k
   }
 
+  /**
+   * Offset at recorded time t, blending from one press's offset to the next *as the cursor
+   * moves* (by distance travelled, not time), so the correction rides on real movement: pauses
+   * stay perfectly still and speeds stay even. With no movement in between, it falls back to time.
+   */
   function offsetAt(t: number) {
     if (offsets.length === 0) return { dx: 0, dy: 0 }
     if (t <= offsets[0].t) return offsets[0]
@@ -105,19 +189,29 @@ function retarget(recording: CursorRecording, stage: HTMLElement, options: Smoot
       const b = offsets[i]
       if (t <= b.t) {
         const a = offsets[i - 1]
-        const k = b.t === a.t ? 1 : (t - a.t) / (b.t - a.t)
+        const da = travelledAt(a.t)
+        const db = travelledAt(b.t)
+        const k =
+          db - da > 1 ? (travelledAt(t) - da) / (db - da) : b.t === a.t ? 1 : (t - a.t) / (b.t - a.t)
         return { dx: a.dx + (b.dx - a.dx) * k, dy: a.dy + (b.dy - a.dy) * k }
       }
     }
     return offsets[offsets.length - 1]
   }
 
-  const points: Point[] = recording.samples.map(([t, x, y]) => {
+  const points: Point[] = samples.map(([t, x, y]) => {
     const { dx, dy } = offsetAt(t)
     return { t, x: x * sx + dx, y: y * sy + dy }
   })
   recording.events.forEach((e, i) => {
-    points.push({ t: e.t, x: e.x * sx + offsets[i].dx, y: e.y * sy + offsets[i].dy, press: e.type })
+    points.push({
+      t: e.t,
+      x: e.x * sx + offsets[i].dx,
+      y: e.y * sy + offsets[i].dy,
+      press: e.type,
+      source: i,
+      button: e.button ?? 0,
+    })
   })
 
   // Typing and keys don't move the cursor: they get their position from the points around them.
@@ -129,18 +223,27 @@ function retarget(recording: CursorRecording, stage: HTMLElement, options: Smoot
     points.push({ t: run.start, x: NaN, y: NaN, mark: { kind: "type", run, index, duration } })
   })
   for (const k of recording.keys ?? []) {
-    points.push({ t: k.t, x: NaN, y: NaN, mark: { kind: "key", key: k.key, anchor: k.anchor } })
+    points.push({ t: k.t, x: NaN, y: NaN, mark: { kind: "key", key: k } })
+  }
+  for (const s of recording.scrolls ?? []) {
+    points.push({ t: s.t, x: NaN, y: NaN, mark: { kind: "scroll", scroll: s } })
+  }
+  for (const w of recording.wheels ?? []) {
+    points.push({ t: w.t, x: NaN, y: NaN, mark: { kind: "wheel", wheel: w } })
+  }
+  for (const g of recording.gestures ?? []) {
+    points.push({ t: g.t, x: NaN, y: NaN, mark: { kind: "gesture", gesture: g } })
   }
 
-  // Sort by time; at the same instant: moves, then presses, then keys, then typing.
-  const rank = (p: Point) => (p.mark?.kind === "type" ? 3 : p.mark ? 2 : p.press ? 1 : 0)
+  // Sort by time; at the same instant: moves, then side input, then presses, then keys, then typing.
+  const rank = (p: Point) =>
+    p.mark?.kind === "type" ? 4 : isSide(p) ? 1 : p.mark ? 3 : p.press ? 2 : 0
   points.sort((a, b) => a.t - b.t || rank(a) - rank(b))
 
   const cleaned = points.filter((p, i) => {
     if (p.press || p.mark) return true
-    // Drop moves that duplicate a press, and any cursor wobble while typing (the cursor holds still).
-    if (points[i + 1]?.t === p.t && points[i + 1]?.press) return false
-    return !runs.some((run) => p.t > run.start && p.t <= run.end)
+    // Drop moves that duplicate a press. (Moves made while typing are kept: see trimIdle.)
+    return !(points[i + 1]?.t === p.t && points[i + 1]?.press)
   })
 
   // Markers take the cursor position just before them (or just after, if nothing precedes).
@@ -153,27 +256,85 @@ function retarget(recording: CursorRecording, stage: HTMLElement, options: Smoot
       last = p
     }
   }
-  return cleaned
+  return { points: cleaned, targets }
 }
 
 /* ------------------------------ 2. Trim idle ------------------------------- */
 
-function trimIdle(points: Point[], maxIdle: number, speed: number): Point[] {
+/** After the app's last content change, wait this long (ms) before the next action, so it settles. */
+const APP_SETTLE = 150
+/** Longest app wait (ms) kept in full; anything longer is treated as the user idling. */
+const MAX_APP_WAIT = 10000
+
+/** Latest change time in (after, upTo], or null. `changes` is ascending. */
+function lastChangeIn(changes: number[], after: number, upTo: number): number | null {
+  let lo = 0
+  let hi = changes.length
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1
+    if (changes[mid] <= upTo) lo = mid + 1
+    else hi = mid
+  }
+  const c = changes[lo - 1]
+  return c !== undefined && c > after ? c : null
+}
+
+/**
+ * Shortens pauses, but never an *app wait*: if the page was still changing after the previous
+ * action (a reply arriving, a list loading), the next action waits at least as long as it did
+ * when recorded (in real time, whatever the speed), so it doesn't fire before the app is ready.
+ */
+function trimIdle(points: Point[], maxIdle: number, speed: number, changes: number[]): Point[] {
   const out: Point[] = []
   let t = 0
   // Recorded time the previous step ended at: a typing run "ends" at its last keystroke.
   let prevEnd = points[0]?.t ?? 0
-  for (const p of points) {
+  // The previous action (press, release, key, typing), in recorded and baked time.
+  let action: { src: number; t: number } | null = null
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]
     t += Math.min(Math.max(p.t - prevEnd, 0), maxIdle) / speed
+
+    const isAction = p.press === "down" || p.mark?.kind === "key" || p.mark?.kind === "type"
+    if (isAction && action) {
+      const change = lastChangeIn(changes, action.src, p.t)
+      if (change !== null) {
+        const needed = Math.min(change - action.src + APP_SETTLE, p.t - action.src, MAX_APP_WAIT)
+        if (t - action.t < needed) {
+          // Arrive as usual, then hold on the target until the app is ready.
+          out.push({ t, src: p.t, x: p.x, y: p.y })
+          t = action.t + needed
+        }
+      }
+    }
+
     out.push({ ...p, src: p.t, t })
     prevEnd = p.t
+    if (p.press || isAction) action = { src: p.t, t }
 
-    // Replace the run's recorded span, pauses and all, with its steady typing duration.
+    // A typing run: its recorded span (pauses and all) becomes its steady typing duration.
+    // Anything recorded meanwhile (the cursor drifting, a scroll) keeps its own pace alongside
+    // the typing, so the cursor never jumps to catch up; the run lasts as long as either takes.
     // Typing time is not affected by `speed`; tune it with the typing options instead.
     if (p.mark?.kind === "type") {
-      t += p.mark.duration
-      out.push({ t, src: p.mark.run.end, x: p.x, y: p.y, mark: { kind: "hold" } })
-      prevEnd = p.mark.run.end
+      const run = p.mark.run
+      const start = t
+      let offset = 0
+      let last = run.start
+      let at = { x: p.x, y: p.y }
+      while (i + 1 < points.length) {
+        const q = points[i + 1]
+        if (q.t > run.end || q.press || q.mark?.kind === "type" || q.mark?.kind === "key") break
+        i++
+        offset += Math.min(Math.max(q.t - last, 0), maxIdle) / speed
+        last = q.t
+        out.push({ ...q, src: q.t, t: start + offset })
+        if (!isSide(q)) at = { x: q.x, y: q.y }
+      }
+      t = start + Math.max(p.mark.duration, offset)
+      out.push({ t, src: Math.max(run.end, last), x: at.x, y: at.y, mark: { kind: "hold" } })
+      prevEnd = Math.max(run.end, last)
+      action = { src: prevEnd, t }
     }
   }
   return out
@@ -235,6 +396,8 @@ function addDwell(keyframes: Keyframe[], dwell: number) {
   const out: Keyframe[] = []
   const events: BakedEvent[] = []
   const typing: BakedTyping[] = []
+  /** Each dwell inserted: before which (pre-dwell) time, and how long. */
+  const dwells: { at: number; amount: number }[] = []
   let shift = 0
   let lastDown: Keyframe | null = null
   for (const k of keyframes) {
@@ -244,18 +407,19 @@ function addDwell(keyframes: Keyframe[], dwell: number) {
     if (k.press === "down" && dwell > 0 && !isDoubleClick) {
       out.push({ t: k.t + shift, src: k.src, x: k.x, y: k.y, stop: true }) // arrive and hold
       shift += dwell
+      dwells.push({ at: k.t, amount: dwell })
     }
     if (k.press === "down") lastDown = k
     const t = k.t + shift
     out.push({ ...k, t })
-    if (k.press) events.push({ type: k.press, t, x: k.x, y: k.y })
-    if (k.mark?.kind === "key") events.push({ type: "key", t, key: k.mark.key, anchor: k.mark.anchor })
+    if (k.press) events.push({ type: k.press, t, x: k.x, y: k.y, source: k.source ?? -1, button: k.button ?? 0 })
+    if (k.mark?.kind === "key") events.push({ ...k.mark.key, type: "key", t })
     if (k.mark?.kind === "type") {
       const { run, index, duration } = k.mark
       typing.push({ index, t, duration, anchor: run.anchor, from: run.from, to: run.to })
     }
   }
-  return { keyframes: out, events, typing }
+  return { keyframes: out, events, typing, dwells }
 }
 
 /* --------------------------- 5. Curve + 6. Spring --------------------------- */
@@ -264,6 +428,8 @@ function springBake(
   keyframes: Keyframe[],
   events: BakedEvent[],
   typing: BakedTyping[],
+  side: SideInput,
+  targets: PressTarget[],
   options: SmoothingOptions,
 ): BakedTrack {
   const n = keyframes.length
@@ -314,7 +480,13 @@ function springBake(
     return w
   }
 
-  const duration = (keyframes[n - 1]?.t ?? 0) + TAIL
+  const duration =
+    Math.max(
+      keyframes[n - 1]?.t ?? 0,
+      side.scrolls.at(-1)?.t ?? 0,
+      side.wheels.at(-1)?.t ?? 0,
+      side.gestures.at(-1)?.t ?? 0,
+    ) + TAIL
   const frames = Math.ceil(duration / STEP) + 1
   const points = new Float32Array(frames * 2)
   const start = keyframes[0] ?? { x: 0, y: 0 }
@@ -339,7 +511,7 @@ function springBake(
   // Recorded ↔ baked time pairs from the keyframes (both ascending), for placing edits.
   const timeMap = { source: keyframes.map((k) => k.src ?? 0), baked: keyframes.map((k) => k.t) }
 
-  return { step: STEP, points, duration, events, typing, timeMap }
+  return { step: STEP, points, duration, events, typing, ...side, targets, timeMap }
 }
 
 /** Recorded time (ms) → time on the baked timeline. */
