@@ -25,8 +25,10 @@ type Mode = "idle" | "playing" | "recording"
 /** Dev panels are toggled with URL flags: `?record=true`, `?edit=true` (and `=false` to hide). */
 type DevFlag = "record" | "edit"
 
-function readFlag(flag: DevFlag) {
-  return new URLSearchParams(window.location.search).get(flag) === "true"
+/** `fallback` applies when the URL doesn't set the flag at all. */
+function readFlag(flag: DevFlag, fallback = false) {
+  const value = new URLSearchParams(window.location.search).get(flag)
+  return value === null ? fallback : value === "true"
 }
 
 /** Write a flag to the URL without reloading, so a refresh keeps the panel open or closed. */
@@ -53,6 +55,13 @@ export type CursorStageProps = {
   interruptible?: boolean
   /** After an interruption, restart playback once the user has been idle this long (ms). `null` = never. */
   resumeAfterIdle?: number | null
+  /**
+   * Endpoint that stores the shared recording. Every saved take (and edit) is PUT here and a
+   * discarded take is DELETEd, so other visitors get it as `recording`. Unset = local only.
+   */
+  persistUrl?: string
+  /** Show the recorder when the URL has no `?record=` flag (e.g. on a dedicated recording page). */
+  defaultRecorder?: boolean
   className?: string
 }
 
@@ -73,6 +82,8 @@ export function CursorStage({
   resetOnLoop = true,
   interruptible = true,
   resumeAfterIdle = 8000,
+  persistUrl,
+  defaultRecorder = false,
   className,
 }: CursorStageProps) {
   const stageRef = useRef<HTMLDivElement>(null)
@@ -111,7 +122,7 @@ export function CursorStage({
 
   // Dev flags from the URL. Either panel restores the last local take.
   useEffect(() => {
-    const record = readFlag("record")
+    const record = readFlag("record", defaultRecorder)
     const edit = readFlag("edit")
     setRecorderEnabled(record)
     setEditorEnabled(edit)
@@ -229,11 +240,30 @@ export function CursorStage({
 
   /* -------------------------------- Recorder -------------------------------- */
 
-  const saveTake = useCallback((next: CursorRecording | null) => {
-    setTake(next)
-    if (next) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
-    else window.localStorage.removeItem(STORAGE_KEY)
-  }, [])
+  /** Pending upload to `persistUrl`: edits arrive in bursts (sliders), so only the last one is sent. */
+  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  const saveTake = useCallback(
+    (next: CursorRecording | null) => {
+      setTake(next)
+      if (next) window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+      else window.localStorage.removeItem(STORAGE_KEY)
+
+      if (!persistUrl) return
+      clearTimeout(persistTimerRef.current)
+      persistTimerRef.current = setTimeout(() => {
+        const request = next
+          ? fetch(persistUrl, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(next) })
+          : fetch(persistUrl, { method: "DELETE" })
+        request
+          .then((res) => {
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          })
+          .catch((err) => console.error("[cursor-engine] failed to store the recording:", err))
+      }, 400)
+    },
+    [persistUrl],
+  )
 
   const startRecording = useCallback(() => {
     setIteration((i) => i + 1) // record from the screen's initial state, as playback starts from it

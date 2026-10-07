@@ -1,22 +1,39 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Ellipsis, SquarePen, X } from "lucide-react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { flushSync } from "react-dom"
+import { Check, Ellipsis, SquarePen, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { screenScale } from "@/lib/screen-scale"
+import { COMPONENT_PULL_REQUEST, PULL_REQUEST, type PullRequest } from "./agent-script"
+import { AgentsPopover } from "./agents-popover"
 import { BuildAgentComposer, COMPOSER_HEIGHT, COMPOSER_WIDTH } from "./build-agent-composer"
-import { CALENDAR_ELEMENTS } from "./calendar-elements"
+import { useBuildAgents, type PlaceVariants, type VariantState } from "./build-agents"
+import { AIRBNB_ELEMENTS } from "./airbnb-elements"
 import { CanvasText, DrawnFrame, TEXT_LINE_HEIGHT, type CanvasElement } from "./canvas-elements"
-import { CodeChangesPopover, CODE_CHANGES_TOTAL } from "./code-changes-popover"
+import { builtVariantChange } from "./built-change"
+import { CODE_CHANGES, CodeChangesPopover, totalsOf } from "./code-changes-popover"
 import { CodebaseFrame, CANVAS_ZOOM, CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
 import { CodebaseSettingsPanel } from "./codebase-settings-panel"
 import { trackDrag, useMeasuredRect, type CanvasRect } from "./drag"
 import { FrameSettingsPanel } from "./frame-settings-panel"
 import { GithubButton } from "./github-popover"
 import { LeftSidebar } from "./left-sidebar"
-import { DesignFrame, type Corner } from "./planner-frame"
+import {
+  builtComponentsChange,
+  ComponentDragGhost,
+  ComponentSettingsPanel,
+  FrameComponentsLayer,
+  NEW_BADGE,
+  NEW_BADGE_SIZE,
+  type FrameComponent,
+  type InsertableComponent,
+} from "./library-components"
+import { BuildAgentButton, DesignFrame, type CanvasEntrance, type Corner } from "./planner-frame"
 import { PortalView } from "./portal-view"
 import { ShareButton } from "./share-popover"
 import { TextSettingsPanel } from "./text-settings-panel"
+import { AgentCursor, agentPartSelector, VariantFrame } from "./variant-frame"
 
 type Tool = "select" | "frame" | "text" | "code"
 
@@ -24,11 +41,11 @@ type Tool = "select" | "frame" | "text" | "code"
 // The hero canvas is a showcase, not an infinite canvas: zoom and pan are both bounded.
 
 /**
- * Furthest the user can zoom out / in. The floor reads as 0% in the zoom readout; it stays just
- * above a true 0 because zoom is multiplicative (0 × anything = 0, so it could never zoom back in).
+ * Furthest the user can zoom out / in: 12% to 40% in the zoom readout (the canvas opens at 30%).
+ * Zoomed right out, the ring of explored screens around the app's elements comes into view.
  */
-const MIN_ZOOM = 0.004
-const MAX_ZOOM = 1.5
+const MIN_ZOOM = 0.12
+const MAX_ZOOM = 0.4
 
 /**
  * Pan limits follow the frames: the viewport centre can travel over the area the frames cover
@@ -56,12 +73,52 @@ function elementRect(el: CanvasElement): CanvasRect {
 const COMPOSER_GAP = 12
 /** Top bar height: the input never slides under it. */
 const TOP_BAR_HEIGHT = 44
+/** Measured sizes (for the Build Agent chat's placement) update once a resize has settled (ms). */
+const MEASURE_SETTLE_MS = 120
+/** A top-bar group's panel: the side panels' background, border and shadow, in a 36px pill that
+ * fits the 32px buttons (1px border + 1px padding). */
+const TOP_GROUP =
+  "h-9 rounded-xl border border-stone-700/10 bg-[#f2f2f1] p-px shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]"
+
+/**
+ * Canvas entrance after leaving the Portal: elements start this fraction of their (screen-px)
+ * distance from the Codebase frame further out, at least ENTER_MIN_TRAVEL px. Their delays sweep
+ * clockwise around the frame over ENTER_SWEEP_MS, starting at the top-left diagonal; the sweep is
+ * shorter than each element's glide (see ENTRANCE_DURATION_MS in planner-frame), so sides overlap.
+ */
+const ENTER_SPREAD = 0.6
+const ENTER_MIN_TRAVEL = 60
+/** Portal fade-out before the canvas entrance starts (matches PortalView's `closing` transition). */
+const PORTAL_EXIT_MS = 300
+/** After the Portal opens, it has faded in (150ms) and fully covers the canvas by then (ms). */
+const PORTAL_COVER_MS = 400
+const ENTER_BASE_DELAY = 120
+const ENTER_SWEEP_MS = 1440
+/** Where the sweep starts, in turns clockwise from straight up (−⅛ = the top-left diagonal). */
+const ENTER_SWEEP_START = -1 / 8
+
+/**
+ * Build Agent variants: each source's variants form a row below everything on the canvas, starting
+ * under the source's left edge, VARIANT_GAP apart; rows are VARIANT_ROW_GAP apart (canvas units).
+ */
+const VARIANT_GAP = 90
+const VARIANT_ROW_GAP = 240
+/** Screen-px gap from the agent's cursor badge to the corner of the piece it's editing. */
+const AGENT_CURSOR_INSET = 2
 
 /** x/y: screen-px offset of the canvas origin from the viewport centre. */
 type Camera = { x: number; y: number; zoom: number }
 
-/** Canvas-unit area the viewport centre may pan over. */
-type Bounds = { minX: number; maxX: number; minY: number; maxY: number }
+/**
+ * Canvas-unit area the viewport centre may pan over, and the canvas's `fit`: its width over
+ * REFERENCE_CANVAS_WIDTH. Zoom levels (the opening view, the limits, every scripted zoom) are
+ * tuned at the reference width and scale with the fit, so the canvas shows the same composition
+ * at any screen size.
+ */
+type Bounds = { minX: number; maxX: number; minY: number; maxY: number; fit: number }
+
+/** Canvas width (px) the zoom levels are tuned at; see Bounds.fit. */
+const REFERENCE_CANVAS_WIDTH = 1280
 
 /** Selection box in screen px. */
 type Marquee = { left: number; top: number; width: number; height: number }
@@ -70,17 +127,18 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function frameBounds(rects: CanvasRect[]): Bounds {
+function frameBounds(rects: CanvasRect[], fit: number): Bounds {
   return {
     minX: Math.min(...rects.map((r) => r.x - r.w / 2)) - PAN_MARGIN_X,
     maxX: Math.max(...rects.map((r) => r.x + r.w / 2)) + PAN_MARGIN_X,
     minY: Math.min(...rects.map((r) => r.y - r.h / 2)) - PAN_MARGIN_Y,
     maxY: Math.max(...rects.map((r) => r.y + r.h / 2)) + PAN_MARGIN_Y,
+    fit,
   }
 }
 
 function clampCamera({ x, y, zoom }: Camera, bounds: Bounds): Camera {
-  const z = clamp(zoom, MIN_ZOOM, MAX_ZOOM)
+  const z = clamp(zoom, MIN_ZOOM * bounds.fit, MAX_ZOOM * bounds.fit)
   return {
     zoom: z,
     x: clamp(x, -bounds.maxX * z, -bounds.minX * z),
@@ -90,14 +148,15 @@ function clampCamera({ x, y, zoom }: Camera, bounds: Bounds): Camera {
 
 /** Zoom to `nextZoom`, keeping the point under the cursor (px, py from viewport centre) fixed. */
 function zoomAt(camera: Camera, nextZoom: number, px: number, py: number, bounds: Bounds): Camera {
-  const zoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM)
+  const zoom = clamp(nextZoom, MIN_ZOOM * bounds.fit, MAX_ZOOM * bounds.fit)
   const ratio = zoom / camera.zoom
   return clampCamera({ zoom, x: px - (px - camera.x) * ratio, y: py - (py - camera.y) * ratio }, bounds)
 }
 
 /**
  * Opening view: the Codebase frame (centred on the canvas origin) centred in the viewport, with
- * the iPad Calendar elements spread around it.
+ * the Fairbnb desktop elements spread around it. This is the view at the reference width; it's
+ * scaled to the canvas's real width before the first paint (see the fit effect in HeroScreen).
  */
 function initialCamera(): Camera {
   return { zoom: CANVAS_ZOOM, x: 0, y: 0 }
@@ -106,21 +165,122 @@ function initialCamera(): Camera {
 /** Safari's trackpad-pinch event (not in lib.dom). */
 type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number }
 
-export function HeroScreen() {
+/**
+ * Where the screen opens (the demo clips each start from one of these):
+ * - "portal": in the Portal, the live app (default).
+ * - "canvas": on the canvas, the Portal already left.
+ * - "designed": on the canvas, with the "Check in" badge designed into the trip card's frame.
+ * - "built": like "designed", and that badge is already built into the codebase (live app).
+ */
+export type HeroStart = "portal" | "canvas" | "designed" | "built"
+
+/** Badge size in the trip card frame, in canvas units (a large "Check in", see library-components). */
+const DESIGNED_BADGE_SIZE = { w: 8 * (CODEBASE_WIDTH / 100), h: 2.55 * (CODEBASE_WIDTH / 100) }
+
+/**
+ * The "Check in" badge as the demo designs it: red, large, in the trip card's top-right corner,
+ * inset by the card's own padding (≈ 4.5% of its width).
+ */
+function designedCheckInBadge(): FrameComponent {
+  const card = AIRBNB_ELEMENTS.find((el) => el.id === "card-upcoming-trip")!
+  const inset = card.rect.w * 0.045
+  return {
+    id: "component-1",
+    component: "Badge",
+    frameId: card.id,
+    cardTitle: card.cardTitle!,
+    x: card.rect.w - inset - DESIGNED_BADGE_SIZE.w,
+    y: inset,
+    label: "Check in",
+    tone: "red",
+    size: "lg",
+  }
+}
+
+export function HeroScreen({
+  className,
+  reopened = false,
+  start = "portal",
+}: {
+  className?: string
+  /** Follows a previous demo run: open the Portal out of the canvas colour it ended on. */
+  reopened?: boolean
+  /** Where the screen opens; see HeroStart. Only read on mount. */
+  start?: HeroStart
+} = {}) {
+  /** Library components already in frames when the screen opens. */
+  const [seededComponents] = useState<FrameComponent[]>(() =>
+    start === "designed" || start === "built" ? [designedCheckInBadge()] : [],
+  )
   const [tool, setTool] = useState<Tool>("select")
   const [codebaseSelected, setCodebaseSelected] = useState(false)
-  /** Ids of the selected iPad Calendar element frames. */
+  /** Ids of the selected Fairbnb element frames. */
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [agentOpen, setAgentOpen] = useState(false)
-  /** The Build Agent is "working" on the active frame (its prompt was sent, no reply yet). */
-  const [agentWorking, setAgentWorking] = useState(false)
+  /** Simulated Build Agents: sessions per selection, the variants they generate, their cursors. */
+  const agents = useBuildAgents(start === "built" ? seededComponents : [])
+  /** Where each generating agent's cursor sits, in canvas units (measured from the piece it edits). */
+  const [cursorAt, setCursorAt] = useState<Record<number, { x: number; y: number }>>({})
+  /** "Choose where to build" is on for this agent session: clicking one of its variants builds it. */
+  const [pickSession, setPickSession] = useState<number | null>(null)
+  /** Code changes made this session (the built variant's / components' diffs) on top of the project's. */
+  // Memoized (along with what's derived from it) so the top bar's memoized controls skip camera frames.
+  const { builtComponents, builtVariant } = agents
+  const sessionChanges = useMemo(
+    () => [
+      ...(builtComponents.length > 0 ? [builtComponentsChange(builtComponents)] : []),
+      ...(builtVariant ? [builtVariantChange(builtVariant)] : []),
+    ],
+    [builtComponents, builtVariant],
+  )
+  const changeTotals = useMemo(() => totalsOf([...sessionChanges, ...CODE_CHANGES]), [sessionChanges])
+  const githubChanges = useMemo(
+    () => ({ files: sessionChanges.length + CODE_CHANGES.length, ...changeTotals }),
+    [sessionChanges, changeTotals],
+  )
+  /** The agents' thumbs for the AgentsPopover (memoized: it only changes with the sessions). */
+  const agentThumbs = useMemo(() => agents.sessions.map((s) => ({ id: s.id, working: s.working })), [agents.sessions])
+  /** What syncing opens: the library-component story's PR once a frame was built, else the variants one. */
+  const pullRequest: PullRequest = agents.builtComponents.length > 0 ? COMPONENT_PULL_REQUEST : PULL_REQUEST
+  /** Library components dropped into frames (see library-components), and the selected one. */
+  const [frameComponents, setFrameComponents] = useState<FrameComponent[]>(seededComponents)
+  const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null)
+  const selectedComponent = frameComponents.find((c) => c.id === selectedComponentId)
+  const nextComponentId = useRef(seededComponents.length + 1)
+  /** A library component being dragged out of the sidebar: the ghost's spot, in root px. */
+  const [libraryDrag, setLibraryDrag] = useState<{ x: number; y: number } | null>(null)
+  /** The pull request was merged: the canvas closes (end of the story). */
+  const [canvasClosed, setCanvasClosed] = useState(false)
+  const closeCanvas = useCallback(() => setCanvasClosed(true), [])
   /** Rendered Build Agent height (it grows with the chat), so it can be kept on screen. */
   const [composerHeight, setComposerHeight] = useState(COMPOSER_HEIGHT)
   const [changesOpen, setChangesOpen] = useState(false)
   const closeChanges = useCallback(() => setChangesOpen(false), [])
-  /** The Codebase frame is open in the Portal View (double-click the frame). */
-  const [portalOpen, setPortalOpen] = useState(false)
-  const closePortal = useCallback(() => setPortalOpen(false), [])
+  /**
+   * The Codebase frame is open in the Portal View (double-click the frame). The screen opens
+   * inside the Portal; leaving it reveals the canvas.
+   */
+  const [portalOpen, setPortalOpen] = useState(start === "portal")
+  /** The Portal is fading out (PORTAL_EXIT_MS); the canvas elements stay hidden until it's gone. */
+  const [portalClosing, setPortalClosing] = useState(false)
+  /** Bumped once the Portal has closed: the canvas elements replay their entrance (see `entranceFor`). */
+  const [revealId, setRevealId] = useState(0)
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Sequence: fade the Portal out first, then unmount it and start the canvas entrance. Only the
+  // first close plays the entrance; after that the elements are simply there when the Portal goes.
+  // A screen that opened on the canvas never plays it (its elements were there from the start).
+  const opensInPortal = start === "portal"
+  const closePortal = useCallback(() => {
+    if (closeTimerRef.current !== undefined) return // already closing
+    setPortalClosing(true)
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = undefined
+      setPortalClosing(false)
+      setPortalOpen(false)
+      if (opensInPortal) setRevealId((id) => (id === 0 ? 1 : id))
+    }, PORTAL_EXIT_MS)
+  }, [opensInPortal])
+  useEffect(() => () => clearTimeout(closeTimerRef.current), [])
   const [camera, setCamera] = useState<Camera>(initialCamera)
   const [panning, setPanning] = useState(false)
   /** Select-tool selection box, in screen px relative to the hero root. */
@@ -128,13 +288,60 @@ export function HeroScreen() {
   /** Frame positions/sizes in canvas units (centre-based); the Codebase frame starts at the origin. */
   const [codebaseRect, setCodebaseRect] = useState<CanvasRect>({ x: 0, y: 0, w: CODEBASE_WIDTH, h: CODEBASE_HEIGHT })
   const [elementRects, setElementRects] = useState<Record<string, CanvasRect>>(() =>
-    Object.fromEntries(CALENDAR_ELEMENTS.map((el) => [el.id, el.rect])),
+    Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.rect])),
   )
-  /** Corner radius per iPad Calendar element frame, in canvas units (null = square); editable via the radius thumbs. */
+  /** Corner radius per Fairbnb element frame, in canvas units (null = square); editable via the radius thumbs. */
   const [elementRadii, setElementRadii] = useState<Record<string, number | null>>(() =>
-    Object.fromEntries(CALENDAR_ELEMENTS.map((el) => [el.id, el.radius])),
+    Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.radius])),
   )
   const canvasRef = useRef<HTMLDivElement>(null)
+  /**
+   * The canvas's width over REFERENCE_CANVAS_WIDTH (see Bounds). Measured before the first paint
+   * and on every resize; when it changes, the camera is scaled by the same ratio (zoom and pan
+   * offset alike), so whatever was in view stays in view at the same place, just larger or smaller.
+   */
+  const [fit, setFit] = useState(1)
+  const fitRef = useRef(1)
+  useLayoutEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const canvas = el
+    function measure() {
+      const width = canvas.clientWidth
+      if (!width) return
+      const next = width / REFERENCE_CANVAS_WIDTH
+      const ratio = next / fitRef.current
+      if (Math.abs(ratio - 1) < 1e-4) return
+      fitRef.current = next
+      setFit(next)
+      setCamera((c) => ({ zoom: c.zoom * ratio, x: c.x * ratio, y: c.y * ratio }))
+    }
+    measure()
+    // Applied synchronously, within the frame that resized the canvas (ResizeObserver runs after
+    // layout, before paint). A regular update would commit after that frame is painted, so while
+    // the hero window grows with the page scroll the canvas would trail its window by a frame and
+    // wobble; flushed here, the window and its contents move as one.
+    const observer = new ResizeObserver(() => flushSync(measure))
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [])
+  /**
+   * The Portal has fully faded in over the canvas (it's opaque and covers the whole screen). The
+   * Codebase frame's live app underneath is then skipped from rendering (see CodebaseFrame's
+   * `covered`): it keeps its state, but no longer re-lays out and repaints, unseen, on every frame
+   * of the hero window's growth or its intro. It's back the moment the Portal starts closing (and
+   * while the Portal fades in over it), so nothing visible ever changes.
+   */
+  const [portalSettled, setPortalSettled] = useState(false)
+  useEffect(() => {
+    if (!portalOpen || portalClosing) return
+    const timer = setTimeout(() => setPortalSettled(true), PORTAL_COVER_MS)
+    return () => {
+      clearTimeout(timer)
+      setPortalSettled(false)
+    }
+  }, [portalOpen, portalClosing])
+  const canvasCovered = portalSettled && portalOpen && !portalClosing
   const lastPointer = useRef<{ x: number; y: number } | null>(null)
   /** Frames and text the user adds with the Frame / Text tools (selected via `selectedIds` too). */
   const [drawnElements, setDrawnElements] = useState<CanvasElement[]>([])
@@ -142,20 +349,48 @@ export function HeroScreen() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const nextDrawnId = useRef(1)
   const frameCount = useRef(0)
-  const [rootRef, rootRect] = useMeasuredRect()
-  const [sidebarRef, sidebarRect] = useMeasuredRect()
-  const [panelRef, panelRect] = useMeasuredRect()
+  // The root and the settings panel resize every frame while the hero window grows / shrinks with
+  // the page scroll; re-measure once that settles rather than re-rendering the screen each frame
+  // (the canvas itself is laid out in CSS and follows along on its own).
+  const [rootRef, rootRect, rootBox] = useMeasuredRect(MEASURE_SETTLE_MS)
+  const [sidebarRef, , sidebarBox] = useMeasuredRect()
+  const [panelRef, , panelBox] = useMeasuredRect(MEASURE_SETTLE_MS)
+
+  /**
+   * A screen point (pointer clientX / Y) in the root's layout px, with the root's layout size.
+   * The hero window may draw the screen scaled while it grows (see lib/screen-scale), so screen
+   * distances are divided by that scale; unscaled it's a plain offset. Measured fresh, so it's
+   * right wherever the page has scrolled to. (The canvas fills the root exactly.)
+   */
+  function toLocal(clientX: number, clientY: number) {
+    const canvas = canvasRef.current!
+    const r = canvas.getBoundingClientRect()
+    const k = screenScale(canvas)
+    return { x: (clientX - r.left) / k, y: (clientY - r.top) / k, width: r.width / k, height: r.height / k, k }
+  }
 
   /** The one element frame that owns the settings panel and Build Agent (single selection only). */
   const activeElement =
-    !codebaseSelected && selectedIds.length === 1 ? CALENDAR_ELEMENTS.find((el) => el.id === selectedIds[0]) : undefined
+    !codebaseSelected && selectedIds.length === 1 ? AIRBNB_ELEMENTS.find((el) => el.id === selectedIds[0]) : undefined
   const activeRect = activeElement ? elementRects[activeElement.id] : undefined
   /** A single selected drawn frame / text (its settings panel shows). */
   const activeDrawn =
     !codebaseSelected && selectedIds.length === 1 ? drawnElements.find((el) => el.id === selectedIds[0]) : undefined
 
   // The native wheel/gesture listeners are registered once, so they read the bounds from a ref.
-  const bounds = frameBounds([codebaseRect, ...Object.values(elementRects), ...drawnElements.map(elementRect)])
+  const bounds = useMemo(
+    () =>
+      frameBounds(
+        [codebaseRect, ...Object.values(elementRects), ...drawnElements.map(elementRect), ...agents.variants.map((v) => v.rect)],
+        fit,
+      ),
+    [codebaseRect, elementRects, drawnElements, agents.variants, fit],
+  )
+  /** What the Share button compares against its last publish (memoized: same values, same array). */
+  const shareChanges = useMemo(
+    () => [drawnElements, elementRects, elementRadii, frameComponents],
+    [drawnElements, elementRects, elementRadii, frameComponents],
+  )
   const boundsRef = useRef(bounds)
   useEffect(() => {
     boundsRef.current = bounds
@@ -167,10 +402,19 @@ export function HeroScreen() {
     if (codebaseSelected) return
     setCodebaseSelected(true)
     setSelectedIds([])
+    setSelectedComponentId(null)
     setAgentOpen(false)
   }
 
-  function selectElement(id: string) {
+  /** Select a frame; with Shift, add it to (or remove it from) the selection instead. */
+  function selectElement(id: string, additive = false) {
+    setSelectedComponentId(null)
+    if (additive) {
+      setAgentOpen(false)
+      setCodebaseSelected(false)
+      setSelectedIds((ids) => (ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id]))
+      return
+    }
     if (selectedIds.includes(id)) return
     setAgentOpen(false)
     setSelectedIds([id])
@@ -180,9 +424,10 @@ export function HeroScreen() {
   /**
    * Drag a frame with the Select tool: screen-px movement ÷ zoom = canvas units. Pressing a frame
    * that was already selected moves every selected frame; otherwise only the pressed one.
+   * Shift-presses only change the selection.
    */
   function startMove(e: React.PointerEvent, frame: "codebase" | { elementId: string }) {
-    if (tool !== "select" || e.button !== 0) return
+    if (tool !== "select" || e.button !== 0 || e.shiftKey) return
     const zoom = camera.zoom
     const pressedId = frame === "codebase" ? null : frame.elementId
     const wasSelected = pressedId === null ? codebaseSelected : selectedIds.includes(pressedId)
@@ -212,10 +457,10 @@ export function HeroScreen() {
 
   /** Screen point → canvas units. */
   function toCanvas(clientX: number, clientY: number) {
-    const r = rootRect!
+    const p = toLocal(clientX, clientY)
     return {
-      x: (clientX - r.left - r.width / 2 - camera.x) / camera.zoom,
-      y: (clientY - r.top - r.height / 2 - camera.y) / camera.zoom,
+      x: (p.x - p.width / 2 - camera.x) / camera.zoom,
+      y: (p.y - p.height / 2 - camera.y) / camera.zoom,
     }
   }
 
@@ -278,6 +523,96 @@ export function HeroScreen() {
     )
   }
 
+  /**
+   * Drag a component out of the Components library: a ghost follows the pointer; dropped on an
+   * event frame, an instance lands there (centred on the drop point) and gets selected. Dropped
+   * anywhere else (back on the sidebar, empty canvas, a non-event frame), nothing is added: only
+   * event cards can carry it into the live app.
+   */
+  function startLibraryDrag(e: React.PointerEvent, component: InsertableComponent) {
+    if (!rootRect) return
+    const startX = e.clientX
+    const startY = e.clientY
+    // The ghost is placed in the root's layout px; the drop is hit-tested at the screen point.
+    const start = toLocal(startX, startY)
+    let last: { clientX: number; clientY: number } | null = null
+    trackDrag(
+      e,
+      (dx, dy) => {
+        last = { clientX: startX + dx * start.k, clientY: startY + dy * start.k }
+        setLibraryDrag({ x: start.x + dx, y: start.y + dy })
+      },
+      () => {
+        setLibraryDrag(null)
+        if (last) dropComponent(component, last.clientX, last.clientY)
+      },
+    )
+  }
+  /**
+   * Stable handle for the (memoized) sidebar: it always runs the latest `startLibraryDrag`, so a
+   * press reads the current camera and rects exactly as passing the function directly did.
+   */
+  const startLibraryDragRef = useRef(startLibraryDrag)
+  useLayoutEffect(() => {
+    startLibraryDragRef.current = startLibraryDrag
+  })
+  const onLibraryDragStart = useCallback(
+    (e: React.PointerEvent, component: InsertableComponent) => startLibraryDragRef.current(e, component),
+    [],
+  )
+
+  function dropComponent(component: InsertableComponent, clientX: number, clientY: number) {
+    // Hit-tested in the root's layout px (the sidebar's layout box is relative to the root).
+    const at = toLocal(clientX, clientY)
+    const overSidebar =
+      sidebarBox &&
+      at.x >= sidebarBox.left &&
+      at.x <= sidebarBox.left + sidebarBox.width &&
+      at.y >= sidebarBox.top &&
+      at.y <= sidebarBox.top + sidebarBox.height
+    if (overSidebar) return
+    const p = toCanvas(clientX, clientY)
+    const inside = (r: CanvasRect) => Math.abs(p.x - r.x) <= r.w / 2 && Math.abs(p.y - r.y) <= r.h / 2
+    // Topmost first: later elements paint over earlier ones. Only cards (they carry a title) take components.
+    const target = [...AIRBNB_ELEMENTS].reverse().find((el) => el.cardTitle && inside(elementRects[el.id]))
+    const cardTitle = target?.cardTitle
+    if (!target || !cardTitle) return
+    const r = elementRects[target.id]
+    const id = `component-${nextComponentId.current++}`
+    setFrameComponents((list) => [
+      ...list,
+      {
+        id,
+        component,
+        frameId: target.id,
+        cardTitle,
+        x: Math.max(0, p.x - (r.x - r.w / 2) - NEW_BADGE_SIZE.w / 2),
+        y: Math.max(0, p.y - (r.y - r.h / 2) - NEW_BADGE_SIZE.h / 2),
+        ...NEW_BADGE,
+      },
+    ])
+    setSelectedComponentId(id)
+    setSelectedIds([])
+    setCodebaseSelected(false)
+    setAgentOpen(false)
+  }
+
+  /** Press a component instance: select it; with the Select tool, drag it around inside its frame. */
+  function pressComponent(e: React.PointerEvent, id: string) {
+    setSelectedComponentId(id)
+    setSelectedIds([])
+    setCodebaseSelected(false)
+    setAgentOpen(false)
+    setPickSession(null)
+    if (tool !== "select" || e.button !== 0) return
+    const from = frameComponents.find((c) => c.id === id)
+    if (!from) return
+    const zoom = camera.zoom
+    trackDrag(e, (dx, dy) =>
+      setFrameComponents((list) => list.map((c) => (c.id === id ? { ...c, x: from.x + dx / zoom, y: from.y + dy / zoom } : c))),
+    )
+  }
+
   /** Finish typing: empty text is removed, otherwise the content is saved. */
   function commitText(id: string, content: string) {
     setEditingId((current) => (current === id ? null : current))
@@ -310,11 +645,12 @@ export function HeroScreen() {
   /** Select tool drag on empty canvas: draw a selection box; frames it touches get selected. */
   function startMarquee(e: React.PointerEvent) {
     if (!rootRect) return
-    const originX = e.clientX - rootRect.left
-    const originY = e.clientY - rootRect.top
+    const origin = toLocal(e.clientX, e.clientY)
+    const originX = origin.x
+    const originY = origin.y
     const z = camera.zoom
-    const centreX = rootRect.width / 2 + camera.x
-    const centreY = rootRect.height / 2 + camera.y
+    const centreX = origin.width / 2 + camera.x
+    const centreY = origin.height / 2 + camera.y
     const touches = (r: CanvasRect, box: Marquee) =>
       centreX + (r.x - r.w / 2) * z < box.left + box.width &&
       centreX + (r.x + r.w / 2) * z > box.left &&
@@ -332,7 +668,7 @@ export function HeroScreen() {
         setMarquee(box)
         setCodebaseSelected(touches(codebaseRect, box))
         setSelectedIds([
-          ...CALENDAR_ELEMENTS.filter((el) => touches(elementRects[el.id], box)).map((el) => el.id),
+          ...AIRBNB_ELEMENTS.filter((el) => touches(elementRects[el.id], box)).map((el) => el.id),
           ...drawnElements.filter((el) => touches(elementRect(el), box)).map((el) => el.id),
         ])
       },
@@ -376,21 +712,149 @@ export function HeroScreen() {
   }
 
   /**
-   * Build Agent input: sits right of the frame's top-right corner. The shift keeps it clear of the
-   * left sidebar, the settings panel and the top bar; it's animated so the input glides aside.
+   * The Build Agent works on the selected Fairbnb frames (one or several, nothing else
+   * selected). `agentRect` is the bounding box of the selection, centre-based, in canvas units.
    */
+  const agentIds = !codebaseSelected && selectedIds.length > 0 && selectedIds.every((id) => id in elementRects) ? selectedIds : []
+  let agentRect: CanvasRect | undefined
+  if (agentIds.length > 0) {
+    const rects = agentIds.map((id) => elementRects[id])
+    const left = Math.min(...rects.map((r) => r.x - r.w / 2))
+    const right = Math.max(...rects.map((r) => r.x + r.w / 2))
+    const top = Math.min(...rects.map((r) => r.y - r.h / 2))
+    const bottom = Math.max(...rects.map((r) => r.y + r.h / 2))
+    agentRect = { x: (left + right) / 2, y: (top + bottom) / 2, w: right - left, h: bottom - top }
+  }
+  /**
+   * The selection's chat. A single frame with no chat of its own picks up the latest chat that
+   * generated variants from it (e.g. one card of a multi-card run reopens that run).
+   */
+  const agentSession =
+    agentIds.length === 0
+      ? undefined
+      : (agents.sessionFor(agentIds) ??
+        (agentIds.length === 1
+          ? agents.sessions.findLast(
+              (s) => s.elementIds.includes(agentIds[0]) && agents.variants.some((v) => v.sessionId === s.id),
+            )
+          : undefined))
+  /** Frames an agent is reading / replying about, with its chat open (tint + dashed outline). */
+  const workingIds = new Set(
+    agents.sessions
+      .filter((s) => s.working && s.phase !== "generating" && s.phase !== "building")
+      .flatMap((s) => s.elementIds),
+  )
+  /** Frames an agent is generating variants from / building: their spinning agent badge. */
+  const busySessions = agents.sessions.filter((s) => s.working && (s.phase === "generating" || s.phase === "building"))
+  const busyIds = new Set(busySessions.flatMap((s) => s.elementIds))
+
+  // When the open chat's agent starts generating / building, the chat closes and the selection
+  // clears: the canvas shows the work, the originals only their spinning agent badge.
+  const busyKey = busySessions.map((s) => s.id).join(",")
+  const openSessionId = agentOpen ? agentSession?.id : undefined
+  useEffect(() => {
+    if (openSessionId === undefined || !busySessions.some((s) => s.id === openSessionId)) return
+    setAgentOpen(false)
+    setSelectedIds([])
+    setPickSession(null)
+    // Only when an agent starts (or the open chat changes); busySessions is derived from busyKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busyKey, openSessionId])
+
+  /** Variant rows go below everything on the canvas, one row per source (see VARIANT_GAP). */
+  const placeVariants: PlaceVariants = (sources) => {
+    // Below the app's own elements, in the lane the explored screens leave free (they sit above
+    // and to either side).
+    const appRects = AIRBNB_ELEMENTS.filter((el) => !el.exploration).map((el) => elementRects[el.id])
+    const occupied = [codebaseRect, ...appRects, ...agents.variants.map((v) => v.rect)]
+    let top = Math.max(...occupied.map((r) => r.y + r.h / 2)) + VARIANT_ROW_GAP
+    return sources.map(({ elementId, count }) => {
+      const source = elementRects[elementId]
+      const left = source.x - source.w / 2
+      const row = Array.from({ length: count }, (_, i) => ({
+        x: left + i * (source.w + VARIANT_GAP) + source.w / 2,
+        y: top + source.h / 2,
+        w: source.w,
+        h: source.h,
+      }))
+      top += source.h + VARIANT_ROW_GAP
+      return row
+    })
+  }
+
+  // Agent cursors: after each step, find the piece being edited and park the cursor at its
+  // top-left corner (canvas units, so panning / zooming doesn't move it).
+  const focus = agents.focus
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const box = canvas.getBoundingClientRect()
+    // Screen px → the canvas's layout px (the screen may be drawn scaled).
+    const k = screenScale(canvas)
+    const next: Record<number, { x: number; y: number }> = {}
+    for (const [id, f] of Object.entries(focus)) {
+      if (!f) continue
+      const piece = canvas.querySelector(agentPartSelector(f.variantId, f.part))
+      if (!piece) continue
+      const r = piece.getBoundingClientRect()
+      next[Number(id)] = {
+        x: ((r.left - box.left) / k - AGENT_CURSOR_INSET - box.width / k / 2 - camera.x) / camera.zoom,
+        y: ((r.top - box.top) / k - AGENT_CURSOR_INSET - box.height / k / 2 - camera.y) / camera.zoom,
+      }
+    }
+    setCursorAt(next)
+    // Re-measure only when an agent moves on to another piece; the camera is read as it is then.
+  }, [focus])
+
+  /**
+   * Build Agent input: sits right of the selection's top-right corner. The shift keeps it clear of
+   * the left sidebar, the settings panel and the top bar; it's animated so the input glides aside.
+   * While picking a variant it glides to the selection's left instead: variant rows run rightward
+   * from their source, so on the right it would sit over the variants being picked from.
+   */
+  // Placed in the root's layout px, from layout boxes, so it holds while the screen is drawn scaled.
   let composer: { left: number; top: number; shiftX: number; shiftY: number } | null = null
-  if (activeRect && agentOpen && rootRect) {
+  if (agentRect && agentOpen && rootBox) {
     const z = camera.zoom
-    const left = rootRect.width / 2 + camera.x + (activeRect.x + activeRect.w / 2) * z + COMPOSER_GAP
-    const top = rootRect.height / 2 + camera.y + (activeRect.y - activeRect.h / 2) * z
-    const minLeft = (sidebarRect ? sidebarRect.right - rootRect.left : 0) + COMPOSER_GAP
-    const maxLeft = (panelRect ? panelRect.left - rootRect.left : rootRect.width) - COMPOSER_GAP - COMPOSER_WIDTH
+    const left = rootBox.width / 2 + camera.x + (agentRect.x + agentRect.w / 2) * z + COMPOSER_GAP
+    const top = rootBox.height / 2 + camera.y + (agentRect.y - agentRect.h / 2) * z
+    const picking = !!agentSession && pickSession === agentSession.id
+    const leftOfSelection = rootBox.width / 2 + camera.x + (agentRect.x - agentRect.w / 2) * z - COMPOSER_GAP - COMPOSER_WIDTH
+    const minLeft = (sidebarBox ? sidebarBox.left + sidebarBox.width : 0) + COMPOSER_GAP
+    const maxLeft = (panelBox ? panelBox.left : rootBox.width) - COMPOSER_GAP - COMPOSER_WIDTH
     const minTop = TOP_BAR_HEIGHT + COMPOSER_GAP
-    const maxTop = rootRect.height - COMPOSER_GAP - composerHeight
-    const clampedLeft = Math.max(minLeft, Math.min(left, maxLeft))
+    const maxTop = rootBox.height - COMPOSER_GAP - composerHeight
+    const clampedLeft = Math.max(minLeft, Math.min(picking ? leftOfSelection : left, maxLeft))
     const clampedTop = Math.max(minTop, Math.min(top, maxTop))
     composer = { left, top, shiftX: clampedLeft - left, shiftY: clampedTop - top }
+  }
+
+  /**
+   * Leaving the Portal reveals only the Codebase frame; everything else glides in from the side of
+   * it that the element sits on: elements above the frame's top edge come from above (Status Bar,
+   * Scrubber), below its bottom edge from below (events), otherwise from the left or right
+   * (Background, Toolbar). The delays sweep clockwise around the frame (top, right, bottom, left);
+   * each element starts before the previous ones have settled, so the reveal travels in a circle.
+   */
+  function entranceFor(rect: CanvasRect): CanvasEntrance | null {
+    // Before the first reveal (the screen opens in the Portal): only the Codebase frame is on the
+    // canvas. After it, the elements stay loaded under the Portal, so closing it again shows them
+    // in place instead of bringing them in again.
+    if (revealId === 0) return portalOpen ? "hidden" : null
+    const z = camera.zoom
+    const dx = (rect.x - codebaseRect.x) * z
+    const dy = (rect.y - codebaseRect.y) * z
+    const outsideVertically = Math.abs(rect.y - codebaseRect.y) > codebaseRect.h / 2
+    const travel = (along: number) => Math.sign(along) * Math.max(ENTER_MIN_TRAVEL, Math.abs(along) * ENTER_SPREAD)
+    // Clockwise sweep: angle from straight up (0 = top, ¼ = right, ½ = bottom, ¾ = left), measured
+    // from the top-left diagonal so everything above the frame starts the sweep.
+    const angle = Math.atan2(dx, -dy) / (2 * Math.PI) // −½…½, clockwise from up
+    const sweep = (((angle - ENTER_SWEEP_START) % 1) + 1) % 1 // 0…1 from the start diagonal
+    return {
+      x: outsideVertically ? 0 : travel(dx),
+      y: outsideVertically ? travel(dy) : 0,
+      delay: Math.round(ENTER_BASE_DELAY + sweep * ENTER_SWEEP_MS),
+    }
   }
 
   // Scroll / trackpad pans; pinch or ⌘/Ctrl + scroll zooms toward the cursor.
@@ -402,7 +866,9 @@ export function HeroScreen() {
 
     function fromCentre(clientX: number, clientY: number) {
       const rect = canvas.getBoundingClientRect()
-      return { px: clientX - rect.left - rect.width / 2, py: clientY - rect.top - rect.height / 2 }
+      // In the canvas's layout px (the screen may be drawn scaled).
+      const k = screenScale(canvas)
+      return { px: (clientX - rect.left - rect.width / 2) / k, py: (clientY - rect.top - rect.height / 2) / k }
     }
 
     function onWheel(e: WheelEvent) {
@@ -460,15 +926,20 @@ export function HeroScreen() {
   }, [])
 
   return (
-    <div ref={rootRef} className="relative h-dvh w-full select-none overflow-hidden bg-mi-canvas">
+    <div
+      ref={rootRef}
+      data-hero-root
+      className={cn("relative h-dvh w-full select-none overflow-hidden bg-mi-canvas", className)}
+    >
       {/*
         Canvas: clicking empty space clears the selection. With the Select tool, dragging empty
-        space draws a selection box; the Frame / Text tools create an element wherever they're
-        pressed (even over another frame); other tools (or the middle button) pan.
-        Scroll / trackpad always pans.
+        space pans the camera (Shift + drag draws a selection box); the Frame / Text tools create
+        an element wherever they're pressed (even over another frame); other tools (or the middle
+        button) pan. Scroll / trackpad always pans.
       */}
       <div
         ref={canvasRef}
+        data-hero-canvas
         className={cn(
           "absolute inset-0 touch-none",
           panning
@@ -489,8 +960,10 @@ export function HeroScreen() {
         onPointerDown={(e) => {
           setCodebaseSelected(false)
           setSelectedIds([])
+          setSelectedComponentId(null)
           setAgentOpen(false)
-          if (e.button === 0 && tool === "select") {
+          setPickSession(null)
+          if (e.button === 0 && tool === "select" && e.shiftKey) {
             startMarquee(e)
             return
           }
@@ -502,8 +975,9 @@ export function HeroScreen() {
         onPointerMove={(e) => {
           const last = lastPointer.current
           if (!last) return
-          const dx = e.clientX - last.x
-          const dy = e.clientY - last.y
+          const k = screenScale(e.currentTarget) // screen px → layout px
+          const dx = (e.clientX - last.x) / k
+          const dy = (e.clientY - last.y) / k
           lastPointer.current = { x: e.clientX, y: e.clientY }
           setCamera((c) => clampCamera({ ...c, x: c.x + dx, y: c.y + dy }, bounds))
         }}
@@ -515,13 +989,15 @@ export function HeroScreen() {
           onSelect={selectCodebase}
           onMoveStart={(e) => startMove(e, "codebase")}
           onOpen={() => setPortalOpen(true)}
+          covered={canvasCovered}
           zoom={camera.zoom}
           offsetX={camera.x + codebaseRect.x * camera.zoom}
           offsetY={camera.y + codebaseRect.y * camera.zoom}
         />
-        {CALENDAR_ELEMENTS.map((el) => (
+        {AIRBNB_ELEMENTS.map((el) => (
           <DesignFrame
-            key={el.id}
+            // Remount on each reveal so the entrance animation replays.
+            key={`${el.id}-${revealId}`}
             id={el.id}
             label={el.name}
             rect={elementRects[el.id]}
@@ -532,7 +1008,7 @@ export function HeroScreen() {
             bare={el.bare}
             labelOnSelect={el.labelOnSelect}
             selected={selectedIds.includes(el.id)}
-            onSelect={() => selectElement(el.id)}
+            onSelect={(e) => selectElement(el.id, e.shiftKey)}
             onMoveStart={(e) => startMove(e, { elementId: el.id })}
             onResizeStart={(e, corner) => startResize(e, corner, el.id)}
             onRadiusStart={(e, corner) => {
@@ -543,20 +1019,69 @@ export function HeroScreen() {
             }}
             showAgentButton={activeElement?.id === el.id && !agentOpen}
             onOpenAgent={() => setAgentOpen(true)}
-            working={agentOpen && agentWorking && activeElement?.id === el.id}
+            working={workingIds.has(el.id)}
+            agentBusy={busyIds.has(el.id)}
             zoom={camera.zoom}
             offsetX={camera.x}
             offsetY={camera.y}
+            entrance={entranceFor(elementRects[el.id])}
           >
             {el.content}
           </DesignFrame>
         ))}
+        {/* Library components dropped into the frames, over them */}
+        <FrameComponentsLayer
+          components={frameComponents}
+          frameRects={elementRects}
+          camera={camera}
+          selectedId={selectedComponentId}
+          onPress={pressComponent}
+        />
+        {/* Variants generated by the Build Agent, then the agents' cursors over them */}
+        {agents.variants.map((variant) => (
+          <VariantFrame
+            key={variant.id}
+            variant={variant}
+            zoom={camera.zoom}
+            offsetX={camera.x}
+            offsetY={camera.y}
+            pickable={pickSession === variant.sessionId && variant.status === "done"}
+            onPick={() => {
+              // Building starts: the chat closes and the selection clears right away.
+              setPickSession(null)
+              setAgentOpen(false)
+              setSelectedIds([])
+              agents.build(variant.sessionId, variant.id)
+            }}
+            built={agents.builtVariant?.id === variant.id}
+          />
+        ))}
+        {Object.entries(cursorAt).map(([id, at]) => (
+          <AgentCursor key={id} x={at.x} y={at.y} zoom={camera.zoom} offsetX={camera.x} offsetY={camera.y} />
+        ))}
+        {/* Several frames selected: their bounding box, with the Build Agent button off its corner */}
+        {agentRect && agentIds.length > 1 && (
+          <div
+            data-cursor-id="selection-group"
+            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+            style={{
+              left: `calc(50% + ${camera.x + agentRect.x * camera.zoom}px)`,
+              top: `calc(50% + ${camera.y + agentRect.y * camera.zoom}px)`,
+              width: agentRect.w * camera.zoom,
+              height: agentRect.h * camera.zoom,
+            }}
+          >
+            <div className="absolute -inset-[3px] border border-[#2f6bf6]/60" />
+            {!agentOpen && <BuildAgentButton onClick={() => setAgentOpen(true)} />}
+          </div>
+        )}
         {drawnElements.map((el) =>
           el.kind === "frame" ? (
             <DrawnFrame
-              key={el.id}
+              key={`${el.id}-${revealId}`}
               el={el}
               camera={camera}
+              entrance={entranceFor(elementRect(el))}
               selected={selectedIds.includes(el.id)}
               onPointerDown={(e) => {
                 selectElement(el.id)
@@ -571,9 +1096,10 @@ export function HeroScreen() {
             />
           ) : (
             <CanvasText
-              key={el.id}
+              key={`${el.id}-${revealId}`}
               el={el}
               camera={camera}
+              entrance={entranceFor(elementRect(el))}
               selected={selectedIds.includes(el.id)}
               editing={editingId === el.id}
               onPointerDown={(e) => {
@@ -601,16 +1127,41 @@ export function HeroScreen() {
 
       {composer && (
         <BuildAgentComposer
+          // One composer per selection, so a half-typed prompt doesn't carry over. Prefixed: a bare
+          // element id would collide with the settings panel's key (a sibling keyed by the same id),
+          // and duplicate keys make React duplicate the composer on every re-render.
+          key={`composer:${[...agentIds].sort().join("+")}`}
           {...composer}
+          session={agentSession}
+          variants={agents.variants}
+          onSend={(text) =>
+            agents.send({
+              // A reopened chat (single frame showing a group's run) keeps talking to that run.
+              elementIds: agentSession?.elementIds ?? agentIds,
+              text,
+              place: placeVariants,
+              originOf: (id) => ({ x: elementRects[id].x, y: elementRects[id].y }),
+              components: frameComponents,
+            })
+          }
+          onStop={() => agentSession && agents.stop(agentSession.id)}
+          onClear={() => agentSession && agents.clear(agentSession.id)}
+          onChooseBuild={() => {
+            if (!agentSession || !agents.variants.some((v) => v.sessionId === agentSession.id)) return
+            setPickSession((current) => (current === agentSession.id ? null : agentSession.id))
+          }}
+          picking={!!agentSession && pickSession === agentSession.id}
           onClose={() => setAgentOpen(false)}
-          onWorkingChange={setAgentWorking}
           onHeightChange={setComposerHeight}
         />
       )}
 
-      {/* Top bar */}
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-11 items-center justify-between pl-2 pr-3 *:pointer-events-auto">
-        <div className="flex items-center gap-1.5">
+      <AgentsPopover agents={agentThumbs} />
+
+      {/* Top bar: two floating groups (canvas title on the left, actions on the right), each on
+          its own panel background so they read over whatever is on the canvas beneath them */}
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-11 items-center justify-between pl-1 pr-1.5 *:pointer-events-auto">
+        <div className={cn("flex items-center gap-1.5 pr-1", TOP_GROUP)}>
           <button
             type="button"
             aria-label="Home"
@@ -621,7 +1172,7 @@ export function HeroScreen() {
           <CanvasTitle />
         </div>
 
-        <div className="flex items-center gap-1">
+        <div className={cn("flex items-center gap-1 pr-1.5", TOP_GROUP)}>
           <button
             type="button"
             aria-label="Undo"
@@ -649,8 +1200,8 @@ export function HeroScreen() {
               changesOpen && "bg-stone-700/5",
             )}
           >
-            <span className="text-green-700">+{CODE_CHANGES_TOTAL.added}</span>
-            <span className="text-red-600">−{CODE_CHANGES_TOTAL.removed}</span>
+            <span className="text-green-700">+{changeTotals.added}</span>
+            <span className="text-red-600">−{changeTotals.removed}</span>
             <Tooltip label="View code changes" />
           </button>
           <button
@@ -662,11 +1213,17 @@ export function HeroScreen() {
             <Tooltip label="Open preview" />
           </button>
           {/* Draft project: no repo linked yet, so the button offers to create one */}
-          <GithubButton connected={false} defaultRepoName="Hero-Interactive-Screen" />
+          <GithubButton
+            connected={false}
+            defaultRepoName="Hero-Interactive-Screen"
+            changes={githubChanges}
+            pullRequest={pullRequest}
+            onMerged={closeCanvas}
+          />
           {/* Any drawn element or moved/resized frame since the last publish makes the preview outdated */}
           <ShareButton
             previewUrl="https://hero-interactive-screen.modeinspect.app"
-            changes={[drawnElements, elementRects, elementRadii]}
+            changes={shareChanges}
           />
           <span className="ml-1 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-stone-200">
             <img
@@ -678,7 +1235,7 @@ export function HeroScreen() {
         </div>
       </header>
 
-      {changesOpen && <CodeChangesPopover onClose={closeChanges} />}
+      {changesOpen && <CodeChangesPopover onClose={closeChanges} extra={sessionChanges} />}
 
       {/* Tool bar */}
       <div className="absolute left-1/2 top-2.5 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md">
@@ -702,13 +1259,24 @@ export function HeroScreen() {
         ))}
       </div>
 
-      <LeftSidebar ref={sidebarRef} />
+      <LeftSidebar ref={sidebarRef} onLibraryDragStart={onLibraryDragStart} />
+
+      {libraryDrag && <ComponentDragGhost x={libraryDrag.x} y={libraryDrag.y} zoom={camera.zoom} />}
 
       {/* Settings show for a single selection only */}
-      {codebaseSelected && selectedIds.length === 0 && <CodebaseSettingsPanel />}
+      {codebaseSelected && selectedIds.length === 0 && <CodebaseSettingsPanel onOpenBuildMode={() => setPortalOpen(true)} />}
+      {selectedComponent && selectedIds.length === 0 && (
+        <ComponentSettingsPanel
+          key={`component-settings:${selectedComponent.id}`}
+          instance={selectedComponent}
+          onChange={(patch) =>
+            setFrameComponents((list) => list.map((c) => (c.id === selectedComponent.id ? { ...c, ...patch } : c)))
+          }
+        />
+      )}
       {activeElement && activeRect && (
         <FrameSettingsPanel
-          key={activeElement.id}
+          key={`settings:${activeElement.id}`}
           ref={panelRef}
           x={activeRect.x - activeRect.w / 2 - (codebaseRect.x - codebaseRect.w / 2)}
           y={activeRect.y - activeRect.h / 2 - (codebaseRect.y - codebaseRect.h / 2)}
@@ -728,7 +1296,7 @@ export function HeroScreen() {
       )}
       {activeDrawn?.kind === "frame" && (
         <FrameSettingsPanel
-          key={activeDrawn.id}
+          key={`settings:${activeDrawn.id}`}
           x={activeDrawn.x - (codebaseRect.x - codebaseRect.w / 2)}
           y={activeDrawn.y - (codebaseRect.y - codebaseRect.h / 2)}
           width={activeDrawn.w}
@@ -740,7 +1308,7 @@ export function HeroScreen() {
       )}
       {activeDrawn?.kind === "text" && (
         <TextSettingsPanel
-          key={activeDrawn.id}
+          key={`text-settings:${activeDrawn.id}`}
           x={activeDrawn.x - (codebaseRect.x - codebaseRect.w / 2)}
           y={activeDrawn.y - (codebaseRect.y - codebaseRect.h / 2)}
           width={activeDrawn.w}
@@ -750,10 +1318,110 @@ export function HeroScreen() {
 
       {/* Zoom */}
       <div className="absolute bottom-3 right-3 z-20 rounded-md border border-stone-700/10 bg-white/90 px-1.5 py-0.5 text-px-10 font-medium tabular-nums text-stone-700 shadow-[0_1px_2px_rgba(17,17,16,0.06)]">
-        {Math.round(camera.zoom * 100)}%
+        {/* Relative to the fit, so it reads the same at any screen size (30% on opening). */}
+        {Math.round((camera.zoom / fit) * 100)}%
       </div>
 
-      {portalOpen && <PortalView onClose={closePortal} />}
+      {portalOpen && (
+        <PortalView
+          onClose={closePortal}
+          closing={portalClosing}
+          builtVariant={agents.builtVariant}
+          builtComponents={agents.builtComponents}
+        />
+      )}
+
+      {canvasClosed && (
+        <CanvasClosed pullRequest={pullRequest} variant={pullRequest === PULL_REQUEST ? agents.builtVariant : null} />
+      )}
+
+      {reopened && <CanvasReopen />}
+    </div>
+  )
+}
+
+/* ------------------------------ Canvas closed ------------------------------ */
+
+/** The closing card is read for this long, then fades, leaving the plain canvas colour (ms). */
+const CLOSED_CARD_HOLD_MS = 3400
+/** The closing card's fade out (ms). */
+const CLOSED_CARD_OUT_MS = 450
+
+/**
+ * End of the story: the pull request is merged, so the canvas closes. The screen folds away into
+ * the canvas colour and a closing card sums up what shipped; then the card fades too, leaving the
+ * plain canvas colour that the next run opens out of (see CanvasReopen).
+ */
+function CanvasClosed({ pullRequest, variant }: { pullRequest: PullRequest; variant: VariantState | null }) {
+  const [leaving, setLeaving] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setLeaving(true), CLOSED_CARD_HOLD_MS)
+    return () => clearTimeout(timer)
+  }, [])
+  return (
+    <div
+      data-cursor-id="canvas-closed"
+      className="absolute inset-0 z-[55] flex items-center justify-center bg-mi-canvas animate-in fade-in duration-700"
+    >
+      <div
+        className={cn(
+          "flex max-w-[380px] flex-col items-center gap-3 px-6 text-center",
+          leaving
+            ? "animate-out fade-out zoom-out-95 slide-out-to-top-2"
+            : "animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-500",
+        )}
+        // The card follows once the screen has folded away; on the way out it stays gone.
+        style={
+          leaving
+            ? { animationDuration: `${CLOSED_CARD_OUT_MS}ms`, animationFillMode: "forwards" }
+            : { animationDelay: "300ms", animationFillMode: "both" }
+        }
+      >
+        <span className="flex size-11 items-center justify-center rounded-full bg-mi-lime text-stone-900 shadow-[0_6px_18px_-6px_rgba(90,122,24,0.5)]">
+          <Check className="size-5" strokeWidth={2.5} />
+        </span>
+        <h2 className="text-[17px] font-semibold text-stone-900">
+          Pull request #{pullRequest.number} merged into main
+        </h2>
+        <p className="text-px-13 leading-5 text-stone-600">
+          {pullRequest.title}
+          {variant ? ` (${variant.source.title}: ${variant.spec.label})` : ""}. The canvas is closed. Goal achieved.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** The Portal opening out of the canvas colour at the start of a looped run (ms). */
+const REOPEN_DELAY_MS = 150
+const REOPEN_MS = 1100
+
+/**
+ * Start of a run that follows a previous one: the screen begins as the plain canvas colour the
+ * last run ended on (CanvasClosed, once its card has gone), and the Portal opens out of it from
+ * the centre, as a rounded window growing to fill the screen. The cover is a window-shaped hole
+ * whose huge box-shadow paints the canvas colour around it, so only its inset needs animating.
+ */
+function CanvasReopen() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [done, setDone] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const animation = el.animate(
+      [
+        { inset: "50% 50%", borderRadius: "28px" },
+        { inset: "-24px", borderRadius: "0px" },
+      ],
+      { duration: REOPEN_MS, delay: REOPEN_DELAY_MS, easing: "cubic-bezier(0.65, 0, 0.25, 1)", fill: "both" },
+    )
+    animation.onfinish = () => setDone(true)
+    return () => animation.cancel()
+  }, [])
+  if (done) return null
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[55] overflow-hidden">
+      <div ref={ref} className="absolute shadow-[0_0_0_200vmax_var(--color-mi-canvas)]" />
     </div>
   )
 }

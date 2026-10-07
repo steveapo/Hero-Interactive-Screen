@@ -1,13 +1,14 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Inter } from "next/font/google";
+import { Doto, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 
 const inter = Inter({subsets:['latin'],variable:'--font-sans'});
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const doto = Doto({
+  variable: "--font-doto",
   subsets: ["latin"],
+  weight: ["700", "900"],
 });
 
 const geistMono = Geist_Mono({
@@ -28,7 +29,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={cn("h-full", "antialiased", geistSans.variable, geistMono.variable, "font-sans", inter.variable)}
+      className={cn("h-full", "antialiased", geistMono.variable, doto.variable, "font-sans", inter.variable)}
     >
       <body className="min-h-full flex flex-col">
         {children}

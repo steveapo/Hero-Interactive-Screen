@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { memo, useState } from "react"
 import { ChevronDown, ChevronRight, Ellipsis, FlipHorizontal2, FlipVertical2, ImagePlus, Minus, Plus, RotateCwSquare, Scan } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FrameGlyph } from "./planner-frame"
@@ -32,8 +32,9 @@ export function px(value: number | null) {
 
 /* ------------------------------ Frame panel ------------------------------- */
 
-/** Right-side settings for a selected design frame. */
-export function FrameSettingsPanel({
+/** Right-side settings for a selected design frame. Memoized: the canvas re-renders it on every
+ * camera frame otherwise, and its props only change with the selected frame. */
+export const FrameSettingsPanel = memo(function FrameSettingsPanel({
   ref,
   tag = "div",
   position = "static",
@@ -86,7 +87,7 @@ export function FrameSettingsPanel({
       <SelectionColorsSection colors={selectionColors} />
     </SettingsPanelShell>
   )
-}
+})
 
 /* ------------------------- Shared panel sections -------------------------- */
 

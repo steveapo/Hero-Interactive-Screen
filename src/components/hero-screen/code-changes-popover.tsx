@@ -8,10 +8,10 @@ import { cn } from "@/lib/utils"
 
 type LineKind = "context" | "add" | "del"
 /** One side of a split-diff row; `null` is the empty filler opposite an added/removed line. */
-type DiffSide = { n: number; text: string; kind: LineKind } | null
-type DiffRow = [left: DiffSide, right: DiffSide]
+export type DiffSide = { n: number; text: string; kind: LineKind } | null
+export type DiffRow = [left: DiffSide, right: DiffSide]
 
-type ChangedFile = {
+export type ChangedFile = {
   path: string
   added: number
   removed: number
@@ -34,7 +34,7 @@ const CODEBASE_FRAME_DIFF: DiffRow[] = [
   ctx(1, 1, `"use client"`),
   ctx(2, 2, ""),
   ctx(3, 3, `import { Play, ScanLine, SquareDashedMousePointer } from "lucide-react"`),
-  add(4, `import { PlannerScreen } from "@/app/copy-project/planner-screen"`),
+  add(4, `import { FairbnbScreen } from "@/app/copy-project/fairbnb-screen"`),
   ctx(4, 5, ""),
   ctx(5, 6, `/** The canvas opens at this zoom; the user can then zoom between the hero's min/max. */`),
   change(6, "export const CANVAS_ZOOM = 0.54", 7, "export const CANVAS_ZOOM = 0.3"),
@@ -44,12 +44,12 @@ const CODEBASE_FRAME_DIFF: DiffRow[] = [
     9,
     "const SCREEN_HEIGHT = 900",
     10,
-    " * Canvas-unit size of the Codebase frame: the iPad Pro 12.9\u2033 preview resolution (2048\u00d72732 @2x).",
+    " * Canvas-unit size of the Codebase frame: the desktop preview resolution (1440\u00d7900).",
   ),
   add(11, " * Its centre is the canvas origin at load."),
   add(12, " */"),
-  add(13, "export const CODEBASE_WIDTH = 1024"),
-  add(14, "export const CODEBASE_HEIGHT = 1366"),
+  add(13, "export const CODEBASE_WIDTH = 1440"),
+  add(14, "export const CODEBASE_HEIGHT = 900"),
   ctx(10, 15, ""),
   ctx(11, 16, "/** Focus colour for the Codebase frame: label, icon, border and size tag. */"),
   ctx(12, 17, `const CODEBASE_GREEN = "#1fc15a"`),
@@ -65,9 +65,9 @@ const CODEBASE_FRAME_DIFF: DiffRow[] = [
 export const CODE_CHANGES: ChangedFile[] = [
   { path: "package.json", added: 1, removed: 0 },
   { path: "public/status.png", added: 1, removed: 0, isNew: true },
-  { path: "src/app/copy-project/planner-screen.tsx", added: 123, removed: 104 },
+  { path: "src/app/copy-project/fairbnb-screen.tsx", added: 123, removed: 104 },
+  { path: "src/components/hero-screen/fairbnb-elements.tsx", added: 271, removed: 0, isNew: true },
   { path: "src/components/hero-screen/build-agent-composer.tsx", added: 79, removed: 0, isNew: true },
-  { path: "src/components/hero-screen/calendar-elements.tsx", added: 414, removed: 0, isNew: true },
   { path: "src/components/hero-screen/canvas-elements.tsx", added: 209, removed: 0, isNew: true },
   { path: "src/components/hero-screen/codebase-frame.tsx", added: 23, removed: 9, diff: CODEBASE_FRAME_DIFF },
   { path: "src/components/hero-screen/codebase-settings-panel.tsx", added: 122, removed: 4 },
@@ -84,11 +84,27 @@ export const CODE_CHANGES_TOTAL = {
   removed: CODE_CHANGES.reduce((sum, f) => sum + f.removed, 0),
 }
 
+/** Totals over a list of changed files. */
+export function totalsOf(files: ChangedFile[]) {
+  return {
+    added: files.reduce((sum, f) => sum + f.added, 0),
+    removed: files.reduce((sum, f) => sum + f.removed, 0),
+  }
+}
+
 /* -------------------------------- Popover --------------------------------- */
 
-/** "Code changes" panel opened from the top bar's +/− counter. Closes on ×, Escape or backdrop click. */
-export function CodeChangesPopover({ onClose }: { onClose: () => void }) {
-  const [expanded, setExpanded] = useState<string[]>(["src/components/hero-screen/codebase-frame.tsx"])
+/**
+ * "Code changes" panel opened from the top bar's +/− counter. Closes on ×, Escape or backdrop click.
+ * `extra`: changes made this session (e.g. a variant the Build Agent built), listed first and open.
+ */
+export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => void; extra?: ChangedFile[] }) {
+  const files = [...extra, ...CODE_CHANGES]
+  const totals = totalsOf(files)
+  const [expanded, setExpanded] = useState<string[]>(() => [
+    ...extra.map((f) => f.path),
+    "src/components/hero-screen/codebase-frame.tsx",
+  ])
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -114,9 +130,9 @@ export function CodeChangesPopover({ onClose }: { onClose: () => void }) {
           <div className="flex flex-col gap-3">
             <h2 className="text-[15px] font-medium leading-5 text-stone-900">Code changes</h2>
             <p className="flex items-center gap-1.5 text-px-12 tabular-nums text-stone-500">
-              {CODE_CHANGES.length} files changed
-              <span className="text-green-700">+{CODE_CHANGES_TOTAL.added}</span>
-              <span className="text-red-600">−{CODE_CHANGES_TOTAL.removed}</span>
+              {files.length} files changed
+              <span className="text-green-700">+{totals.added}</span>
+              <span className="text-red-600">−{totals.removed}</span>
             </p>
           </div>
           <button
@@ -130,10 +146,10 @@ export function CodeChangesPopover({ onClose }: { onClose: () => void }) {
         </header>
 
         <ul className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-2.5">
-          {CODE_CHANGES.map((file) => {
+          {files.map((file) => {
             const open = expanded.includes(file.path)
             return (
-              <li key={file.path} className="shrink-0 overflow-hidden rounded-lg bg-white">
+              <li key={file.path} data-file-path={file.path} className="shrink-0 overflow-hidden rounded-lg bg-white">
                 <button
                   type="button"
                   aria-expanded={open}

@@ -1,30 +1,51 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { memo, useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { ExternalLink, GitBranch } from "lucide-react"
+import { CircleCheck, ExternalLink, GitBranch, GitMerge, GitPullRequest, X } from "lucide-react"
+import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
+import { PULL_REQUEST, type PullRequest } from "./agent-script"
+
+/** GitHub account the demo repos live under. */
+const OWNER = "modeinspect"
 
 /**
  * Top-bar GitHub control.
- * - `connected`: the project is linked to a repo → a "Github Sync" popover to push the changes.
- * - not connected (draft project): a "Create a GitHub project" dialog. Creating one links the repo,
- *   so the next click shows the sync popover.
+ * - not connected (draft project): a "Create a GitHub project" dialog. Creating one links the repo.
+ * - connected: a "Github Sync" popover. Syncing pushes the canvas to a branch and opens a pull
+ *   request; from then on the popover shows that PR (and the button a green dot).
+ * - "View on Github" opens the PR; merging it calls `onMerged` (the canvas closes).
  */
-export function GithubButton({
+export const GithubButton = memo(function GithubButton({
   connected: initiallyConnected,
   defaultRepoName,
   branch = "main",
+  changes,
+  pullRequest = PULL_REQUEST,
+  onMerged,
 }: {
   connected: boolean
   /** Prefilled repository name in the create dialog. */
   defaultRepoName: string
   /** Branch the project was imported from (connected state). */
   branch?: string
+  /** What the pull request contains (files changed, lines added / removed). */
+  changes: { files: number; added: number; removed: number }
+  /** The pull request syncing opens (title, description, branch). */
+  pullRequest?: PullRequest
+  /** The pull request was merged. */
+  onMerged?: () => void
 }) {
   const [connected, setConnected] = useState(initiallyConnected)
+  /** Repository the project is linked to (set when one is created). */
+  const [repo, setRepo] = useState(defaultRepoName)
   const [open, setOpen] = useState(false)
+  /** The canvas has been synced: its branch and pull request exist. */
+  const [synced, setSynced] = useState(false)
+  const [prOpen, setPrOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const prBranch = `${OWNER}/${repo}-${pullRequest.branchSuffix}`
 
   // Close the sync popover on outside click or Escape (the dialog handles its own dismissal)
   useEffect(() => {
@@ -52,36 +73,104 @@ export function GithubButton({
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         className={cn(
-          "flex size-8 items-center justify-center rounded-md bg-stone-700/5 text-stone-800 hover:bg-stone-700/10",
+          "relative flex size-8 items-center justify-center rounded-md bg-stone-700/5 text-stone-800 hover:bg-stone-700/10",
           open && "bg-stone-700/10",
         )}
       >
         <GithubIcon />
+        {/* Synced: green dot */}
+        {synced && (
+          <span className="absolute right-[3px] top-1/2 size-[5px] -translate-y-1/2 rounded-full bg-green-500 animate-in zoom-in-0 duration-200" />
+        )}
       </button>
 
-      {open && connected && <GithubSyncPopover branch={branch} onSync={() => setOpen(false)} />}
+      {open && connected && (
+        <GithubSyncPopover
+          branch={branch}
+          repo={`${OWNER}/${repo}`}
+          prBranch={prBranch}
+          synced={synced}
+          pullRequest={pullRequest}
+          onSynced={() => setSynced(true)}
+          onViewPr={() => {
+            setOpen(false)
+            setPrOpen(true)
+          }}
+        />
+      )}
       {open && !connected && (
         <CreateGithubProjectDialog
+          anchor={rootRef}
           defaultName={defaultRepoName}
           onCancel={() => setOpen(false)}
-          onCreate={() => {
+          onCreate={(name) => {
+            setRepo(name)
             setConnected(true)
             setOpen(false)
           }}
         />
       )}
+      {prOpen && (
+        <PullRequestSheet
+          anchor={rootRef}
+          repo={`${OWNER}/${repo}`}
+          branch={branch}
+          prBranch={prBranch}
+          changes={changes}
+          pullRequest={pullRequest}
+          onClose={() => setPrOpen(false)}
+          onMerged={() => {
+            setPrOpen(false)
+            onMerged?.()
+          }}
+        />
+      )}
     </div>
   )
-}
+})
 
 /* ------------------------------ Connected state ----------------------------- */
 
-function GithubSyncPopover({ branch, onSync }: { branch: string; onSync: () => void }) {
+/** Pretend sync: pushing the branch and opening the pull request. */
+const SYNC_MS = 1800
+
+function GithubSyncPopover({
+  branch,
+  repo,
+  prBranch,
+  synced,
+  pullRequest,
+  onSynced,
+  onViewPr,
+}: {
+  branch: string
+  repo: string
+  prBranch: string
+  synced: boolean
+  pullRequest: PullRequest
+  onSynced: () => void
+  onViewPr: () => void
+}) {
+  const [syncing, setSyncing] = useState(false)
+  const onSyncedRef = useRef(onSynced)
+  useEffect(() => {
+    onSyncedRef.current = onSynced
+  })
+
+  useEffect(() => {
+    if (!syncing) return
+    const timer = setTimeout(() => {
+      setSyncing(false)
+      onSyncedRef.current()
+    }, SYNC_MS)
+    return () => clearTimeout(timer)
+  }, [syncing])
+
   return (
     <div
       role="dialog"
       aria-label="Github Sync"
-      className="absolute right-0 top-full z-50 mt-1.5 flex w-64 flex-col rounded-xl border border-stone-700/10 bg-[#f3f3f1] p-3 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in slide-in-from-top-1 duration-150"
+      className="absolute right-0 top-full z-50 mt-1.5 flex w-[300px] flex-col rounded-xl border border-stone-700/10 bg-[#f3f3f1] p-3 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in slide-in-from-top-1 duration-150"
     >
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-px-13 font-medium text-stone-900">Github Sync</h2>
@@ -95,39 +184,220 @@ function GithubSyncPopover({ branch, onSync }: { branch: string; onSync: () => v
           <ExternalLink className="size-3.5" strokeWidth={1.5} />
         </a>
       </div>
-      <p className="mt-1.5 flex items-center gap-1.5 text-px-12 text-stone-700">
-        <GitBranch className="size-3.5 text-stone-500" strokeWidth={1.5} />
-        Imported from {branch}
-      </p>
 
-      <div className="my-3 h-px bg-stone-700/10" />
-
-      <button
-        type="button"
-        onClick={onSync}
-        className="flex h-8 w-full items-center justify-center rounded-md bg-mi-lime text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] hover:bg-mi-lime-deep"
-      >
-        Sync to Github
-      </button>
-      <p className="mt-2.5 text-px-12 text-stone-500">Changes sync as a new branch.</p>
+      {synced ? (
+        <div className="flex flex-col animate-in fade-in duration-300">
+          <p className="mt-1.5 flex items-center gap-2 text-px-12 text-stone-700">
+            <span className="size-1.5 rounded-full bg-green-500" />
+            Your canvas is synced with its branch
+          </p>
+          <div className="my-3 h-px bg-stone-700/10" />
+          <div data-cursor-id="github-pr-card" className="flex flex-col gap-1.5 rounded-lg bg-stone-700/5 p-3">
+            <p className="truncate text-px-13 font-medium text-stone-900">{pullRequest.title}</p>
+            <p className="flex min-w-0 items-center gap-1.5 text-px-12 text-stone-600">
+              <GitBranch className="size-3.5 shrink-0 text-stone-500" strokeWidth={1.5} />
+              <span className="truncate">{prBranch}</span>
+            </p>
+            <p className="line-clamp-2 text-px-12 text-stone-500">{pullRequest.description}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onViewPr}
+            className="mt-2 flex h-8 w-full items-center justify-center rounded-md bg-stone-700/5 text-px-13 font-medium text-stone-900 hover:bg-stone-700/10"
+          >
+            View on Github
+          </button>
+        </div>
+      ) : (
+        <>
+          <p className="mt-1.5 flex items-center gap-1.5 text-px-12 text-stone-700">
+            <GitBranch className="size-3.5 text-stone-500" strokeWidth={1.5} />
+            Imported from {branch}
+          </p>
+          <p className="mt-1 truncate pl-5 text-px-12 text-stone-500">{repo}</p>
+          <div className="my-3 h-px bg-stone-700/10" />
+          <button
+            type="button"
+            disabled={syncing}
+            onClick={() => setSyncing(true)}
+            className={cn(
+              "flex h-8 w-full items-center justify-center gap-1.5 rounded-md text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] transition-colors",
+              syncing ? "bg-mi-lime-deep" : "bg-mi-lime hover:bg-mi-lime-deep",
+            )}
+          >
+            {syncing && <Spinner className="size-3.5" />}
+            {syncing ? "Syncing…" : "Sync to Github"}
+          </button>
+          <p className="mt-2.5 text-px-12 text-stone-500">
+            {syncing ? "Pushing a branch and opening a pull request…" : "Changes sync as a new branch."}
+          </p>
+        </>
+      )}
     </div>
   )
+}
+
+/* ------------------------------- Pull request ------------------------------- */
+
+/** Pretend merge: how long "Merging…" runs, and how long "Merged" shows before `onMerged`. */
+const MERGE_MS = 1300
+const MERGED_HOLD_MS = 1900
+
+/**
+ * The pull request, GitHub-style, over the hero screen: title, branches, what changed, checks,
+ * and "Merge pull request". Merging flips it to Merged, then reports back.
+ */
+function PullRequestSheet({
+  anchor,
+  repo,
+  branch,
+  prBranch,
+  changes,
+  pullRequest,
+  onClose,
+  onMerged,
+}: {
+  anchor: React.RefObject<HTMLElement | null>
+  repo: string
+  branch: string
+  prBranch: string
+  changes: { files: number; added: number; removed: number }
+  pullRequest: PullRequest
+  onClose: () => void
+  onMerged: () => void
+}) {
+  const [phase, setPhase] = useState<"open" | "merging" | "merged">("open")
+  const [host] = useState<Element | null>(() => anchor.current?.closest("[data-hero-root]") ?? null)
+  const onMergedRef = useRef(onMerged)
+  useEffect(() => {
+    onMergedRef.current = onMerged
+  })
+
+  useEffect(() => {
+    if (phase === "open") return
+    const timer = setTimeout(
+      () => (phase === "merging" ? setPhase("merged") : onMergedRef.current()),
+      phase === "merging" ? MERGE_MS : MERGED_HOLD_MS,
+    )
+    return () => clearTimeout(timer)
+  }, [phase])
+
+  const merged = phase === "merged"
+  return createPortal(
+    <div
+      className={cn("inset-0 z-50 flex items-center justify-center bg-stone-900/15 p-6 animate-in fade-in duration-150", host ? "absolute" : "fixed")}
+      onPointerDown={phase === "open" ? onClose : undefined}
+    >
+      <section
+        role="dialog"
+        aria-label="Pull request"
+        onPointerDown={(e) => e.stopPropagation()}
+        className="flex w-full max-w-[560px] flex-col overflow-hidden rounded-xl border border-[#d0d7de] bg-white text-[#1f2328] shadow-[0_16px_48px_-12px_rgba(17,17,16,0.35)] animate-in fade-in zoom-in-95 duration-200"
+      >
+        <header className="flex items-center justify-between gap-2 border-b border-[#d0d7de] bg-[#f6f8fa] px-4 py-2.5">
+          <span className="flex min-w-0 items-center gap-2 text-[13px] text-[#59636e]">
+            <GithubIcon />
+            <span className="truncate">
+              {repo} · Pull request #{pullRequest.number}
+            </span>
+          </span>
+          <button
+            type="button"
+            aria-label="Close pull request"
+            onClick={onClose}
+            className="flex size-7 items-center justify-center rounded-md text-[#59636e] hover:bg-black/5"
+          >
+            <X className="size-4" strokeWidth={1.5} />
+          </button>
+        </header>
+
+        <div className="flex flex-col gap-3 px-5 pb-5 pt-4">
+          <h2 className="text-[20px] font-semibold leading-tight">
+            {pullRequest.title} <span className="font-normal text-[#59636e]">#{pullRequest.number}</span>
+          </h2>
+          <div className="flex flex-wrap items-center gap-2 text-[13px] text-[#59636e]">
+            <span
+              key={merged ? "merged" : "open"}
+              className={cn(
+                "flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-medium text-white animate-in zoom-in-90 duration-200",
+                merged ? "bg-[#8250df]" : "bg-[#1f883d]",
+              )}
+            >
+              {merged ? <GitMerge className="size-3.5" strokeWidth={2} /> : <GitPullRequest className="size-3.5" strokeWidth={2} />}
+              {merged ? "Merged" : "Open"}
+            </span>
+            <span>
+              <strong className="font-semibold text-[#1f2328]">{OWNER}</strong> {merged ? "merged" : "wants to merge"}{" "}
+              {pullRequest.commits} commits into <Branch>{branch}</Branch> from <Branch>{prBranch}</Branch>
+            </span>
+          </div>
+          <p className="rounded-md border border-[#d0d7de] px-3 py-2.5 text-[13px] leading-5">{pullRequest.description}</p>
+          <p className="text-[12px] tabular-nums text-[#59636e]">
+            {changes.files} files changed <span className="font-medium text-[#1a7f37]">+{changes.added}</span>{" "}
+            <span className="font-medium text-[#d1242f]">−{changes.removed}</span>
+          </p>
+
+          {/* Merge box */}
+          <div
+            className={cn(
+              "flex flex-col gap-3 rounded-md border p-3 transition-colors",
+              merged ? "border-[#8250df]/40 bg-[#fbefff]" : "border-[#d0d7de]",
+            )}
+          >
+            {merged ? (
+              <p className="flex items-center gap-2 text-[13px] font-medium text-[#8250df] animate-in fade-in duration-300">
+                <GitMerge className="size-4" strokeWidth={2} />
+                Pull request successfully merged and closed
+              </p>
+            ) : (
+              <>
+                <p className="flex items-center gap-2 text-[13px] font-medium">
+                  <CircleCheck className="size-4 text-[#1a7f37]" strokeWidth={2} />
+                  All checks have passed
+                </p>
+                <p className="-mt-1.5 pl-6 text-[12px] text-[#59636e]">This branch has no conflicts with the base branch.</p>
+                <button
+                  type="button"
+                  disabled={phase !== "open"}
+                  onClick={() => setPhase("merging")}
+                  className="flex h-8 items-center justify-center gap-1.5 self-start rounded-md bg-[#1f883d] px-3.5 text-[13px] font-semibold text-white hover:bg-[#1a7f37] disabled:opacity-80"
+                >
+                  {phase === "merging" && <Spinner className="size-3.5" />}
+                  {phase === "merging" ? "Merging…" : "Merge pull request"}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </section>
+    </div>,
+    host ?? document.body,
+  )
+}
+
+function Branch({ children }: { children: React.ReactNode }) {
+  return <code className="rounded-md bg-[#ddf4ff] px-1.5 py-0.5 font-mono text-[12px] text-[#0969da]">{children}</code>
 }
 
 /* ---------------------------- Not connected state --------------------------- */
 
 function CreateGithubProjectDialog({
+  anchor,
   defaultName,
   onCancel,
   onCreate,
 }: {
+  /** The GitHub button: the dialog renders into the hero screen it sits in. */
+  anchor: React.RefObject<HTMLElement | null>
   defaultName: string
   onCancel: () => void
-  onCreate: () => void
+  onCreate: (name: string) => void
 }) {
   const [name, setName] = useState(defaultName)
   const [isPublic, setIsPublic] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  /** The hero screen's root (the dialog covers just the screen); <body> outside of one. */
+  const [host] = useState<Element | null>(() => anchor.current?.closest("[data-hero-root]") ?? null)
 
   // Select the prefilled name so it can be typed over straight away
   useEffect(() => {
@@ -142,10 +412,14 @@ function CreateGithubProjectDialog({
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [onCancel])
 
-  // Portalled to <body>: the top bar is its own stacking context, which would let the toolbar sit above the backdrop
+  // Portalled out of the top bar (its own stacking context would let the toolbar sit above the
+  // backdrop) into the hero screen's root, so it covers the screen, not the whole page.
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/10 p-4 animate-in fade-in duration-150"
+      className={cn(
+        "inset-0 z-50 flex items-center justify-center bg-stone-900/10 p-4 animate-in fade-in duration-150",
+        host ? "absolute" : "fixed",
+      )}
       onPointerDown={onCancel}
     >
       <form
@@ -155,7 +429,7 @@ function CreateGithubProjectDialog({
         onPointerDown={(e) => e.stopPropagation()}
         onSubmit={(e) => {
           e.preventDefault()
-          if (name.trim()) onCreate()
+          if (name.trim()) onCreate(name.trim())
         }}
         className="flex w-full max-w-[460px] flex-col rounded-2xl bg-[#f3f3f1] p-4 shadow-[0_12px_40px_-8px_rgba(17,17,16,0.25),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in zoom-in-95 duration-150"
       >
@@ -222,7 +496,7 @@ function CreateGithubProjectDialog({
         </div>
       </form>
     </div>,
-    document.body,
+    host ?? document.body,
   )
 }
 

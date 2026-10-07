@@ -1,20 +1,20 @@
 "use client"
 
 import { Play, ScanLine, SquareDashedMousePointer } from "lucide-react"
-import { PlannerScreen } from "@/app/copy-project/planner-screen"
+import { AirbnbScreen } from "@/app/copy-project/airbnb-screen"
 
 /** The canvas opens at this zoom; the user can then zoom between the hero's min/max. */
 export const CANVAS_ZOOM = 0.3
 
-/** The Codebase frame's opening animation plays at this rate (1 = the planner's own pace). */
+/** The Codebase frame's opening animation plays at this rate (1 = the app's own pace). */
 const CODEBASE_INTRO_SPEED = 0.6
 
 /**
- * Canvas-unit size of the Codebase frame: the iPad Pro 12.9″ preview resolution (2048×2732 @2x).
+ * Canvas-unit size of the Codebase frame: the desktop preview resolution (1440×900).
  * Its centre is the canvas origin at load.
  */
-export const CODEBASE_WIDTH = 1024
-export const CODEBASE_HEIGHT = 1366
+export const CODEBASE_WIDTH = 1440
+export const CODEBASE_HEIGHT = 900
 
 /** Focus colour for the Codebase frame: label, icon, border and size tag. */
 const CODEBASE_GREEN = "#1fc15a"
@@ -25,6 +25,7 @@ export function CodebaseFrame({
   onSelect,
   onMoveStart,
   onOpen,
+  covered = false,
   zoom,
   offsetX,
   offsetY,
@@ -33,6 +34,11 @@ export function CodebaseFrame({
   onSelect: () => void
   /** Double-click: open the frame in the Portal View. */
   onOpen: () => void
+  /**
+   * The Portal covers the whole screen: the live app isn't laid out or painted (it keeps its
+   * state and its intro's timeline), so it costs nothing while the hero window resizes under it.
+   */
+  covered?: boolean
   /** Pointer pressed on the frame: the canvas may start dragging it. */
   onMoveStart: (e: React.PointerEvent) => void
   /** Current canvas zoom — scales the frame; labels stay screen-sized. */
@@ -84,12 +90,15 @@ export function CodebaseFrame({
       </div>
 
       {/*
-        Device bezel + screen: the live, functional iPad Calendar. It is authored in cqw units,
-        so the screen is a size container and the app scales with zoom.
+        The desktop viewport: the live, functional Fairbnb app. It is authored in cqw units, so
+        the screen is a size container and the app scales with zoom.
       */}
-      <div className="size-full cursor-default rounded-lg bg-black p-2 shadow-[0_12px_32px_-12px_rgba(17,17,16,0.3)]">
-        <div className="@container size-full overflow-hidden rounded-[2px] bg-white">
-          <PlannerScreen introSpeed={CODEBASE_INTRO_SPEED} />
+      <div className="size-full cursor-default overflow-hidden rounded-md bg-white shadow-[0_0_0_1px_rgba(17,17,16,0.12),0_12px_32px_-12px_rgba(17,17,16,0.3)]">
+        <div
+          className="@container size-full overflow-hidden bg-white"
+          style={covered ? { contentVisibility: "hidden" } : undefined}
+        >
+          <AirbnbScreen introSpeed={CODEBASE_INTRO_SPEED} />
         </div>
       </div>
 

@@ -1,17 +1,29 @@
 "use client"
 
-import { useState } from "react"
+import { memo, useState } from "react"
 import { FileText, Layers, MessageCircleQuestionMark, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { CALENDAR_ELEMENTS } from "./calendar-elements"
+import { AIRBNB_ELEMENTS } from "./airbnb-elements"
 import { COMPONENT_PREVIEWS } from "./component-previews"
+import { isInsertable, type InsertableComponent } from "./library-components"
 import { FrameGlyph } from "./planner-frame"
 
 export type RailPanel = "layers" | "components" | "help"
 
 const PANEL_BG = "bg-[#f2f2f1]"
 
-export function LeftSidebar({ ref }: { ref?: React.Ref<HTMLElement> }) {
+/**
+ * `onLibraryDragStart`: a press on an insertable component tile in the Components library; the
+ * canvas takes over the drag (a ghost follows the pointer, dropping it on a frame inserts it).
+ * Memoized (the canvas passes stable props), so camera frames don't re-render the library.
+ */
+export const LeftSidebar = memo(function LeftSidebar({
+  ref,
+  onLibraryDragStart,
+}: {
+  ref?: React.Ref<HTMLElement>
+  onLibraryDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
+}) {
   const [panel, setPanel] = useState<RailPanel | null>(null)
   const open = panel === "layers" || panel === "components"
 
@@ -45,10 +57,10 @@ export function LeftSidebar({ ref }: { ref?: React.Ref<HTMLElement> }) {
       </nav>
 
       {panel === "layers" && <LayersPanel />}
-      {panel === "components" && <ComponentsPanel />}
+      {panel === "components" && <ComponentsPanel onDragStart={onLibraryDragStart} />}
     </aside>
   )
-}
+})
 
 /* --------------------------------- Layers --------------------------------- */
 
@@ -87,7 +99,7 @@ function LayersPanel() {
           <CodebaseIcon />
           Codebase
         </button>
-        {CALENDAR_ELEMENTS.map((el) => (
+        {AIRBNB_ELEMENTS.map((el) => (
           <button
             key={el.id}
             type="button"
@@ -104,7 +116,11 @@ function LayersPanel() {
 
 /* ------------------------------- Components ------------------------------- */
 
-function ComponentsPanel() {
+function ComponentsPanel({
+  onDragStart,
+}: {
+  onDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
+}) {
   const [query, setQuery] = useState("")
   const results = COMPONENT_PREVIEWS.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()))
 
@@ -114,6 +130,7 @@ function ComponentsPanel() {
         <h2 className="mb-2 text-px-11 font-semibold text-stone-900">Components</h2>
         <input
           type="search"
+          aria-label="Search components"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search components..."
@@ -121,18 +138,40 @@ function ComponentsPanel() {
         />
       </div>
 
-      <ul className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-x-1.5 gap-y-3.5 overflow-y-auto px-2 pb-3 pt-3.5 [scrollbar-width:thin]">
-        {results.map(({ name, preview }) => (
-          <li key={name} className="min-w-0">
-            <p className="mb-1 truncate pl-0.5 text-px-12 text-stone-800">{name}</p>
-            <div
-              inert
-              className="relative flex h-16 items-center justify-center overflow-hidden rounded-md bg-stone-200/80"
+      <ul
+        data-cursor-id="components-list"
+        className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-x-1.5 gap-y-3.5 overflow-y-auto px-2 pb-3 pt-3.5 [scrollbar-width:thin]"
+      >
+        {results.map(({ name, preview }) => {
+          const insertable = isInsertable(name)
+          return (
+            <li
+              key={name}
+              data-cursor-id={`library-${name}`}
+              className={cn("group/tile min-w-0", insertable && onDragStart && "cursor-grab active:cursor-grabbing")}
+              onPointerDown={
+                insertable && onDragStart
+                  ? (e) => {
+                      if (e.button !== 0) return
+                      e.preventDefault() // no text selection while dragging
+                      onDragStart(e, name)
+                    }
+                  : undefined
+              }
             >
-              {preview}
-            </div>
-          </li>
-        ))}
+              <p className="mb-1 truncate pl-0.5 text-px-12 text-stone-800">{name}</p>
+              <div
+                inert
+                className={cn(
+                  "relative flex h-16 items-center justify-center overflow-hidden rounded-md bg-stone-200/80",
+                  insertable && onDragStart && "transition-shadow group-hover/tile:shadow-[0_0_0_1px_rgba(47,107,246,0.6)]",
+                )}
+              >
+                {preview}
+              </div>
+            </li>
+          )
+        })}
         {results.length === 0 && (
           <li className="col-span-2 pt-4 text-center text-px-12 text-stone-500">No components match “{query}”</li>
         )}

@@ -1,82 +1,86 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { ArrowUp, Mic, ScreenShare, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { ArrowUp, Check, Mic, ScreenShare, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { wordsOf, type AgentMessage, type AgentSession, type AgentTask, type VariantState } from "./build-agents"
+import { AgentStar } from "./planner-frame"
 
 /** Composer box size in screen px, used by the canvas to keep it clear of the side panels. */
 export const COMPOSER_WIDTH = 300
 export const COMPOSER_HEIGHT = 48
-
-/** Pretend agent: how long it "works" before replying, and what it says. */
-const AGENT_REPLY_DELAY_MS = 2400
-const AGENT_REPLY = "It pseudoworks!"
-
-type Message = { id: number; role: "user" | "agent"; text: string }
+/** The prompt field grows up to this tall (px), then scrolls. */
+const PROMPT_MAX_HEIGHT = 120
 
 /**
- * Build Agent input that replaces the agent button next to the selected frame.
- * `left`/`top` follow the frame directly; `shiftX`/`shiftY` push it clear of the side panels and
- * are animated, so the box glides out of the way instead of being covered.
+ * Build Agent input that replaces the agent button next to the selection.
+ * `left`/`top` follow the selection directly; `shiftX`/`shiftY` push it clear of the side panels
+ * and are animated, so the box glides out of the way instead of being covered.
  *
- * Pseudo-functional chat: Enter sends the prompt, the agent "works" for a moment (reported via
- * `onWorkingChange` so the frame can show its working state), then replies with a canned message.
+ * Shows the selection's agent session (see useBuildAgents): the conversation lives there, so it
+ * survives closing the composer and the agent keeps working meanwhile.
  */
 export function BuildAgentComposer({
   left,
   top,
   shiftX,
   shiftY,
+  session,
+  variants,
+  onSend,
+  onStop,
+  onClear,
+  onChooseBuild,
+  picking = false,
   onClose,
-  onWorkingChange,
   onHeightChange,
 }: {
   left: number
   top: number
   shiftX: number
   shiftY: number
+  /** The selection's agent session (none until the first message). */
+  session: AgentSession | undefined
+  /** Generated variants, for the progress list of a generating reply. */
+  variants: VariantState[]
+  onSend: (text: string) => void
+  onStop: () => void
+  onClear: () => void
+  /** "Choose where to build": pick one of this chat's variants to build into the codebase. */
+  onChooseBuild?: () => void
+  /** Picking a variant is under way. */
+  picking?: boolean
   onClose: () => void
-  /** The agent started / stopped working on the selected frame. */
-  onWorkingChange: (working: boolean) => void
   /** Rendered height in screen px (grows once there are messages). */
   onHeightChange: (height: number) => void
 }) {
   const [prompt, setPrompt] = useState("")
-  const [messages, setMessages] = useState<Message[]>([])
-  const [working, setWorking] = useState(false)
   /** Thumbs up / down given to agent replies, by message id. */
   const [feedback, setFeedback] = useState<Record<number, "up" | "down">>({})
-  const inputRef = useRef<HTMLInputElement>(null)
+  const inputRef = useRef<HTMLTextAreaElement>(null)
   const formRef = useRef<HTMLFormElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
-  const nextId = useRef(1)
   const empty = prompt.trim() === ""
+  const messages = session?.messages ?? []
+  const working = session?.working ?? false
 
   useEffect(() => {
     inputRef.current?.focus()
   }, [])
 
-  // Tell the canvas while the agent works; closing the composer ends the working state.
-  useEffect(() => {
-    onWorkingChange(working)
-    return () => onWorkingChange(false)
-  }, [working, onWorkingChange])
+  // The prompt grows with what's typed (up to PROMPT_MAX_HEIGHT, then it scrolls).
+  useLayoutEffect(() => {
+    const field = inputRef.current
+    if (!field) return
+    field.style.height = "auto"
+    field.style.height = `${Math.min(field.scrollHeight, PROMPT_MAX_HEIGHT)}px`
+  }, [prompt])
 
-  // The agent replies after a short delay (cancelled by Stop or closing the composer).
-  useEffect(() => {
-    if (!working) return
-    const timer = setTimeout(() => {
-      setMessages((m) => [...m, { id: nextId.current++, role: "agent", text: AGENT_REPLY }])
-      setWorking(false)
-    }, AGENT_REPLY_DELAY_MS)
-    return () => clearTimeout(timer)
-  }, [working])
-
-  // Keep the newest message in view.
+  // Keep the newest message in view (also as replies stream in and tasks tick off).
   useEffect(() => {
     const list = listRef.current
     if (list) list.scrollTop = list.scrollHeight
-  }, [messages, working])
+  }, [session, variants])
 
   // Report the height so the canvas can keep the whole card on screen.
   useEffect(() => {
@@ -90,16 +94,14 @@ export function BuildAgentComposer({
   function send() {
     const text = prompt.trim()
     if (text === "" || working) return
-    setMessages((m) => [...m, { id: nextId.current++, role: "user", text }])
+    onSend(text)
     setPrompt("")
-    setWorking(true)
   }
 
   /** Clear the conversation (also stops the agent). */
   function clear() {
-    setMessages([])
+    onClear()
     setFeedback({})
-    setWorking(false)
     inputRef.current?.focus()
   }
 
@@ -128,7 +130,7 @@ export function BuildAgentComposer({
     >
       {messages.length > 0 && (
         <>
-          <div ref={listRef} className="flex max-h-80 flex-col gap-3 overflow-y-auto px-4 pb-3 pt-4">
+          <div ref={listRef} className="flex max-h-80 select-text flex-col gap-3 overflow-y-auto px-4 pb-3 pt-4">
             {messages.map((m) =>
               m.role === "user" ? (
                 <p
@@ -139,7 +141,9 @@ export function BuildAgentComposer({
                 </p>
               ) : (
                 <div key={m.id} className="flex flex-col gap-1.5">
-                  <p className="select-text whitespace-pre-wrap break-words text-[13px] text-stone-800">{m.text}</p>
+                  <p className="select-text whitespace-pre-wrap break-words text-[13px] text-stone-800">{streamed(m)}</p>
+                  {m.tasks && <TaskList tasks={m.tasks} variants={variants} />}
+                  {(m.shown === undefined || m.shown >= wordsOf(m.text).length) && !(working && m.tasks) && (
                   <div className={cn("-ml-1.5 flex items-center gap-0.5 transition-opacity", feedback[m.id] && "opacity-70")}>
                     <button
                       type="button"
@@ -166,15 +170,20 @@ export function BuildAgentComposer({
                       <ThumbsDown className="size-3.5" strokeWidth={1.75} />
                     </button>
                   </div>
+                  )}
                 </div>
               ),
             )}
-            {working && (
+            {(session?.phase === "thinking" || session?.phase === "generating" || session?.phase === "building") && (
               <p
                 aria-live="polite"
                 className="self-start bg-[linear-gradient(110deg,#a8a29e_40%,#44403c_50%,#a8a29e_60%)] bg-[length:300%_100%] bg-clip-text text-[13px] font-medium text-transparent animate-mi-shine"
               >
-                Working...
+                {session.phase === "generating"
+                  ? "Building variants..."
+                  : session.phase === "building"
+                    ? "Building into the codebase..."
+                    : "Working..."}
               </p>
             )}
           </div>
@@ -191,10 +200,18 @@ export function BuildAgentComposer({
               </button>
               <button
                 type="button"
-                className="flex h-7 items-center gap-1.5 rounded-full border border-green-700/25 px-2.5 text-[12px] font-semibold text-green-700 hover:bg-green-700/5"
+                data-cursor-id="choose-where-to-build"
+                aria-pressed={picking}
+                onClick={onChooseBuild}
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-semibold transition-colors",
+                  picking
+                    ? "border-green-700 bg-green-700 text-white"
+                    : "border-green-700/25 text-green-700 hover:bg-green-700/5",
+                )}
               >
                 <ScreenShare className="size-3.5" strokeWidth={2} />
-                Choose where to build
+                {picking ? "Pick a variant…" : "Choose where to build"}
               </button>
             </div>
           )}
@@ -202,28 +219,30 @@ export function BuildAgentComposer({
         </>
       )}
 
-      <div className="flex items-center gap-1 py-1.5 pl-4 pr-1.5" style={{ height: COMPOSER_HEIGHT }}>
-        <input
+      {/* Prompt row: the field grows as you type; the buttons stay on its last line */}
+      <div className="flex items-end gap-1 py-1.5 pl-4 pr-1.5" style={{ minHeight: COMPOSER_HEIGHT }}>
+        <textarea
           ref={inputRef}
+          rows={1}
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Escape") onClose()
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault()
               send()
             }
           }}
           placeholder={messages.length > 0 ? "Describe the change" : "Explore a fresh take..."}
           aria-label="Ask the Build Agent"
-          className="min-w-0 flex-1 select-text bg-transparent text-[13px] text-stone-900 outline-none placeholder:text-stone-500"
+          className="min-w-0 flex-1 resize-none select-text bg-transparent py-[9px] text-[13px] leading-[18px] text-stone-900 outline-none placeholder:text-stone-500"
         />
         {/* Dictation is offered only until the user starts typing */}
         {empty && (
           <button
             type="button"
             aria-label="Dictate"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full text-stone-600 hover:bg-stone-700/5"
+            className="mb-0.5 flex size-8 shrink-0 items-center justify-center rounded-full text-stone-600 hover:bg-stone-700/5"
           >
             <Mic className="size-4" strokeWidth={1.5} />
           </button>
@@ -232,7 +251,7 @@ export function BuildAgentComposer({
           <button
             type="button"
             aria-label="Stop"
-            onClick={() => setWorking(false)}
+            onClick={onStop}
             className="flex size-9 shrink-0 items-center justify-center rounded-full border border-stone-200 hover:bg-stone-700/5"
           >
             <span className="size-3 rounded-[2px] bg-stone-900" />
@@ -263,5 +282,41 @@ export function BuildAgentComposer({
         )}
       </div>
     </form>
+  )
+}
+
+/** The part of an agent reply streamed in so far. */
+function streamed(m: AgentMessage) {
+  if (m.shown === undefined) return m.text
+  return wordsOf(m.text).slice(0, m.shown).join("")
+}
+
+/**
+ * Progress of a generating reply: one row per variant once it's on the canvas, with a spinning
+ * star while the agent builds it and a check once it's done.
+ */
+function TaskList({ tasks, variants }: { tasks: AgentTask[]; variants: VariantState[] }) {
+  const rows = tasks.flatMap((task) => {
+    const variant = variants.find((v) => v.id === task.id)
+    return variant ? [{ ...task, status: variant.status }] : []
+  })
+  if (rows.length === 0) return null
+  return (
+    <ul className="flex flex-col gap-1 rounded-xl bg-stone-100/80 px-2.5 py-2">
+      {rows.map((row) => (
+        <li key={row.id} className="flex items-center gap-2 text-[12px] animate-in fade-in slide-in-from-top-0.5 duration-200">
+          <span
+            className={cn(
+              "flex size-4 shrink-0 items-center justify-center rounded-full",
+              row.status === "done" ? "bg-mi-lime text-stone-900" : row.status === "building" ? "bg-stone-200 text-stone-600" : "border border-stone-300",
+            )}
+          >
+            {row.status === "done" && <Check key="done" className="size-2.5" strokeWidth={3} />}
+            {row.status === "building" && <AgentStar key="building" className="size-2.5 animate-spin [animation-duration:1.6s]" />}
+          </span>
+          <span className={cn("truncate", row.status === "queued" ? "text-stone-400" : "text-stone-700")}>{row.label}</span>
+        </li>
+      ))}
+    </ul>
   )
 }

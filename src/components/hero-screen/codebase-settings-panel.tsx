@@ -7,8 +7,8 @@ import { CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
 
 const PREVIEW_PATH = "/"
 
-/** Right-side settings for the selected Codebase frame. */
-export function CodebaseSettingsPanel() {
+/** Right-side settings for the selected Codebase frame. "Open Build Mode" opens it in the Portal. */
+export function CodebaseSettingsPanel({ onOpenBuildMode }: { onOpenBuildMode?: () => void } = {}) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -30,6 +30,8 @@ export function CodebaseSettingsPanel() {
 
       <button
         type="button"
+        data-cursor-id="open-build-mode"
+        onClick={onOpenBuildMode}
         className="mt-2.5 flex h-8 w-full items-center justify-center rounded-md border border-[#c6dfc9] bg-[#e5efe6] text-[13px] font-medium text-[#1e7b36] transition-colors hover:bg-[#dbe9dc]"
       >
         Open Build Mode
@@ -70,15 +72,14 @@ type Resolution = { id: string; name: string; width: number; height: number; ico
 const RESOLUTIONS: Resolution[] = [
   { id: "mobile", name: "Mobile", width: 390, height: 844, icon: Smartphone },
   { id: "tablet", name: "Tablet", width: 768, height: 1024, icon: Tablet },
-  { id: "ipad-pro", name: "iPad Pro 12.9″", width: CODEBASE_WIDTH, height: CODEBASE_HEIGHT, icon: Tablet },
   { id: "laptop", name: "Laptop", width: 1280, height: 800, icon: Laptop },
-  { id: "desktop", name: "Desktop", width: 1440, height: 900, icon: Monitor },
+  { id: "desktop", name: "Desktop", width: CODEBASE_WIDTH, height: CODEBASE_HEIGHT, icon: Monitor },
 ]
 
 function ResolutionSelect() {
   const [open, setOpen] = useState(false)
-  // The Codebase frame previews the iPad Calendar at iPad Pro resolution; null = "Custom".
-  const [selectedId, setSelectedId] = useState<string | null>("ipad-pro")
+  // The Codebase frame previews the Fairbnb desktop app at desktop resolution; null = "Custom".
+  const [selectedId, setSelectedId] = useState<string | null>("desktop")
   const rootRef = useRef<HTMLDivElement>(null)
 
   const selected = RESOLUTIONS.find((r) => r.id === selectedId)

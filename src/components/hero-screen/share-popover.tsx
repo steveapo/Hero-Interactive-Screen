@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { memo, useEffect, useRef, useState } from "react"
 
 /**
  * Top-bar Share control: publishes the canvas to a preview URL.
@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react"
  * `changes` lists the values that make up the current canvas content. Publishing snapshots them;
  * once any of them is a different value, the preview is out of date.
  */
-export function ShareButton({
+export const ShareButton = memo(function ShareButton({
   previewUrl,
   changes,
 }: {
@@ -74,7 +74,7 @@ export function ShareButton({
       )}
     </div>
   )
-}
+})
 
 function SharePopover({
   previewUrl,
