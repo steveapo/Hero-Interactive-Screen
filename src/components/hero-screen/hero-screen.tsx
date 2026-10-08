@@ -1312,6 +1312,7 @@ export function HeroScreen({
         {portalOpen && !portalClosing ? (
           <button
             type="button"
+            aria-label="Back to canvas"
             onClick={closePortal}
             // Not through cn(): tailwind-merge reads the custom `text-px-11` size as a text colour and
             // drops it in favour of `text-stone-900`.
