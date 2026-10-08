@@ -60,8 +60,9 @@ export function SiteHero({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {/* Fluid column: scales with the viewport, capped at 1280px. */}
-      <div className="mx-auto flex w-[min(calc(100%-2*clamp(1.25rem,6vw,8rem)),80rem)] flex-col pb-[clamp(3rem,6vw,6rem)]">
+      {/* Fluid column: scales with the viewport, capped at 1280px. A size container: the product
+          window's height follows its width on narrow screens (see ScrollGrowWindow). */}
+      <div className="@container mx-auto flex w-[min(calc(100%-2*clamp(1.25rem,6vw,8rem)),80rem)] flex-col pb-[clamp(3rem,6vw,6rem)]">
         <div className="flex flex-col items-start pt-[clamp(4rem,7vw,7rem)]">
           <h1 className="flex flex-col gap-[0.05em] text-[clamp(2.75rem,1.5rem+3.2vw,4.75rem)] leading-[1.05] tracking-[-0.03em]">
             <span className="font-medium">Design in code.</span>

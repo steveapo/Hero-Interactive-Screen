@@ -1232,7 +1232,8 @@ export function HeroScreen({
           </div>
         )}
 
-        <div className={cn("flex items-center gap-1 pr-1.5", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
+        <div className="flex items-center">
+        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
           <button
             type="button"
             aria-label="Undo"
@@ -1290,7 +1291,9 @@ export function HeroScreen({
             previewUrl="https://hero-interactive-screen.modeinspect.app"
             changes={shareChanges}
           />
-          <span className="ml-1 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-stone-200">
+        </div>
+          {/* The profile avatar sits outside the actions group: the panel ends at Share. */}
+          <span className="ml-1.5 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-stone-200">
             <img
               src="/avatars/modeinspect-avatar.png"
               alt="Your profile"

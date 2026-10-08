@@ -29,6 +29,13 @@ const SMOOTHING = 0.12
 const FRAME_MS = 1000 / 60
 /** What's inside may start once the scroll has covered all but this fraction of the growth. */
 const READY_MARGIN = 0.04
+/**
+ * Narrowest the content is ever laid out (layout px). On smaller screens the window is narrower
+ * than this, so the content (the Desktop Area, its windows, the canvas's bars, panels, text and
+ * icons) keeps this layout and is drawn proportionally smaller instead of re-flowing and breaking.
+ * Wider windows lay out at their own full width, as before.
+ */
+const MIN_LAYOUT_WIDTH = 1280
 
 /**
  * Product window that grows from START_SCALE to END_SCALE of its base size as the page scrolls.
@@ -43,7 +50,8 @@ const READY_MARGIN = 0.04
  * the screen's width anyway, so the composition shows exactly as a real resize would.
  *
  * Code inside that maps pointer positions reads the current scale with `screenScale` (see
- * lib/screen-scale); at full size the content is drawn unscaled (no transform at all).
+ * lib/screen-scale); at full size the content is drawn unscaled (no transform at all), except on
+ * screens narrower than MIN_LAYOUT_WIDTH, where it stays scaled down to fit.
  */
 export function ScrollGrowWindow({ children, className }: { children: ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -77,10 +85,13 @@ export function ScrollGrowWindow({ children, className }: { children: ReactNode;
       }
     }
 
-    /** Measure the full-growth width (the window briefly set to full size, within this frame). */
+    /**
+     * Measure the full-growth width (the window briefly set to full size, within this frame). The
+     * content is laid out at least MIN_LAYOUT_WIDTH wide; below that it's drawn scaled down.
+     */
     function measureFull() {
       node.style.setProperty("--grow", String(END_SCALE))
-      fullWidth = contentBox().width
+      fullWidth = Math.max(MIN_LAYOUT_WIDTH, contentBox().width)
       node.style.setProperty("--grow", current.toFixed(4))
     }
 
@@ -215,7 +226,10 @@ export function ScrollGrowWindow({ children, className }: { children: ReactNode;
       className={cn(
         "flex flex-col self-center overflow-hidden",
         "w-[calc(100%*var(--grow))] max-w-[calc(100vw-2*clamp(0.75rem,2vw,2rem))]",
-        "h-[calc(min(860px,85vh)*var(--grow))] max-h-[94vh] min-h-[520px]",
+        // Height: min(860px, 85vh), and on narrow screens no taller than 68% of the column's width
+        // (cqw: the parent column is a size container), so the scaled-down desktop keeps a desktop
+        // shape rather than turning into a tall strip. At full-size columns the 68% never binds.
+        "h-[calc(min(860px,85vh,68cqw)*var(--grow))] max-h-[94vh] min-h-[min(520px,calc(68cqw*var(--grow)))]",
         className,
       )}
     >

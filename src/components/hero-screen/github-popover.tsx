@@ -75,10 +75,8 @@ export const GithubButton = memo(function GithubButton({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className={cn(
-          "relative flex size-8 items-center justify-center rounded-md bg-stone-700/5 text-stone-800 hover:bg-stone-700/10",
-          open && "bg-stone-700/10",
-        )}
+        // No background at rest or while open: like the other top-bar buttons, it only tints on hover.
+        className="relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
       >
         <GithubIcon />
         {/* Synced: green dot */}
