@@ -255,8 +255,14 @@ export function HeroScreen({
   loadIntro,
   portalLoadMs,
   maxZoom = MAX_ZOOM,
+  canvasEntrance = true,
 }: {
   className?: string
+  /**
+   * Leaving the Portal the first time, the canvas elements glide in around the Codebase frame.
+   * Off: they're already on the canvas, in place.
+   */
+  canvasEntrance?: boolean
   /**
    * Furthest the canvas zooms in (at the reference width; 0.4 = 40% in the zoom readout). Raise it
    * where a single frame needs to fill much of the canvas (the "Live product on canvas" showcase).
@@ -410,9 +416,9 @@ export function HeroScreen({
       closeTimerRef.current = undefined
       setPortalClosing(false)
       setPortalOpen(false)
-      if (opensInPortal) setRevealId((id) => (id === 0 ? 1 : id))
+      if (opensInPortal && canvasEntrance) setRevealId((id) => (id === 0 ? 1 : id))
     }, PORTAL_EXIT_MS)
-  }, [opensInPortal])
+  }, [opensInPortal, canvasEntrance])
   useEffect(() => () => clearTimeout(closeTimerRef.current), [])
   const [camera, setCamera] = useState<Camera>(initialCamera)
   const [panning, setPanning] = useState(false)
@@ -991,6 +997,8 @@ export function HeroScreen({
    * each element starts before the previous ones have settled, so the reveal travels in a circle.
    */
   function entranceFor(rect: CanvasRect): CanvasEntrance | null {
+    // No entrance on this screen: the elements are simply on the canvas, under the Portal too.
+    if (!canvasEntrance) return null
     // Before the first reveal (the screen opens in the Portal, or waits for its load-in entrance):
     // only the Codebase frame is on the canvas. After it, the elements stay loaded under the
     // Portal, so closing it again shows them in place instead of bringing them in again.

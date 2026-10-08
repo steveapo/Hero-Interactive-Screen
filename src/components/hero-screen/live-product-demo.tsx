@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
-import { backToCanvas, captureInBuildMode, TRIP_CARD } from "./hero-demo"
+import { captureInBuildMode, TRIP_CARD } from "./hero-demo"
 import { panToShow, revealInList, scene } from "./hero-demo-v1"
 import { HeroScreen, WHEEL_ZOOM_SPEED } from "./hero-screen"
 
@@ -18,7 +18,12 @@ import { HeroScreen, WHEEL_ZOOM_SPEED } from "./hero-screen"
  */
 const script: DemoScript = async (api) => {
   await captureInBuildMode(api)
-  await backToCanvas(api)
+  await scene(api, "back to canvas", async () => {
+    // The elements are already on the canvas (no entrance): just let the Portal fade out.
+    await api.click(BACK_TO_CANVAS)
+    await api.until(() => !api.exists("[data-portal-screen]"), 4000)
+    await api.wait(500)
+  })
   await scene(api, "zoom to the capture", async () => {
     await zoomToFill(api)
   })
@@ -36,6 +41,7 @@ const script: DemoScript = async (api) => {
   })
 }
 
+const BACK_TO_CANVAS = 'button[aria-label="Back to canvas"]'
 /** The selected frame's Fill swatch in the settings panel, and the colour the card gets. */
 const FILL_BUTTON = 'button[aria-label="Fill colour"]'
 const NEW_FILL = 'button[aria-label="Fill #f6e9f3"]'
@@ -111,7 +117,7 @@ export function LiveProductDemo({ className }: { className?: string }) {
     <div ref={ref} className={cn("relative overflow-hidden rounded-lg bg-mi-canvas", className)}>
       <ScaledScreen>
         <ScriptedStage script={script} pace={PACE} ready={ready} loop loopDelay={1500} className="min-h-0">
-          <HeroScreen className="h-auto min-h-0 flex-1" start="portal" portalLoadMs={PORTAL_LOAD_MS} maxZoom={MAX_ZOOM} />
+          <HeroScreen className="h-auto min-h-0 flex-1" start="portal" portalLoadMs={PORTAL_LOAD_MS} maxZoom={MAX_ZOOM} canvasEntrance={false} />
         </ScriptedStage>
       </ScaledScreen>
     </div>
