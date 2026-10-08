@@ -4,18 +4,29 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { ScriptedStage, type DemoScript } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
-import { backToCanvas, captureInBuildMode } from "./hero-demo"
+import { backToCanvas, captureInBuildMode, TRIP_CARD } from "./hero-demo"
+import { panToShow, scene } from "./hero-demo-v1"
 import { HeroScreen } from "./hero-screen"
 
 /**
  * The "Live product on canvas" showcase: the hero demo's opening, on a loop.
  *  1. Capture the trip card from the live app in Build Mode.
- *  2. Back to the canvas, the capture beside the Codebase frame.
+ *  2. Back to the canvas, ending zoomed in on the captured trip card.
  * When it ends, the screen crossfades back to the live app and it plays again.
  */
 const script: DemoScript = async (api) => {
   await captureInBuildMode(api)
   await backToCanvas(api)
+  await scene(api, "zoom to the capture", async () => {
+    // Centre the card, zoom in at it (⌘/Ctrl + scroll, like a pinch), then re-centre: the zoom
+    // eases, so the card can drift off centre. Then hold on it before the loop starts over.
+    await panToShow(api, [TRIP_CARD], { fx: 0.5, fy: 0.5 })
+    await api.moveTo(TRIP_CARD, { fx: 0.5, fy: 0.5 })
+    await api.wheel(0, -130, { mods: { ctrl: true }, duration: 900 })
+    await api.wait(200)
+    await panToShow(api, [TRIP_CARD], { fx: 0.5, fy: 0.5 })
+    await api.wait(1600)
+  })
 }
 
 /** Same tempo as the hero demo (scripted times × 0.85). */
