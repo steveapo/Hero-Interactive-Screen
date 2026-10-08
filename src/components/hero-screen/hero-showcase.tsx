@@ -23,8 +23,8 @@ const INTRO_VISIBLE_THRESHOLD = 0.35
  *   3. the bars and tools come in, one after another
  *   4. the Codebase frame fades in; its live app's own opening plays on through the next step
  *   5. the GitHub Sync popover opens
- *   6. the canvas elements glide in around the Codebase frame
- *   7. the Code Changes window opens (as the Canvas window did) and its diff streams in row by row
+ *   6. the canvas elements glide in around the Codebase frame, and at the same time the Code
+ *      Changes window opens (as the Canvas window did) and its diff streams in row by row
  */
 /** Pace of the whole load-in: every step's time (and the windows' opening) is scaled by this. 0.512 = 20% faster, three times over. */
 const INTRO_TIME_SCALE = 0.512
@@ -34,7 +34,8 @@ const INTRO = {
   codebaseAt: 1700 * INTRO_TIME_SCALE,
   githubAt: 2500 * INTRO_TIME_SCALE,
   elementsAt: 3000 * INTRO_TIME_SCALE,
-  codeWindowAt: 4300 * INTRO_TIME_SCALE,
+  /** Opens together with the canvas elements' entrance. */
+  codeWindowAt: 3000 * INTRO_TIME_SCALE,
 }
 /** How long a window takes to open (ms). */
 const WINDOW_OPEN_MS = 700 * INTRO_TIME_SCALE
