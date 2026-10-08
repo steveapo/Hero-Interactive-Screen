@@ -222,10 +222,11 @@ function GithubSyncPopover({
             type="button"
             disabled={syncing}
             onClick={() => setSyncing(true)}
-            className={cn(
-              "flex h-8 w-full items-center justify-center gap-1.5 rounded-md text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] transition-colors",
-              syncing ? "bg-mi-lime-deep" : "bg-mi-lime hover:bg-mi-lime-deep",
-            )}
+            // Not through cn(): tailwind-merge reads the custom `text-px-12` size as a text colour and
+            // drops it in favour of `text-stone-900`.
+            className={`flex h-8 w-full items-center justify-center gap-1.5 rounded-md text-px-12 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] transition-colors ${
+              syncing ? "bg-mi-lime-deep" : "bg-mi-lime hover:bg-mi-lime-deep"
+            }`}
           >
             {syncing && <Spinner className="size-3.5" />}
             {syncing ? "Syncing…" : "Sync to Github"}
