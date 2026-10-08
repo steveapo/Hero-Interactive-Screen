@@ -5,18 +5,6 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * DigiDecay (licensed, Softulka) for the hero's pixel line, served from public/DigiDecay.otf.
- * Until it loads (or if it's missing) the browser falls back to Doto.
- */
-@font-face {
-  font-family: "DigiDecay";
-  src: url("/DigiDecay.otf") format("opentype");
-  font-weight: 400 900;
-  font-style: normal;
-  font-display: swap;
-}
-
-/*
  * The hero window's growth factor (see scroll-grow-window.tsx), set every frame while the page
  * scrolls. Only the window itself reads it, so it doesn't inherit: changing it restyles that one
  * element instead of every element of the interactive screen inside it.
@@ -32,7 +20,8 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
-  --font-pixel: "DigiDecay", var(--font-doto);
+  /* DigiDecay is loaded with next/font/local in app/layout.tsx; Doto until it's in. */
+  --font-pixel: var(--font-digidecay), var(--font-doto);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
