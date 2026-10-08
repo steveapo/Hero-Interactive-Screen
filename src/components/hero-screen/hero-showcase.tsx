@@ -72,7 +72,8 @@ export function HeroShowcase({ className }: { className?: string }) {
     >
       <DesktopWindow
         title="ModeInspect Canvas"
-        placement="left-[3%] top-[4%] h-[88%] w-[70%]"
+        // Centred on the desktop (equal margins on each side).
+        placement="left-[11%] top-[6%] h-[88%] w-[78%]"
         active={stack[0] === "main"}
         z={stack.length - stack.indexOf("main")}
         onFocus={() => focus("main")}
@@ -92,7 +93,8 @@ export function HeroShowcase({ className }: { className?: string }) {
 
       <DesktopWindow
         title="Code Changes"
-        placement="bottom-[6%] right-[3%] h-[58%] w-[44%]"
+        // Overlaps the canvas's lower right, only just past its edge, so the pair stays centred.
+        placement="bottom-[5%] right-[6%] h-[50%] w-[38%]"
         active={stack[0] === "secondary"}
         z={stack.length - stack.indexOf("secondary")}
         onFocus={() => focus("secondary")}
