@@ -97,10 +97,12 @@ export const PortalView = memo(function PortalView({
   builtVariant?: VariantState | null
   /** Library components the Build Agent built into the codebase: they show on their cards in the live app. */
   builtComponents?: FrameComponent[]
-  /** How long the loading state shows before the live app loads in (ms). */
+  /** How long the loading state shows before the live app loads in (ms). 0: no loading and no intro. */
   loadMs?: number
 }) {
-  const [phase, setPhase] = useState<LoadPhase>("start")
+  /** loadMs 0: the live app is simply there (no loading state, no intro), also after a reload. */
+  const instant = loadMs === 0
+  const [phase, setPhase] = useState<LoadPhase>(instant ? "loaded" : "start")
   /** Bumped by reload: restarts the loading and remounts the app. */
   const [loadId, setLoadId] = useState(0)
   const [capturing, setCapturing] = useState(false)
@@ -118,6 +120,7 @@ export const PortalView = memo(function PortalView({
   const nextPulseId = useRef(1)
 
   useEffect(() => {
+    if (instant) return
     // Next frame: start the progress bar transition from 0.
     const frame = requestAnimationFrame(() => setPhase("loading"))
     const timer = setTimeout(() => setPhase("loaded"), loadMs)
@@ -125,7 +128,7 @@ export const PortalView = memo(function PortalView({
       cancelAnimationFrame(frame)
       clearTimeout(timer)
     }
-  }, [loadId, loadMs])
+  }, [loadId, loadMs, instant])
 
   // The capture flash removes itself once it has faded.
   useEffect(() => {
@@ -149,7 +152,7 @@ export const PortalView = memo(function PortalView({
   }, [onClose, capturing])
 
   function reload() {
-    setPhase("start")
+    setPhase(instant ? "loaded" : "start")
     setLoadId((id) => id + 1)
   }
 
@@ -325,7 +328,7 @@ export const PortalView = memo(function PortalView({
             >
               {/* Size container: the device fits both its width and height (the whole app stays visible) */}
               <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center [container-type:size]">
-                <AirbnbDevice key={`${loadId}-${loaded ? "live" : "loading"}`} loaded={loaded} />
+                <AirbnbDevice key={`${loadId}-${loaded ? "live" : "loading"}`} loaded={loaded} skipIntro={instant} />
               </div>
             </div>
 
@@ -671,7 +674,7 @@ const WINDOW_ASPECT = 0.657
  * finished screen instantly (sped-up intro) under the dark overlay; once loaded it remounts and
  * plays the intro at its normal pace.
  */
-function AirbnbDevice({ loaded }: { loaded: boolean }) {
+function AirbnbDevice({ loaded, skipIntro = false }: { loaded: boolean; skipIntro?: boolean }) {
   return (
     <div className="@container" style={{ width: `min(100cqw, calc(100cqh / ${WINDOW_ASPECT}))` }}>
       <div className="overflow-hidden rounded-[0.9cqw] bg-white shadow-[0_0_0_1px_rgba(17,17,16,0.14),0_2.4cqw_5cqw_-1.6cqw_rgba(17,17,16,0.35)]">
@@ -687,7 +690,8 @@ function AirbnbDevice({ loaded }: { loaded: boolean }) {
           </span>
         </div>
         <div data-portal-screen className="@container aspect-[1440/900] overflow-hidden bg-white">
-          <AirbnbScreen introSpeed={loaded ? 1 : 1000} />
+          {/* skipIntro: the finished screen straight away (the intro played instantly) */}
+          <AirbnbScreen introSpeed={loaded && !skipIntro ? 1 : 1000} />
         </div>
       </div>
     </div>

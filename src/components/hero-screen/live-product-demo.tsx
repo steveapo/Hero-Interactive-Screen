@@ -83,8 +83,8 @@ async function zoomToFill(api: ScriptApi) {
 /** Same tempo as the hero demo (scripted times × 0.85). */
 const PACE = 0.85
 
-/** The live app loads this fast in the showcase (the Portal's default is 2s). */
-const PORTAL_LOAD_MS = 600
+/** The live app is simply there in the showcase: no loading state, no intro (the Portal's default is 2s). */
+const PORTAL_LOAD_MS = 0
 
 /**
  * The screen is laid out at this desktop size and drawn scaled to fit the card. Narrower than the
