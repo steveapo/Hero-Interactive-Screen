@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils"
 import type { ChangedFile, DiffRow } from "./code-changes-popover"
 import { CODEBASE_WIDTH } from "./codebase-frame"
 import type { CanvasRect } from "./drag"
+import { useCanvasEntrance, type CanvasEntrance } from "./planner-frame"
 import {
   AddToChatIcon,
   AngleIcon,
@@ -170,12 +171,18 @@ export function FrameComponentsLayer({
   camera,
   selectedId,
   onPress,
+  entranceFor,
+  revealKey = 0,
 }: {
   components: FrameComponent[]
   frameRects: Record<string, CanvasRect>
   camera: { x: number; y: number; zoom: number }
   selectedId: string | null
   onPress: (e: React.PointerEvent, id: string) => void
+  /** The canvas entrance of an instance's frame: the instance glides in with its card. */
+  entranceFor?: (frame: CanvasRect) => CanvasEntrance | null
+  /** Bumped on each canvas reveal: the instances remount so their entrance replays. */
+  revealKey?: number
 }) {
   return (
     <>
@@ -186,9 +193,9 @@ export function FrameComponentsLayer({
         const top = frame.y - frame.h / 2 + c.y
         const selected = selectedId === c.id
         return (
+          <ComponentEntrance key={`${c.id}-${revealKey}`} entrance={entranceFor?.(frame) ?? null}>
           <div
-            key={c.id}
-            className="pointer-events-none absolute z-[12] origin-top-left"
+            className="pointer-events-none absolute origin-top-left"
             style={{
               left: `calc(50% + ${camera.x + left * camera.zoom}px)`,
               top: `calc(50% + ${camera.y + top * camera.zoom}px)`,
@@ -216,9 +223,26 @@ export function FrameComponentsLayer({
               </div>
             </div>
           </div>
+          </ComponentEntrance>
         )
       })}
     </>
+  )
+}
+
+/**
+ * Plays a frame's canvas entrance on one instance. A canvas-sized layer of its own, so the glide
+ * (a transform) doesn't clash with the instance's zoom scale; the instance is positioned inside it
+ * exactly as before.
+ */
+function ComponentEntrance({ entrance, children }: { entrance: CanvasEntrance | null; children: React.ReactNode }) {
+  const enter = useCanvasEntrance<HTMLDivElement>(entrance)
+  // Hidden: also out of reach of the pointer (the instance itself takes pointer events).
+  const style = entrance === "hidden" ? { ...enter.style, visibility: "hidden" as const } : enter.style
+  return (
+    <div ref={enter.ref} style={style} className="pointer-events-none absolute inset-0 z-[12]">
+      {children}
+    </div>
   )
 }
 

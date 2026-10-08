@@ -280,6 +280,7 @@ export function CodeChangesPanel({
   extra = [],
   className,
   sidebarClassName,
+  revealDelay,
   role,
   onPointerDown,
 }: {
@@ -288,12 +289,19 @@ export function CodeChangesPanel({
   className?: string
   /** Overrides for the file tree's width (e.g. narrower in a small window, leaving the diff more room). */
   sidebarClassName?: string
+  /**
+   * Set (ms) to bring the opening file's diff in progressively, row by row, starting that long
+   * after it's set. Only the file the panel opens on; picking another file shows it at once.
+   */
+  revealDelay?: number
   role?: "dialog"
   onPointerDown?: (e: React.PointerEvent) => void
 }) {
   const files = allChanges(extra)
   const totals = totalsOf(files)
   const [selected, setSelected] = useState(() => extra[0]?.path ?? DEFAULT_FILE)
+  /** The file the panel opened on, until another is picked (its diff can come in progressively). */
+  const [introFile, setIntroFile] = useState<string | null>(selected)
   const [query, setQuery] = useState("")
   /** Folder paths the user has collapsed (all open by default). */
   const [collapsed, setCollapsed] = useState<string[]>([])
@@ -339,7 +347,10 @@ export function CodeChangesPanel({
               <button
                 type="button"
                 aria-current={active ? "true" : undefined}
-                onClick={() => setSelected(file.path)}
+                onClick={() => {
+                  setSelected(file.path)
+                  if (file.path !== introFile) setIntroFile(null)
+                }}
                 className={cn(
                   "flex h-7 w-full items-center gap-2 rounded-md pr-2 text-left text-px-11 transition-colors",
                   active ? "bg-stone-700/10" : "hover:bg-stone-700/5",
@@ -419,7 +430,13 @@ export function CodeChangesPanel({
 
         {/* Selected file's diff */}
         <div className="min-w-0 flex-1 bg-white">
-          {selectedFile ? <FileDiff key={selectedFile.path} file={selectedFile} /> : null}
+          {selectedFile ? (
+            <FileDiff
+              key={selectedFile.path}
+              file={selectedFile}
+              revealDelay={selectedFile.path === introFile ? revealDelay : undefined}
+            />
+          ) : null}
         </div>
       </div>
       </div>
@@ -472,7 +489,7 @@ function tidy(node: TreeNode): TreeNode {
 
 /* --------------------------------- Diff ----------------------------------- */
 
-function FileDiff({ file }: { file: ChangedFile }) {
+function FileDiff({ file, revealDelay }: { file: ChangedFile; revealDelay?: number }) {
   if (!file.diff) {
     return <p className="px-4 py-3 text-px-12 text-stone-500">No preview available for this file.</p>
   }
@@ -481,14 +498,37 @@ function FileDiff({ file }: { file: ChangedFile }) {
     <div data-diff className="grid size-full grid-cols-2 overflow-hidden font-mono text-px-11 leading-[18px]">
       <div className="min-w-0 overflow-hidden border-r border-stone-700/15">
         {file.diff.map(([left], i) => (
-          <DiffLine key={i} side={left} />
+          <RevealLine key={i} index={i} delay={revealDelay}>
+            <DiffLine side={left} />
+          </RevealLine>
         ))}
       </div>
       <div className="min-w-0 overflow-hidden">
         {file.diff.map(([, right], i) => (
-          <DiffLine key={i} side={right} />
+          <RevealLine key={i} index={i} delay={revealDelay}>
+            <DiffLine side={right} />
+          </RevealLine>
         ))}
       </div>
+    </div>
+  )
+}
+
+/** Gap between consecutive diff rows coming in (ms). */
+const LINE_REVEAL_STAGGER_MS = 28
+
+/**
+ * One diff row; with a `delay` it comes in progressively: rows fade and slide in one after another
+ * (both sides of a row together), top to bottom, starting `delay` ms from when it's set.
+ */
+function RevealLine({ index, delay, children }: { index: number; delay?: number; children: React.ReactNode }) {
+  if (delay === undefined) return <>{children}</>
+  return (
+    <div
+      className="animate-in fade-in slide-in-from-left-2 duration-300 motion-reduce:animate-none"
+      style={{ animationDelay: `${delay + index * LINE_REVEAL_STAGGER_MS}ms`, animationFillMode: "both" }}
+    >
+      {children}
     </div>
   )
 }
