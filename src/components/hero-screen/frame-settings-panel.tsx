@@ -16,7 +16,7 @@ export type Insets = { top: number | null; right: number | null; bottom: number 
 
 export const NO_SIDES: Sides = { top: 0, right: 0, bottom: 0, left: 0 }
 
-const LAYOUT_MODES: { id: LayoutMode; label: string; icon: () => React.JSX.Element }[] = [
+export const LAYOUT_MODES: { id: LayoutMode; label: string; icon: () => React.JSX.Element }[] = [
   { id: "freeform", label: "Freeform", icon: FreeformIcon },
   { id: "row", label: "Row", icon: RowIcon },
   { id: "column", label: "Column", icon: ColumnIcon },
@@ -611,7 +611,7 @@ export function Glyph({ children }: { children: React.ReactNode }) {
 }
 
 /** Window with a header bar; its bottom edge opens where the up arrow comes out of it. */
-function AddToChatIcon() {
+export function AddToChatIcon() {
   return (
     <Glyph>
       <path d="M5.25 12.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h8A1.5 1.5 0 0 1 12.5 3v8a1.5 1.5 0 0 1-1.5 1.5H8.75" />
@@ -621,7 +621,7 @@ function AddToChatIcon() {
   )
 }
 
-function AngleIcon() {
+export function AngleIcon() {
   return (
     <Glyph>
       <path d="M2 2v10h10M2 7a5 5 0 0 1 5 5" />
@@ -706,7 +706,7 @@ function GridIcon() {
   )
 }
 
-function PaddingXIcon() {
+export function PaddingXIcon() {
   return (
     <Glyph>
       <rect x="1.5" y="3" width="11" height="8" rx="1" />
@@ -715,7 +715,7 @@ function PaddingXIcon() {
   )
 }
 
-function PaddingYIcon() {
+export function PaddingYIcon() {
   return (
     <Glyph>
       <rect x="1.5" y="2.5" width="11" height="9" rx="1" />
@@ -815,7 +815,7 @@ function MarginBottomIcon() {
   )
 }
 
-function StrokeWidthIcon() {
+export function StrokeWidthIcon() {
   return (
     <Glyph>
       <path d="M2 3.5h10" />
@@ -825,7 +825,7 @@ function StrokeWidthIcon() {
   )
 }
 
-function OpacityIcon() {
+export function OpacityIcon() {
   return (
     <Glyph>
       <rect x="1.5" y="1.5" width="11" height="11" rx="1.5" />

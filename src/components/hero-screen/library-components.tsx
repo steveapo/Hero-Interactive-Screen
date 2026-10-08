@@ -1,11 +1,30 @@
 "use client"
 
-import { Check } from "lucide-react"
+import { useLayoutEffect, useState } from "react"
+import { Check, ChevronDown, Ellipsis, FlipHorizontal2, FlipVertical2, ImagePlus, Minus, Pencil, RotateCwSquare, Scan } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import type { ChangedFile, DiffRow } from "./code-changes-popover"
 import { CODEBASE_WIDTH } from "./codebase-frame"
 import type { CanvasRect } from "./drag"
+import {
+  AddToChatIcon,
+  AngleIcon,
+  Glyph,
+  IconButton,
+  LAYOUT_MODES,
+  OpacityIcon,
+  PaddingXIcon,
+  PaddingYIcon,
+  px,
+  Row,
+  Section,
+  SelectionColorsSection,
+  SettingTooltip,
+  SideButton,
+  StrokeWidthIcon,
+  type LayoutMode,
+} from "./frame-settings-panel"
 
 /**
  * Design-system components pulled onto the canvas: drag a tile out of the left sidebar's
@@ -55,12 +74,35 @@ export const NEW_BADGE: Pick<FrameComponent, "label" | "tone" | "size"> = { labe
 /** Rough canvas-unit size of a fresh Badge, to centre it on the drop point. */
 export const NEW_BADGE_SIZE = { w: 5 * CQW, h: 2 * CQW }
 
-export const BADGE_TONES: { id: BadgeTone; label: string; swatch: string }[] = [
-  { id: "neutral", label: "Neutral", swatch: "#111111" },
-  { id: "lime", label: "Lime", swatch: "#c2ec66" },
-  { id: "red", label: "Red", swatch: "#e4321b" },
-  { id: "outline", label: "Outline", swatch: "#ffffff" },
+/**
+ * `variant` = the design-system variant name shown in Component States; `fillToken` / `borderToken`
+ * name the colour tokens behind TONE_CLASS (null border = transparent); `text` = the label colour.
+ */
+export const BADGE_TONES: {
+  id: BadgeTone
+  label: string
+  variant: string
+  swatch: string
+  fillToken: string
+  text: string
+  border: { token: string; color: string; opacity: number } | null
+}[] = [
+  { id: "neutral", label: "Neutral", variant: "default", swatch: "#111111", fillToken: "neutral-900", text: "#ffffff", border: null },
+  { id: "lime", label: "Lime", variant: "lime", swatch: "#c2ec66", fillToken: "lime-300", text: "#16210a", border: null },
+  { id: "red", label: "Red", variant: "destructive", swatch: "#e4321b", fillToken: "red-600", text: "#ffffff", border: null },
+  {
+    id: "outline",
+    label: "Outline",
+    variant: "outline",
+    swatch: "#ffffff",
+    fillToken: "white",
+    text: "#2f2f2f",
+    border: { token: "black", color: "#000000", opacity: 20 },
+  },
 ]
+
+/** Spacing / size tokens of the design-system Badge (components/ui/badge: h-5 px-2 py-0.5 gap-1 border). */
+const BADGE_TOKENS = { height: "5", paddingX: "2", paddingY: "0.5", gap: "1", borderWidth: "border" }
 
 export const BADGE_SIZES: { id: BadgeSize; short: string; label: string }[] = [
   { id: "sm", short: "S", label: "Small" },
@@ -205,98 +247,377 @@ export function ComponentSettingsPanel({
   instance: FrameComponent
   onChange: (patch: Partial<FrameComponent>) => void
 }) {
+  const tone = BADGE_TONES.find((t) => t.id === instance.tone) ?? BADGE_TONES[0]
+  const [layout, setLayout] = useState<LayoutMode>("row")
+  const [wrap, setWrap] = useState(false)
+  // components/ui/badge sets overflow-hidden
+  const [clip, setClip] = useState(true)
+
+  // Rendered size of the instance, in canvas units (offset sizes ignore the zoom transform).
+  const [measured, setMeasured] = useState<{ w: number; h: number } | null>(null)
+  useLayoutEffect(() => {
+    const el = document.querySelector<HTMLElement>(`[data-frame-component="${instance.id}"]`)
+    if (el) setMeasured({ w: el.offsetWidth, h: el.offsetHeight })
+  }, [instance.id, instance.label, instance.tone, instance.size])
+
   return (
     <aside
       data-cursor-id="component-settings"
-      className="absolute right-1.5 top-[46px] z-30 flex w-[326px] flex-col rounded-xl border border-stone-700/10 bg-[#f2f2f1] p-2.5 pb-3 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)] animate-in fade-in slide-in-from-right-1 duration-150"
+      className="absolute right-1.5 top-[46px] z-30 flex max-h-[calc(100%-56px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-stone-700/10 bg-[#f5f5f4] shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)] animate-in fade-in slide-in-from-right-1 duration-150"
     >
-      <h2 className="flex items-center gap-2 pt-1 text-[13px] font-semibold leading-4 text-stone-900">
-        <ComponentGlyph />
-        {instance.component}
-        <span className="ml-auto rounded-full bg-[#ede9fe] px-2 py-0.5 text-[11px] font-medium text-[#6d28d9]">
-          Design system
-        </span>
-      </h2>
-
-      <Field label="Text">
-        <input
-          aria-label="Badge text"
-          value={instance.label}
-          onChange={(e) => onChange({ label: e.target.value })}
-          className="h-7 w-full select-text rounded-md bg-stone-200/70 px-2 text-[13px] text-stone-900 outline-none focus:bg-white focus:shadow-[0_0_0_1px_rgba(47,107,246,0.6)]"
-        />
-      </Field>
-
-      <Field label="Variant">
-        <div className="flex gap-1.5">
-          {BADGE_TONES.map((tone) => (
-            <button
-              key={tone.id}
-              type="button"
-              aria-label={tone.label}
-              aria-pressed={instance.tone === tone.id}
-              onClick={() => onChange({ tone: tone.id })}
-              className={cn(
-                "flex h-7 flex-1 items-center justify-center gap-1.5 rounded-md text-[12px] text-stone-800 transition-colors",
-                instance.tone === tone.id ? "bg-white shadow-[0_0_0_1px_rgba(47,107,246,0.6)]" : "bg-stone-200/70 hover:bg-stone-200",
-              )}
-            >
-              <span
-                className="size-3 rounded-full border border-stone-700/20"
-                style={{ background: tone.swatch }}
-              />
-              {tone.label}
-            </button>
-          ))}
+      {/* Header: instance name + Add to Build Chat, then the main component + Detach */}
+      <div className="flex flex-col gap-2.5 border-b border-stone-700/10 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2.5 text-[14px] font-semibold leading-4 text-stone-800">
+            <ComponentGlyph />
+            {instance.component} (Instance)
+          </h2>
+          <button
+            type="button"
+            className="flex h-7 items-center gap-1.5 rounded-full border border-[#46a35a]/40 bg-[#e3f1e5] px-2.5 text-[12px] font-semibold text-[#2f7d42] transition-colors hover:bg-[#d5ebd9]"
+          >
+            <AddToChatIcon />
+            Add to Build Chat
+          </button>
         </div>
-      </Field>
-
-      <Field label="Size">
-        <div className="flex rounded-md bg-stone-200/70 p-0.5">
-          {BADGE_SIZES.map((size) => (
-            <button
-              key={size.id}
-              type="button"
-              aria-label={size.label}
-              aria-pressed={instance.size === size.id}
-              onClick={() => onChange({ size: size.id })}
-              className={cn(
-                "h-6 flex-1 rounded-[5px] text-[12px] font-medium transition-colors",
-                instance.size === size.id ? "bg-white text-stone-900 shadow-[0_1px_2px_rgba(17,17,16,0.1)]" : "text-stone-600 hover:text-stone-900",
-              )}
-            >
-              {size.short}
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[12px] font-semibold leading-4 text-stone-900">{instance.component}</p>
+          <button
+            type="button"
+            className="flex h-6 items-center rounded-md bg-stone-200/70 px-2 text-[12px] text-stone-900 transition-colors hover:bg-stone-200"
+          >
+            Detach
+          </button>
         </div>
-      </Field>
+      </div>
 
-      <Field label="Source">
-        <p className="flex h-7 items-center rounded-md bg-stone-200/70 px-2 font-mono text-[12px] text-stone-700">
-          @/components/ui/badge
-        </p>
-      </Field>
+      <Section title="Component States">
+        <Row>
+          <span className="flex h-6 items-center pl-5 text-[12px] text-stone-900">variant</span>
+          <label className="group/setting relative flex h-6 min-w-0 items-center rounded-md bg-stone-200/70 text-[12px] text-stone-900">
+            <SettingTooltip label="variant" align="end" />
+            <select
+              aria-label="variant"
+              value={instance.tone}
+              onChange={(e) => onChange({ tone: e.target.value as BadgeTone })}
+              className="h-full w-full min-w-0 cursor-pointer appearance-none bg-transparent pl-2 pr-6 outline-none"
+            >
+              {BADGE_TONES.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.variant}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-1.5 size-3 text-stone-400" strokeWidth={1.25} />
+          </label>
+        </Row>
+      </Section>
+
+      <Section title="Position">
+        <Row>
+          <PropField label="X" name="Position X" value={px(instance.x)} trailing="variable" />
+          <PropField label="Y" name="Position Y" value={px(instance.y)} trailing="variable" />
+        </Row>
+        <Row>
+          <PropField label={<AngleIcon />} name="Rotation" value="0°" />
+          <div className="flex h-6 items-stretch divide-x divide-[#f5f5f4] rounded-md bg-stone-200/70 text-stone-700">
+            <IconButton label="Rotate 90°">
+              <RotateCwSquare className="size-3.5" strokeWidth={1.25} />
+            </IconButton>
+            <IconButton label="Flip horizontal">
+              <FlipHorizontal2 className="size-3.5" strokeWidth={1.25} />
+            </IconButton>
+            <IconButton label="Flip vertical" align="end">
+              <FlipVertical2 className="size-3.5" strokeWidth={1.25} />
+            </IconButton>
+          </div>
+        </Row>
+      </Section>
+
+      <Section title="Size">
+        <Row side={<SideButton label="Size options" icon={<Scan className="size-3.5" strokeWidth={1.25} />} plain />}>
+          <PropField label="W" name="Width" value={measured ? px(measured.w) : "Hug"} trailing="variable" />
+          <PropField label="H" name="Height" value={BADGE_TOKENS.height} token trailing="variable" />
+        </Row>
+      </Section>
+
+      <Section title="Layout">
+        <Row side={<SideButton label="More layout options" icon={<Ellipsis className="size-3.5" strokeWidth={1.5} />} plain />}>
+          <div role="radiogroup" aria-label="Layout mode" className="col-span-2 flex h-7 rounded-md bg-stone-200/70">
+            {LAYOUT_MODES.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                role="radio"
+                aria-checked={layout === id}
+                aria-label={label}
+                onClick={() => setLayout(id)}
+                className={cn(
+                  "group/setting relative flex flex-1 items-center justify-center rounded-md transition-colors",
+                  layout === id ? "bg-[#2f6bf6] text-white" : "text-stone-700 hover:bg-stone-700/5",
+                )}
+              >
+                <Icon />
+                <SettingTooltip label={label} align={id === "grid" ? "end" : "center"} />
+              </button>
+            ))}
+          </div>
+        </Row>
+        <Row>
+          <AlignmentGrid />
+          <div className="flex flex-col gap-2">
+            <div className="flex h-6 items-center justify-between pl-2 pr-1 text-[12px] text-stone-900">
+              Wrap
+              <Toggle label="Wrap" on={wrap} onToggle={() => setWrap((v) => !v)} />
+            </div>
+            <PropField label={<GapIcon />} name="Gap" value={BADGE_TOKENS.gap} token trailing="edit" />
+          </div>
+        </Row>
+        <Row side={<SideButton label="Padding per side" icon={<Scan className="size-3.5" strokeWidth={1.25} />} plain />}>
+          <PropField label={<PaddingXIcon />} name="Horizontal padding" value={BADGE_TOKENS.paddingX} token trailing="edit" />
+          <PropField label={<PaddingYIcon />} name="Vertical padding" value={BADGE_TOKENS.paddingY} token trailing="edit" />
+        </Row>
+        <Row side={<SideButton label="Margin per side" icon={<Scan className="size-3.5" strokeWidth={1.25} />} plain />}>
+          <PropField label={<MarginXIcon />} name="Horizontal margin" value="0" token trailing="edit" />
+          <PropField label={<MarginYIcon />} name="Vertical margin" value="0" token trailing="edit" />
+        </Row>
+        <div className="mt-2 flex h-7 items-center justify-between pl-2 text-[12px] text-stone-900">
+          Clip Content
+          <Toggle label="Clip Content" on={clip} onToggle={() => setClip((v) => !v)} />
+        </div>
+      </Section>
+
+      <Section title="Appearance">
+        <Row side={<SideButton label="Corner radius per corner" icon={<Scan className="size-3.5" strokeWidth={1.25} />} plain />}>
+          <PropField label={<OpacityIcon />} name="Opacity" value="100%" trailing="variable" />
+          <PropField
+            label={<Scan className="size-3.5" strokeWidth={1.25} />}
+            name="Corner radius"
+            value={measured ? px(measured.h / 2) : "0px"}
+            trailing="variable"
+          />
+        </Row>
+      </Section>
+
+      <Section title="Fill">
+        <Row side={<SideButton label="Remove fill" icon={<Minus className="size-3.5" strokeWidth={1.25} />} plain />}>
+          <TokenColorField name="Fill" token={tone.fillToken} color={tone.swatch} opacity={100} className="col-span-2" />
+        </Row>
+        <Row>
+          <button
+            type="button"
+            className="group/setting relative col-span-2 flex h-6 w-fit items-center gap-2 rounded-md bg-stone-200/70 pl-1.5 pr-2 text-[12px] text-stone-900 hover:bg-stone-200"
+          >
+            <SettingTooltip label="Add image fill" />
+            <ImagePlus className="size-3.5 text-stone-600" strokeWidth={1.25} />
+            Add Image
+          </button>
+        </Row>
+      </Section>
+
+      <Section title="Border">
+        <Row side={<SideButton label="Remove border" icon={<Minus className="size-3.5" strokeWidth={1.25} />} plain />}>
+          <TokenColorField
+            name="Border"
+            token={tone.border?.token ?? "transparent"}
+            color={tone.border?.color ?? null}
+            opacity={tone.border?.opacity ?? 0}
+            className="col-span-2"
+          />
+        </Row>
+        <Row side={<SideButton label="Border per side" icon={<BorderPerSideIcon />} plain />}>
+          <PropField label={<BorderStyleIcon />} name="Border style" value="solid" chevron />
+          <PropField label={<StrokeWidthIcon />} name="Border width" value={BADGE_TOKENS.borderWidth} token trailing="edit" />
+        </Row>
+      </Section>
+
+      <SelectionColorsSection colors={[tone.swatch, tone.text]} />
     </aside>
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/**
+ * Read-only property field: label on the left, right-aligned value (in a white chip when it's a
+ * design token), then an optional variable-binding / edit-token affordance.
+ */
+function PropField({
+  label,
+  name,
+  value,
+  token = false,
+  chevron = false,
+  trailing,
+}: {
+  label: React.ReactNode
+  /** Full setting name, shown in the hover tooltip. */
+  name: string
+  value: string
+  token?: boolean
+  chevron?: boolean
+  trailing?: "variable" | "edit"
+}) {
   return (
-    <div className="mt-2.5">
-      <p className="mb-1 text-[11px] font-medium leading-4 text-stone-700">{label}</p>
-      {children}
+    <div
+      tabIndex={0}
+      aria-label={name}
+      className="group/setting relative flex h-6 min-w-0 items-center gap-1.5 rounded-md bg-stone-200/70 pl-2 pr-1.5 text-[12px] text-stone-900 outline-none"
+    >
+      <SettingTooltip label={name} />
+      <span className="shrink-0 text-stone-500">{label}</span>
+      <span className="flex min-w-0 flex-1 justify-end tabular-nums">
+        <span className={cn("truncate", token && "rounded-[4px] bg-white px-1 shadow-[0_0_0_1px_rgba(17,17,16,0.06)]")}>{value}</span>
+      </span>
+      {chevron && <ChevronDown className="size-3 shrink-0 text-stone-400" strokeWidth={1.25} />}
+      {trailing === "variable" && <VariableIcon />}
+      {trailing === "edit" && <Pencil className="size-3 shrink-0 text-stone-500" strokeWidth={1.25} />}
+    </div>
+  )
+}
+
+/** Swatch + colour token name (white chip) + opacity. null colour = transparent checkerboard. */
+function TokenColorField({
+  name,
+  token,
+  color,
+  opacity,
+  className,
+}: {
+  name: string
+  token: string
+  color: string | null
+  opacity: number
+  className?: string
+}) {
+  return (
+    <div className={cn("flex h-6 min-w-0 items-center rounded-md bg-stone-200/70 text-[12px] text-stone-900", className)}>
+      <span tabIndex={0} className="group/setting relative flex h-full min-w-0 flex-1 items-center gap-2 pl-1.5 outline-none">
+        <SettingTooltip label={`${name} colour`} />
+        <span
+          className="size-3.5 shrink-0 rounded-[4px] border border-stone-700/15"
+          style={{ background: color ?? "repeating-conic-gradient(#d6d3d1 0 25%, #ffffff 0 50%) 0 0 / 7px 7px" }}
+        />
+        <span className="truncate rounded-[4px] bg-white px-1 shadow-[0_0_0_1px_rgba(17,17,16,0.06)]">{token}</span>
+      </span>
+      <span
+        tabIndex={0}
+        className={cn(
+          "group/setting relative flex h-full w-[60px] shrink-0 items-center justify-end gap-1.5 border-l border-[#f5f5f4] pr-2 tabular-nums outline-none",
+          color === null && "text-stone-400",
+        )}
+      >
+        <SettingTooltip label={`${name} opacity`} align="end" />
+        {opacity}
+        <span className="text-stone-400">%</span>
+      </span>
+    </div>
+  )
+}
+
+/** Small on/off switch. */
+function Toggle({ label, on, onToggle }: { label: string; on: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-label={label}
+      aria-checked={on}
+      onClick={onToggle}
+      className={cn("relative h-3.5 w-6 rounded-full transition-colors", on ? "bg-stone-900" : "bg-stone-300")}
+    >
+      <span
+        className={cn("absolute left-0.5 top-0.5 size-2.5 rounded-full bg-white shadow-sm transition-transform", on && "translate-x-2.5")}
+      />
+    </button>
+  )
+}
+
+/** 3×3 alignment picker; children sit centred (the Badge is items-center justify-center). */
+function AlignmentGrid() {
+  return (
+    <div aria-label="Alignment" className="grid min-h-[88px] grid-cols-3 grid-rows-3 place-items-center rounded-md bg-stone-200/70 p-2">
+      {Array.from({ length: 9 }, (_, i) =>
+        i === 4 ? (
+          <span key={i} className="flex items-center gap-[2px]">
+            <span className="h-2 w-[2px] rounded-full" style={{ background: SELECT_BLUE }} />
+            <span className="h-3 w-[2px] rounded-full" style={{ background: SELECT_BLUE }} />
+            <span className="h-2 w-[2px] rounded-full" style={{ background: SELECT_BLUE }} />
+          </span>
+        ) : (
+          <span key={i} className="size-[3px] rounded-full bg-stone-400" />
+        ),
+      )}
     </div>
   )
 }
 
 function ComponentGlyph() {
   return (
-    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-[#6d28d9]">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round" aria-hidden="true" className="shrink-0 text-stone-800">
       <path d="M7 1 9.5 3.5 7 6 4.5 3.5Z" />
       <path d="M3.5 4.5 6 7 3.5 9.5 1 7Z" />
       <path d="M10.5 4.5 13 7 10.5 9.5 8 7Z" />
       <path d="M7 8 9.5 10.5 7 13 4.5 10.5Z" />
     </svg>
+  )
+}
+
+/** Bind-to-variable affordance: four rounded cells. */
+function VariableIcon() {
+  return (
+    <span className="shrink-0 text-stone-500">
+      <Glyph>
+        <rect x="2" y="2" width="4" height="4" rx="1.5" />
+        <rect x="8" y="2" width="4" height="4" rx="1.5" />
+        <rect x="2" y="8" width="4" height="4" rx="1.5" />
+        <rect x="8" y="8" width="4" height="4" rx="1.5" />
+      </Glyph>
+    </span>
+  )
+}
+
+function GapIcon() {
+  return (
+    <Glyph>
+      <path d="M2 3v8M12 3v8" />
+      <path d="M5 4.5v5M9 4.5v5" />
+    </Glyph>
+  )
+}
+
+function MarginXIcon() {
+  return (
+    <Glyph>
+      <path d="M1.5 2.5v9M12.5 2.5v9" />
+      <rect x="4.5" y="4" width="5" height="6" rx="1" />
+    </Glyph>
+  )
+}
+
+function MarginYIcon() {
+  return (
+    <Glyph>
+      <path d="M2.5 1.5h9M2.5 12.5h9" />
+      <rect x="3.5" y="4.5" width="7" height="5" rx="1" />
+    </Glyph>
+  )
+}
+
+function BorderStyleIcon() {
+  return (
+    <Glyph>
+      <path d="M2 3.5h10" />
+      <path d="M2 7h2M6 7h2M10 7h2" />
+      <path d="M2 10.5h1M5 10.5h1M8 10.5h1M11 10.5h1" />
+    </Glyph>
+  )
+}
+
+function BorderPerSideIcon() {
+  return (
+    <Glyph>
+      <rect x="1.5" y="1.5" width="11" height="11" rx="2" />
+      <rect x="4.5" y="4.5" width="5" height="5" rx="1" />
+    </Glyph>
   )
 }
 
