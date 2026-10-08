@@ -139,8 +139,8 @@ function DesktopWindow({
   /** How far the window has been dragged from its placement, in layout px. */
   const [offset, setOffset] = useState({ x: 0, y: 0 })
 
-  // Opening: the window springs up out of its lower-right corner (scale + rise + fade, with a slight
-  // overshoot). Animated through the `scale` / `translate` properties so it composes with the drag
+  // Opening: the window scales up from 85% to 100%, fades in (0 → 100% opacity) and moves up 20px,
+  // easing out. Animated through the `scale` / `translate` properties so it composes with the drag
   // offset (`transform`). Its first frame is hidden, so during the delay it's invisible and can't be
   // pressed. Runs in a layout effect: the frame that drops the "waiting" style never shows it early.
   useLayoutEffect(() => {
@@ -149,8 +149,7 @@ function DesktopWindow({
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
     const animation = el.animate(
       [
-        { visibility: "hidden", opacity: 0, scale: "0.6", translate: "0 48px" },
-        { visibility: "visible", opacity: 1, scale: "1.02", translate: "0 -4px", offset: 0.7 },
+        { visibility: "hidden", opacity: 0, scale: "0.85", translate: "0 20px" },
         { visibility: "visible", opacity: 1, scale: "1", translate: "0 0" },
       ],
       {
@@ -193,7 +192,7 @@ function DesktopWindow({
         transform: `translate(${offset.x}px, ${offset.y}px)`,
         visibility: opening === "waiting" ? "hidden" : undefined,
       }}
-      className={cn(DESKTOP_WINDOW, "origin-bottom-right", placement)}
+      className={cn(DESKTOP_WINDOW, placement)}
     >
       <SafariChrome compact title={title} active={active} onBarPointerDown={startMove}>
         {children}
