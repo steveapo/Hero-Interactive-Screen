@@ -41,18 +41,20 @@ type Tool = "select" | "frame" | "text" | "code"
 // The hero canvas is a showcase, not an infinite canvas: zoom and pan are both bounded.
 
 /**
- * Furthest the user can zoom out / in: 12% to 40% in the zoom readout (the canvas opens at 30%).
- * Zoomed right out, the ring of explored screens around the app's elements comes into view.
+ * Furthest the user can zoom out / in: 24% to 40% in the zoom readout (the canvas opens at 30%).
+ * Kept close to the opening view so a visitor stays around the working cluster.
  */
-const MIN_ZOOM = 0.12
+const MIN_ZOOM = 0.24
 const MAX_ZOOM = 0.4
 
 /**
- * Pan limits follow the frames: the viewport centre can travel over the area the frames cover
- * (plus this margin, in canvas units), so a moved frame can never end up out of reach.
+ * Pan limits follow the frames: the viewport's edges stay within the area the frames cover (plus
+ * this margin, in canvas units), so panning stops at the content instead of drifting into empty
+ * canvas, and a moved frame can never end up out of reach. When the whole area fits in view, the
+ * camera stays centred on it.
  */
-const PAN_MARGIN_X = 20
-const PAN_MARGIN_Y = 10
+const PAN_MARGIN_X = 160
+const PAN_MARGIN_Y = 140
 
 /** Wheel → zoom sensitivity for pinch / ⌘-scroll. */
 const WHEEL_ZOOM_SPEED = 0.01
@@ -118,7 +120,19 @@ type Camera = { x: number; y: number; zoom: number }
  * tuned at the reference width and scale with the fit, so the canvas shows the same composition
  * at any screen size.
  */
-type Bounds = { minX: number; maxX: number; minY: number; maxY: number; fit: number }
+type Bounds = {
+  minX: number
+  maxX: number
+  minY: number
+  maxY: number
+  fit: number
+  /** The canvas's layout size (px): pan limits keep its edges within the area. */
+  viewW: number
+  viewH: number
+}
+
+/** The canvas's layout size in px. */
+type Viewport = { w: number; h: number }
 
 /** Canvas width (px) the zoom levels are tuned at; see Bounds.fit. */
 const REFERENCE_CANVAS_WIDTH = 1280
@@ -130,22 +144,34 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function frameBounds(rects: CanvasRect[], fit: number): Bounds {
+function frameBounds(rects: CanvasRect[], fit: number, viewport: Viewport): Bounds {
   return {
     minX: Math.min(...rects.map((r) => r.x - r.w / 2)) - PAN_MARGIN_X,
     maxX: Math.max(...rects.map((r) => r.x + r.w / 2)) + PAN_MARGIN_X,
     minY: Math.min(...rects.map((r) => r.y - r.h / 2)) - PAN_MARGIN_Y,
     maxY: Math.max(...rects.map((r) => r.y + r.h / 2)) + PAN_MARGIN_Y,
     fit,
+    viewW: viewport.w,
+    viewH: viewport.h,
   }
+}
+
+/**
+ * One axis of the camera offset (screen px), so the visible span stays within [min, max] (canvas
+ * units). If the span is wider than that area at this zoom, the area is centred instead.
+ */
+function clampAxis(offset: number, min: number, max: number, view: number, z: number) {
+  const lo = view / 2 - max * z
+  const hi = -view / 2 - min * z
+  return lo > hi ? (-(min + max) / 2) * z : clamp(offset, lo, hi)
 }
 
 function clampCamera({ x, y, zoom }: Camera, bounds: Bounds): Camera {
   const z = clamp(zoom, MIN_ZOOM * bounds.fit, MAX_ZOOM * bounds.fit)
   return {
     zoom: z,
-    x: clamp(x, -bounds.maxX * z, -bounds.minX * z),
-    y: clamp(y, -bounds.maxY * z, -bounds.minY * z),
+    x: clampAxis(x, bounds.minX, bounds.maxX, bounds.viewW, z),
+    y: clampAxis(y, bounds.minY, bounds.maxY, bounds.viewH, z),
   }
 }
 
@@ -308,13 +334,17 @@ export function HeroScreen({
    */
   const [fit, setFit] = useState(1)
   const fitRef = useRef(1)
+  /** The canvas's layout size, for the pan limits (see Bounds). */
+  const [viewport, setViewport] = useState<Viewport>({ w: REFERENCE_CANVAS_WIDTH, h: 800 })
   useLayoutEffect(() => {
     const el = canvasRef.current
     if (!el) return
     const canvas = el
     function measure() {
       const width = canvas.clientWidth
+      const height = canvas.clientHeight
       if (!width) return
+      setViewport((v) => (v.w === width && v.h === height ? v : { w: width, h: height }))
       const next = width / REFERENCE_CANVAS_WIDTH
       const ratio = next / fitRef.current
       if (Math.abs(ratio - 1) < 1e-4) return
@@ -397,9 +427,17 @@ export function HeroScreen({
           ...agents.variants.map((v) => v.rect),
         ],
         fit,
+        viewport,
       ),
-    [codebaseRect, elementRects, drawnElements, agents.variants, fit],
+    [codebaseRect, elementRects, drawnElements, agents.variants, fit, viewport],
   )
+  // Keep the view within the limits when the canvas opens or resizes (the opening view and a
+  // resized window could otherwise show past the content until the first pan).
+  useLayoutEffect(() => {
+    setCamera((c) => clampCamera(c, bounds))
+    // Only on a size change; panning and zooming clamp on their own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewport, fit])
   /** What the Share button compares against its last publish (memoized: same values, same array). */
   const shareChanges = useMemo(
     () => [drawnElements, elementRects, elementRadii, frameComponents],
