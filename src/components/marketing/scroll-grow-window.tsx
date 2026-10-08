@@ -20,7 +20,7 @@ export function useWindowFullyGrown() {
  * window is exactly the title/description column, so their left edges line up.
  */
 const START_SCALE = 1
-const END_SCALE = 1.2
+const END_SCALE = 1.16
 /** Growth finishes when the window's top reaches this fraction of the viewport height. */
 const END_TOP = 0.08
 /** Fraction of the remaining distance covered per 60fps frame (lower = softer, laggier). */
