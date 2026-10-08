@@ -39,12 +39,16 @@ const INTRO = {
 }
 /** How long a window takes to open (ms). */
 const WINDOW_OPEN_MS = 700 * INTRO_TIME_SCALE
-/** The Code Changes window opens about 25% slower than the Canvas window. */
-const CODE_WINDOW_OPEN_MS = WINDOW_OPEN_MS * 1.25
+/**
+ * The Code Changes window's whole animation (its opening, and its diff rows' reveal) plays at 55%
+ * of the Canvas window's speed (45% slower): every duration, gap and offset of it lasts 1 / 0.55×.
+ */
+const CODE_WINDOW_TIME_SCALE = 1 / 0.55
+const CODE_WINDOW_OPEN_MS = WINDOW_OPEN_MS * CODE_WINDOW_TIME_SCALE
 /** The canvas elements' entrance (its sweep of delays and each glide) plays 20% faster than leaving the Portal's. */
 const ELEMENTS_TIME_SCALE = 0.8
 /** The diff rows start coming in once the Code Changes window is mostly open (at its slower pace). */
-const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * 1.25
+const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_TIME_SCALE
 
 /** A window on the Desktop Area: rounded, with a shadow; positioned by its `placement` classes. */
 const DESKTOP_WINDOW =
@@ -142,6 +146,7 @@ export function HeroShowcase({ className }: { className?: string }) {
           className="min-h-0 flex-1"
           sidebarClassName="max-w-[32%]"
           revealDelay={intro === "play" ? CODE_LINES_AT : undefined}
+          revealTimeScale={CODE_WINDOW_TIME_SCALE}
         />
       </DesktopWindow>
     </div>

@@ -281,6 +281,7 @@ export function CodeChangesPanel({
   className,
   sidebarClassName,
   revealDelay,
+  revealTimeScale = 1,
   role,
   onPointerDown,
 }: {
@@ -294,6 +295,8 @@ export function CodeChangesPanel({
    * after it's set. Only the file the panel opens on; picking another file shows it at once.
    */
   revealDelay?: number
+  /** Time scale of that row-by-row reveal (each row's fade and the gap between rows): 2 = half speed. */
+  revealTimeScale?: number
   role?: "dialog"
   onPointerDown?: (e: React.PointerEvent) => void
 }) {
@@ -435,6 +438,7 @@ export function CodeChangesPanel({
               key={selectedFile.path}
               file={selectedFile}
               revealDelay={selectedFile.path === introFile ? revealDelay : undefined}
+              revealTimeScale={revealTimeScale}
             />
           ) : null}
         </div>
@@ -489,7 +493,15 @@ function tidy(node: TreeNode): TreeNode {
 
 /* --------------------------------- Diff ----------------------------------- */
 
-function FileDiff({ file, revealDelay }: { file: ChangedFile; revealDelay?: number }) {
+function FileDiff({
+  file,
+  revealDelay,
+  revealTimeScale = 1,
+}: {
+  file: ChangedFile
+  revealDelay?: number
+  revealTimeScale?: number
+}) {
   if (!file.diff) {
     return <p className="px-4 py-3 text-px-12 text-stone-500">No preview available for this file.</p>
   }
@@ -498,14 +510,14 @@ function FileDiff({ file, revealDelay }: { file: ChangedFile; revealDelay?: numb
     <div data-diff className="grid size-full grid-cols-2 overflow-hidden font-mono text-px-11 leading-[18px]">
       <div className="min-w-0 overflow-hidden border-r border-stone-700/15">
         {file.diff.map(([left], i) => (
-          <RevealLine key={i} index={i} delay={revealDelay}>
+          <RevealLine key={i} index={i} delay={revealDelay} timeScale={revealTimeScale}>
             <DiffLine side={left} />
           </RevealLine>
         ))}
       </div>
       <div className="min-w-0 overflow-hidden">
         {file.diff.map(([, right], i) => (
-          <RevealLine key={i} index={i} delay={revealDelay}>
+          <RevealLine key={i} index={i} delay={revealDelay} timeScale={revealTimeScale}>
             <DiffLine side={right} />
           </RevealLine>
         ))}
@@ -514,19 +526,35 @@ function FileDiff({ file, revealDelay }: { file: ChangedFile; revealDelay?: numb
   )
 }
 
-/** Gap between consecutive diff rows coming in (ms). */
+/** Gap between consecutive diff rows coming in, and each row's fade (ms, at time scale 1). */
 const LINE_REVEAL_STAGGER_MS = 28
+const LINE_REVEAL_MS = 300
 
 /**
  * One diff row; with a `delay` it comes in progressively: rows fade and slide in one after another
  * (both sides of a row together), top to bottom, starting `delay` ms from when it's set.
+ * `timeScale` stretches the fade and the gaps (2 = half speed).
  */
-function RevealLine({ index, delay, children }: { index: number; delay?: number; children: React.ReactNode }) {
+function RevealLine({
+  index,
+  delay,
+  timeScale = 1,
+  children,
+}: {
+  index: number
+  delay?: number
+  timeScale?: number
+  children: React.ReactNode
+}) {
   if (delay === undefined) return <>{children}</>
   return (
     <div
-      className="animate-in fade-in slide-in-from-left-2 duration-300 motion-reduce:animate-none"
-      style={{ animationDelay: `${delay + index * LINE_REVEAL_STAGGER_MS}ms`, animationFillMode: "both" }}
+      className="animate-in fade-in slide-in-from-left-2 motion-reduce:animate-none"
+      style={{
+        animationDelay: `${delay + index * LINE_REVEAL_STAGGER_MS * timeScale}ms`,
+        animationDuration: `${LINE_REVEAL_MS * timeScale}ms`,
+        animationFillMode: "both",
+      }}
     >
       {children}
     </div>
