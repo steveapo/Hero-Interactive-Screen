@@ -191,9 +191,8 @@ function GithubSyncPopover({
             <span className="size-1.5 rounded-full bg-green-500" />
             Your canvas is synced with its branch
           </p>
-          <div className="my-3 h-px bg-stone-700/10" />
-          <div data-cursor-id="github-pr-card" className="flex flex-col gap-1.5 rounded-lg bg-stone-700/5 p-3">
-            <p className="truncate text-px-13 font-medium text-stone-900">{pullRequest.title}</p>
+          <div data-cursor-id="github-pr-card" className="mt-4 flex flex-col gap-2 rounded-lg bg-stone-700/5 p-3">
+            <p className="truncate text-[14px] font-medium leading-5 text-stone-900">{pullRequest.title}</p>
             <p className="flex min-w-0 items-center gap-1.5 text-px-12 text-stone-600">
               <GitBranch className="size-3.5 shrink-0 text-stone-500" strokeWidth={1.5} />
               <span className="truncate">{prBranch}</span>
@@ -203,7 +202,7 @@ function GithubSyncPopover({
           <button
             type="button"
             onClick={onViewPr}
-            className="mt-2 flex h-8 w-full items-center justify-center rounded-md bg-stone-700/5 text-px-13 font-medium text-stone-900 hover:bg-stone-700/10"
+            className="mt-2 flex h-8 w-full items-center justify-center rounded-lg bg-stone-700/5 text-px-13 font-medium text-stone-900 hover:bg-stone-700/10"
           >
             View on Github
           </button>
