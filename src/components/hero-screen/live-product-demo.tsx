@@ -1,32 +1,57 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
-import { ScriptedStage, type DemoScript } from "@/components/cursor-engine"
+import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
 import { backToCanvas, captureInBuildMode, TRIP_CARD } from "./hero-demo"
 import { panToShow, scene } from "./hero-demo-v1"
-import { HeroScreen } from "./hero-screen"
+import { HeroScreen, WHEEL_ZOOM_SPEED } from "./hero-screen"
 
 /**
  * The "Live product on canvas" showcase: the hero demo's opening, on a loop.
  *  1. Capture the trip card from the live app in Build Mode.
- *  2. Back to the canvas, ending zoomed in on the captured trip card.
+ *  2. Back to the canvas; the cursor zooms the canvas in on the captured trip card until it fills
+ *     at least FILL_SHARE of the canvas.
  * When it ends, the screen crossfades back to the live app and it plays again.
  */
 const script: DemoScript = async (api) => {
   await captureInBuildMode(api)
   await backToCanvas(api)
   await scene(api, "zoom to the capture", async () => {
-    // Centre the card, zoom in at it (⌘/Ctrl + scroll, like a pinch), then re-centre: the zoom
-    // eases, so the card can drift off centre. Then hold on it before the loop starts over.
-    await panToShow(api, [TRIP_CARD], { fx: 0.5, fy: 0.5 })
-    await api.moveTo(TRIP_CARD, { fx: 0.5, fy: 0.5 })
-    await api.wheel(0, -130, { mods: { ctrl: true }, duration: 900 })
-    await api.wait(200)
-    await panToShow(api, [TRIP_CARD], { fx: 0.5, fy: 0.5 })
-    await api.wait(1600)
+    await zoomToFill(api)
+    await api.wait(1600) // hold on it before the loop starts over
   })
+}
+
+/** Share of the canvas (its larger dimension) the captured card fills once zoomed in. */
+const FILL_SHARE = 0.45
+/** Aim a little past FILL_SHARE, so it clears it comfortably. */
+const FILL_AIM = FILL_SHARE * 1.08
+/** The canvas zooms in this far here (0.4 elsewhere), so the card can fill FILL_SHARE of it. */
+const MAX_ZOOM = 1.5
+const CANVAS = "[data-hero-canvas]"
+
+/**
+ * Real canvas zoom, as a visitor would: with the card centred, the cursor rests on it and
+ * ⌘-scrolls by exactly the amount that scales the card from its current share of the canvas to
+ * FILL_AIM (zoom × exp(−deltaY × WHEEL_ZOOM_SPEED)). Checks again afterwards, and re-centres:
+ * zooming at the cursor can leave the card a little off centre.
+ */
+async function zoomToFill(api: ScriptApi) {
+  await panToShow(api, [TRIP_CARD], { fx: 0.5, fy: 0.5 })
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const card = api.boxOf(TRIP_CARD)
+    const canvas = api.boxOf(CANVAS)
+    if (!card || !canvas || !canvas.width || !canvas.height) return
+    const share = Math.max(card.width / canvas.width, card.height / canvas.height)
+    if (share >= FILL_SHARE) break
+    const deltaY = -Math.log(FILL_AIM / share) / WHEEL_ZOOM_SPEED
+    await api.moveTo(TRIP_CARD, { fx: 0.5, fy: 0.5 })
+    await api.wheel(0, deltaY, { mods: { ctrl: true }, duration: 1100 })
+    await api.wait(200)
+  }
+  await panToShow(api, [TRIP_CARD], { fx: 0.5, fy: 0.5 })
 }
 
 /** Same tempo as the hero demo (scripted times × 0.85). */
@@ -68,7 +93,7 @@ export function LiveProductDemo({ className }: { className?: string }) {
     <div ref={ref} className={cn("relative overflow-hidden rounded-lg bg-mi-canvas", className)}>
       <ScaledScreen>
         <ScriptedStage script={script} pace={PACE} ready={ready} loop loopDelay={1500} className="min-h-0">
-          <HeroScreen className="h-auto min-h-0 flex-1" start="portal" portalLoadMs={PORTAL_LOAD_MS} />
+          <HeroScreen className="h-auto min-h-0 flex-1" start="portal" portalLoadMs={PORTAL_LOAD_MS} maxZoom={MAX_ZOOM} />
         </ScriptedStage>
       </ScaledScreen>
     </div>

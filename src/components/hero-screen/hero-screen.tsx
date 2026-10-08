@@ -54,8 +54,8 @@ const MAX_ZOOM = 0.4
 const PAN_MARGIN_X = 20
 const PAN_MARGIN_Y = 10
 
-/** Wheel → zoom sensitivity for pinch / ⌘-scroll. */
-const WHEEL_ZOOM_SPEED = 0.01
+/** Wheel → zoom sensitivity for pinch / ⌘-scroll: zoom × exp(−deltaY × this). */
+export const WHEEL_ZOOM_SPEED = 0.01
 
 /** Smallest a frame can be resized to, in canvas units. */
 const MIN_FRAME_SIZE = 80
@@ -118,7 +118,7 @@ type Camera = { x: number; y: number; zoom: number }
  * tuned at the reference width and scale with the fit, so the canvas shows the same composition
  * at any screen size.
  */
-type Bounds = { minX: number; maxX: number; minY: number; maxY: number; fit: number }
+type Bounds = { minX: number; maxX: number; minY: number; maxY: number; fit: number; maxZoom: number }
 
 /** Canvas width (px) the zoom levels are tuned at; see Bounds.fit. */
 const REFERENCE_CANVAS_WIDTH = 1280
@@ -130,18 +130,19 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function frameBounds(rects: CanvasRect[], fit: number): Bounds {
+function frameBounds(rects: CanvasRect[], fit: number, maxZoom: number): Bounds {
   return {
     minX: Math.min(...rects.map((r) => r.x - r.w / 2)) - PAN_MARGIN_X,
     maxX: Math.max(...rects.map((r) => r.x + r.w / 2)) + PAN_MARGIN_X,
     minY: Math.min(...rects.map((r) => r.y - r.h / 2)) - PAN_MARGIN_Y,
     maxY: Math.max(...rects.map((r) => r.y + r.h / 2)) + PAN_MARGIN_Y,
     fit,
+    maxZoom,
   }
 }
 
 function clampCamera({ x, y, zoom }: Camera, bounds: Bounds): Camera {
-  const z = clamp(zoom, MIN_ZOOM * bounds.fit, MAX_ZOOM * bounds.fit)
+  const z = clamp(zoom, MIN_ZOOM * bounds.fit, bounds.maxZoom * bounds.fit)
   return {
     zoom: z,
     x: clamp(x, -bounds.maxX * z, -bounds.minX * z),
@@ -151,7 +152,7 @@ function clampCamera({ x, y, zoom }: Camera, bounds: Bounds): Camera {
 
 /** Zoom to `nextZoom`, keeping the point under the cursor (px, py from viewport centre) fixed. */
 function zoomAt(camera: Camera, nextZoom: number, px: number, py: number, bounds: Bounds): Camera {
-  const zoom = clamp(nextZoom, MIN_ZOOM * bounds.fit, MAX_ZOOM * bounds.fit)
+  const zoom = clamp(nextZoom, MIN_ZOOM * bounds.fit, bounds.maxZoom * bounds.fit)
   const ratio = zoom / camera.zoom
   return clampCamera({ zoom, x: px - (px - camera.x) * ratio, y: py - (py - camera.y) * ratio }, bounds)
 }
@@ -253,8 +254,14 @@ export function HeroScreen({
   scrollPans = true,
   loadIntro,
   portalLoadMs,
+  maxZoom = MAX_ZOOM,
 }: {
   className?: string
+  /**
+   * Furthest the canvas zooms in (at the reference width; 0.4 = 40% in the zoom readout). Raise it
+   * where a single frame needs to fill much of the canvas (the "Live product on canvas" showcase).
+   */
+  maxZoom?: number
   /** How long the Portal's live app takes to load (ms). Omitted: the Portal's default. */
   portalLoadMs?: number
   /** Load-in intro (see LoadIntro). Omitted: everything is simply there. */
@@ -517,8 +524,9 @@ export function HeroScreen({
           ...agents.variants.map((v) => v.rect),
         ],
         fit,
+        maxZoom,
       ),
-    [codebaseRect, elementRects, drawnElements, agents.variants, fit],
+    [codebaseRect, elementRects, drawnElements, agents.variants, fit, maxZoom],
   )
   /** What the Share button compares against its last publish (memoized: same values, same array). */
   const shareChanges = useMemo(
