@@ -201,8 +201,11 @@ export function HeroScreen({
   className,
   reopened = false,
   start = "portal",
+  githubSyncOpen = false,
 }: {
   className?: string
+  /** Opens with the repo linked and the GitHub Sync popover open ("Sync to Github" showing). Only read on mount. */
+  githubSyncOpen?: boolean
   /** Follows a previous demo run: open the Portal out of the canvas colour it ended on. */
   reopened?: boolean
   /** Where the screen opens; see HeroStart. Only read on mount. */
@@ -1235,10 +1238,12 @@ export function HeroScreen({
               <Tooltip label="Open preview" />
             </button>
           )}
-          {/* Draft project: no repo linked yet, so the button offers to create one */}
+          {/* Draft project: no repo linked yet, so the button offers to create one (the showcase
+              opens linked to its repo, with the sync popover open) */}
           <GithubButton
-            connected={false}
-            defaultRepoName="Hero-Interactive-Screen"
+            connected={githubSyncOpen}
+            defaultOpen={githubSyncOpen}
+            defaultRepoName={githubSyncOpen ? "hero-fairbnb" : "Hero-Interactive-Screen"}
             changes={githubChanges}
             pullRequest={pullRequest}
             onMerged={closeCanvas}

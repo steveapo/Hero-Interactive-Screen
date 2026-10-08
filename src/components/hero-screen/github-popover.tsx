@@ -24,8 +24,11 @@ export const GithubButton = memo(function GithubButton({
   changes,
   pullRequest = PULL_REQUEST,
   onMerged,
+  defaultOpen = false,
 }: {
   connected: boolean
+  /** Opens with its popover / dialog already showing. */
+  defaultOpen?: boolean
   /** Prefilled repository name in the create dialog. */
   defaultRepoName: string
   /** Branch the project was imported from (connected state). */
@@ -40,7 +43,7 @@ export const GithubButton = memo(function GithubButton({
   const [connected, setConnected] = useState(initiallyConnected)
   /** Repository the project is linked to (set when one is created). */
   const [repo, setRepo] = useState(defaultRepoName)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(defaultOpen)
   /** The canvas has been synced: its branch and pull request exist. */
   const [synced, setSynced] = useState(false)
   const [prOpen, setPrOpen] = useState(false)
