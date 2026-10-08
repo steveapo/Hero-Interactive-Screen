@@ -101,7 +101,8 @@ const DEFAULT_FILE = "src/components/hero-screen/codebase-frame.tsx"
 
 /**
  * "Code changes" view opened from the top bar's +/− counter: a filterable file tree on the left,
- * the selected file's split diff on the right. Closes on × or Escape.
+ * the selected file's split diff on the right, centred over a dimmed backdrop. Closes on ×, Escape
+ * or a backdrop click.
  * `extra`: changes made this session (e.g. a variant the Build Agent built); the first is selected.
  */
 export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => void; extra?: ChangedFile[] }) {
@@ -188,11 +189,15 @@ export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => voi
 
   return (
     <div
-      role="dialog"
-      aria-label="Code changes"
-      onPointerDown={(e) => e.stopPropagation()}
-      className="absolute inset-0 z-[60] flex flex-col bg-[#f3f3f1] animate-in fade-in duration-150"
+      className="absolute inset-0 z-[60] flex items-center justify-center bg-stone-900/30 p-6 animate-in fade-in duration-150"
+      onPointerDown={onClose}
     >
+      <div
+        role="dialog"
+        aria-label="Code changes"
+        onPointerDown={(e) => e.stopPropagation()}
+        className="flex h-[72%] w-[75%] min-w-0 flex-col overflow-hidden rounded-2xl bg-[#f3f3f1] shadow-[0_12px_40px_-8px_rgba(17,17,16,0.25),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in zoom-in-95 duration-150"
+      >
       <header className="flex shrink-0 items-start justify-between gap-4 px-3.5 pb-3 pt-3">
         <div className="flex flex-col gap-3">
           <h2 className="text-[15px] font-medium leading-5 text-stone-900">Code changes</h2>
@@ -239,6 +244,7 @@ export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => voi
         <div className="min-w-0 flex-1 bg-white">
           {selectedFile ? <FileDiff key={selectedFile.path} file={selectedFile} /> : null}
         </div>
+      </div>
       </div>
     </div>
   )
