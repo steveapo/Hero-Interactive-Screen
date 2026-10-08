@@ -11,6 +11,8 @@ export function SafariChrome({
   url,
   compact = false,
   title,
+  active = true,
+  onBarPointerDown,
   children,
   className,
 }: {
@@ -20,6 +22,10 @@ export function SafariChrome({
   compact?: boolean
   /** Window title, centred in the compact bar. */
   title?: string
+  /** The focused window: coloured traffic lights. Inactive windows show them neutral grey. */
+  active?: boolean
+  /** Press on the compact title bar (e.g. to drag the window around). */
+  onBarPointerDown?: (e: React.PointerEvent<HTMLDivElement>) => void
   children: ReactNode
   className?: string
 }) {
@@ -28,10 +34,13 @@ export function SafariChrome({
       {compact ? (
         <div
           aria-hidden="true"
-          className="grid h-8 shrink-0 select-none grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-3 border-b border-stone-200 bg-[#f6f5f4] px-3"
+          onPointerDown={onBarPointerDown}
+          className="grid h-8 shrink-0 touch-none select-none grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-3 border-b border-stone-200 bg-[#f6f5f4] px-3"
         >
-          <TrafficLights />
-          <span className="truncate text-px-12 font-medium text-stone-500">{title}</span>
+          <TrafficLights active={active} />
+          <span className={cn("truncate text-px-12 font-medium", active ? "text-stone-500" : "text-stone-400")}>
+            {title}
+          </span>
         </div>
       ) : (
       <div
@@ -69,13 +78,13 @@ export function SafariChrome({
   )
 }
 
-/** Close, minimize and fullscreen. */
-function TrafficLights() {
+/** Close, minimize and fullscreen: coloured on the active window, neutral grey on an inactive one. */
+function TrafficLights({ active = true }: { active?: boolean }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="size-3 rounded-full border border-black/10 bg-[#ff5f57]" />
-      <span className="size-3 rounded-full border border-black/10 bg-[#febc2e]" />
-      <span className="size-3 rounded-full border border-black/10 bg-[#28c840]" />
+      <span className={cn("size-3 rounded-full border border-black/10", active ? "bg-[#ff5f57]" : "bg-stone-300")} />
+      <span className={cn("size-3 rounded-full border border-black/10", active ? "bg-[#febc2e]" : "bg-stone-300")} />
+      <span className={cn("size-3 rounded-full border border-black/10", active ? "bg-[#28c840]" : "bg-stone-300")} />
     </div>
   )
 }
