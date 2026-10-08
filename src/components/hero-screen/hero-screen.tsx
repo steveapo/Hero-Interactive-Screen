@@ -384,10 +384,18 @@ export function HeroScreen({
     !codebaseSelected && selectedIds.length === 1 ? drawnElements.find((el) => el.id === selectedIds[0]) : undefined
 
   // The native wheel/gesture listeners are registered once, so they read the bounds from a ref.
+  // Panning stays over the working cluster (the Codebase frame and the app's own elements, plus
+  // anything drawn or generated): the ring of explored screens further out doesn't widen it, so a
+  // new visitor can't drift off into mostly empty canvas.
   const bounds = useMemo(
     () =>
       frameBounds(
-        [codebaseRect, ...Object.values(elementRects), ...drawnElements.map(elementRect), ...agents.variants.map((v) => v.rect)],
+        [
+          codebaseRect,
+          ...AIRBNB_ELEMENTS.filter((el) => !el.exploration).map((el) => elementRects[el.id]),
+          ...drawnElements.map(elementRect),
+          ...agents.variants.map((v) => v.rect),
+        ],
         fit,
       ),
     [codebaseRect, elementRects, drawnElements, agents.variants, fit],
