@@ -5,14 +5,15 @@ import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cur
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
 import { backToCanvas, captureInBuildMode, TRIP_CARD } from "./hero-demo"
-import { panToShow, scene } from "./hero-demo-v1"
+import { panToShow, revealInList, scene } from "./hero-demo-v1"
 import { HeroScreen, WHEEL_ZOOM_SPEED } from "./hero-screen"
 
 /**
  * The "Live product on canvas" showcase: the hero demo's opening, on a loop.
  *  1. Capture the trip card from the live app in Build Mode.
  *  2. Back to the canvas; the cursor zooms the canvas in on the captured trip card until it fills
- *     at least FILL_SHARE of the canvas.
+ *     at least FILL_SHARE of the canvas, selects it (its settings panel opens) and changes its
+ *     background through the panel's Fill.
  * When it ends, the screen crossfades back to the live app and it plays again.
  */
 const script: DemoScript = async (api) => {
@@ -20,9 +21,24 @@ const script: DemoScript = async (api) => {
   await backToCanvas(api)
   await scene(api, "zoom to the capture", async () => {
     await zoomToFill(api)
-    await api.wait(1600) // hold on it before the loop starts over
+  })
+  await scene(api, "select and recolour", async () => {
+    // The card's right side is the card itself (its text hugs the left), so this selects it.
+    await api.click(TRIP_CARD, { fx: 0.85, fy: 0.5 })
+    await api.find(FILL_BUTTON)
+    await api.wait(600)
+    revealInList(api, FILL_BUTTON)
+    await api.click(FILL_BUTTON)
+    await api.find(NEW_FILL)
+    await api.wait(350)
+    await api.click(NEW_FILL)
+    await api.wait(1800) // hold on it before the loop starts over
   })
 }
+
+/** The selected frame's Fill swatch in the settings panel, and the colour the card gets. */
+const FILL_BUTTON = 'button[aria-label="Fill colour"]'
+const NEW_FILL = 'button[aria-label="Fill #f6e9f3"]'
 
 /** Share of the canvas (its larger dimension) the captured card fills once zoomed in. */
 const FILL_SHARE = 0.45
@@ -31,12 +47,14 @@ const FILL_AIM = FILL_SHARE * 1.08
 /** The canvas zooms in this far here (0.4 elsewhere), so the card can fill FILL_SHARE of it. */
 const MAX_ZOOM = 1.5
 const CANVAS = "[data-hero-canvas]"
+/** Where the card is centred across the canvas: left of the middle, clear of the settings panel. */
+const FOCUS_FX = 0.4
 
 /**
  * Real canvas zoom, as a visitor would: with the card centred, the cursor rests on it and
  * ⌘-scrolls by exactly the amount that scales the card from its current share of the canvas to
- * FILL_AIM (zoom × exp(−deltaY × WHEEL_ZOOM_SPEED)). Checks again afterwards, and re-centres:
- * zooming at the cursor can leave the card a little off centre.
+ * FILL_AIM (zoom × exp(−deltaY × WHEEL_ZOOM_SPEED)). Checks again afterwards, then pans the card
+ * to FOCUS_FX, leaving room on the right for the settings panel.
  */
 async function zoomToFill(api: ScriptApi) {
   await panToShow(api, [TRIP_CARD], { fx: 0.5, fy: 0.5 })
@@ -51,7 +69,7 @@ async function zoomToFill(api: ScriptApi) {
     await api.wheel(0, deltaY, { mods: { ctrl: true }, duration: 1100 })
     await api.wait(200)
   }
-  await panToShow(api, [TRIP_CARD], { fx: 0.5, fy: 0.5 })
+  await panToShow(api, [TRIP_CARD], { fx: FOCUS_FX, fy: 0.5 })
 }
 
 /** Same tempo as the hero demo (scripted times × 0.85). */

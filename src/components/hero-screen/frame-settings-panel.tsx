@@ -50,6 +50,7 @@ export const FrameSettingsPanel = memo(function FrameSettingsPanel({
   radius,
   border,
   colors,
+  onFillChange,
 }: {
   ref?: React.Ref<HTMLElement>
   /** Element tag shown in the header. */
@@ -73,6 +74,8 @@ export const FrameSettingsPanel = memo(function FrameSettingsPanel({
   border: string | null
   /** Colours used inside the frame; defaults to its fill and stroke. */
   colors?: string[]
+  /** Makes the fill editable: the Fill swatch opens preset colours (see FillSection). */
+  onFillChange?: (color: string) => void
 }) {
   const selectionColors = colors ?? [fill, border].filter((c): c is string => c !== null)
 
@@ -82,7 +85,7 @@ export const FrameSettingsPanel = memo(function FrameSettingsPanel({
       <SizeSection width={px(width)} height={px(height)} />
       <LayoutSection layout={layout} padding={padding} clip={clip} />
       <AppearanceSection radius={radius} />
-      <FillSection fill={fill} />
+      <FillSection fill={fill} onFillChange={onFillChange} />
       <StrokeSection border={border} />
       <SelectionColorsSection colors={selectionColors} />
     </SettingsPanelShell>
@@ -341,13 +344,50 @@ export function AppearanceSection({ radius }: { radius: number | null }) {
   )
 }
 
-/** Fill colour row + Add Image. A transparent fill reads as #000000 at 0 %. */
-export function FillSection({ fill }: { fill: string | null }) {
+/** Preset fills offered when the Fill swatch is clicked (an editable fill). */
+export const FILL_SWATCHES = ["#ffffff", "#f6e9f3", "#fde8e4", "#fdf3dc", "#eaf5d8", "#e3f0fb", "#ece9fb", "#f1f1ef"]
+
+/**
+ * Fill colour row + Add Image. A transparent fill reads as #000000 at 0 %. With `onFillChange`,
+ * clicking the swatch opens a row of preset colours (FILL_SWATCHES); picking one sets the fill.
+ */
+export function FillSection({ fill, onFillChange }: { fill: string | null; onFillChange?: (color: string) => void }) {
+  const [picking, setPicking] = useState(false)
   return (
     <Section title="Fill">
       <Row side={<SideButton label="Remove fill" icon={<Minus className="size-3.5" strokeWidth={1.25} />} plain />}>
-        <ColorField name="Fill" color={fill} className="col-span-2" />
+        <ColorField
+          name="Fill"
+          color={fill}
+          className="col-span-2"
+          onSwatchClick={onFillChange ? () => setPicking((p) => !p) : undefined}
+        />
       </Row>
+      {onFillChange && picking && (
+        <div
+          role="group"
+          aria-label="Fill colours"
+          className="mr-8 flex flex-wrap gap-1.5 rounded-md bg-stone-200/70 p-1.5 animate-in fade-in slide-in-from-top-1 duration-150"
+        >
+          {FILL_SWATCHES.map((color) => (
+            <button
+              key={color}
+              type="button"
+              aria-label={`Fill ${color}`}
+              aria-pressed={color === fill}
+              onClick={() => {
+                onFillChange(color)
+                setPicking(false)
+              }}
+              className={cn(
+                "size-5 rounded-[5px] border border-stone-700/15 outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-[#2f6bf6]",
+                color === fill && "ring-2 ring-[#2f6bf6] ring-offset-1 ring-offset-stone-200",
+              )}
+              style={{ background: color }}
+            />
+          ))}
+        </div>
+      )}
       <Row>
         <button
           type="button"
@@ -495,21 +535,47 @@ export function Field({
   )
 }
 
-/** Swatch + hex + opacity. null = transparent: checkerboard, #000000 at 0 %. */
-export function ColorField({ name, color, className }: { name: string; color: string | null; className?: string }) {
+/** Swatch + hex + opacity. null = transparent: checkerboard, #000000 at 0 %. With `onSwatchClick` the swatch + hex is a button. */
+export function ColorField({
+  name,
+  color,
+  className,
+  onSwatchClick,
+}: {
+  name: string
+  color: string | null
+  className?: string
+  onSwatchClick?: () => void
+}) {
+  const swatch = (
+    <>
+      <SettingTooltip label={`${name} colour`} />
+      <span
+        className="size-3.5 shrink-0 rounded-[4px] border border-stone-700/15"
+        style={{
+          background:
+            color ?? "repeating-conic-gradient(#d6d3d1 0 25%, #ffffff 0 50%) 0 0 / 7px 7px",
+        }}
+      />
+      <span className="truncate font-mono tracking-tight">{color ?? "#000000"}</span>
+    </>
+  )
   return (
     <div className={cn("flex h-6 min-w-0 items-center rounded-md bg-stone-200/70 text-[12px] text-stone-900", className)}>
-      <span tabIndex={0} className="group/setting relative flex h-full min-w-0 flex-1 items-center gap-2 pl-1.5 outline-none">
-        <SettingTooltip label={`${name} colour`} />
-        <span
-          className="size-3.5 shrink-0 rounded-[4px] border border-stone-700/15"
-          style={{
-            background:
-              color ?? "repeating-conic-gradient(#d6d3d1 0 25%, #ffffff 0 50%) 0 0 / 7px 7px",
-          }}
-        />
-        <span className="truncate font-mono tracking-tight">{color ?? "#000000"}</span>
-      </span>
+      {onSwatchClick ? (
+        <button
+          type="button"
+          aria-label={`${name} colour`}
+          onClick={onSwatchClick}
+          className="group/setting relative flex h-full min-w-0 flex-1 items-center gap-2 rounded-l-md pl-1.5 text-left outline-none hover:bg-stone-200"
+        >
+          {swatch}
+        </button>
+      ) : (
+        <span tabIndex={0} className="group/setting relative flex h-full min-w-0 flex-1 items-center gap-2 pl-1.5 outline-none">
+          {swatch}
+        </span>
+      )}
       <span
         tabIndex={0}
         className="group/setting relative flex h-full w-[60px] shrink-0 items-center justify-end gap-1.5 border-l border-[#f5f5f4] pr-2 tabular-nums outline-none"

@@ -146,6 +146,7 @@ export function DesignFrame({
   radius,
   border,
   bare = false,
+  repaint = null,
   labelOnSelect = false,
   children,
   selected,
@@ -176,6 +177,8 @@ export function DesignFrame({
   border: string | null
   /** The artwork paints its own shape (e.g. a card with its own shadow): the frame itself stays transparent. */
   bare?: boolean
+  /** A bare frame's fill changed in the settings panel: painted over the artwork's own background. */
+  repaint?: string | null
   /** Only show the name above the frame while it is selected. */
   labelOnSelect?: boolean
   children: React.ReactNode
@@ -262,8 +265,15 @@ export function DesignFrame({
           className={cn(
             "pointer-events-none absolute left-0 top-0 origin-top-left",
             bare && "[&_[data-anim=block]]:pointer-events-auto [&_[data-anim=fillet]]:pointer-events-auto",
+            // A fill picked for a bare frame paints over the artwork's own background.
+            bare && repaint && "[&_[data-anim=block]]:![background-color:var(--frame-repaint)]",
           )}
-          style={{ width: naturalSize.w, height: naturalSize.h, transform: `scale(${zoom})` }}
+          style={{
+            width: naturalSize.w,
+            height: naturalSize.h,
+            transform: `scale(${zoom})`,
+            ...(bare && repaint ? ({ "--frame-repaint": repaint } as React.CSSProperties) : {}),
+          }}
         >
           <div className="@container absolute left-0 top-0 h-full" style={{ width: CODEBASE_WIDTH }}>
             <div className="relative h-full" style={{ width: naturalSize.w }}>

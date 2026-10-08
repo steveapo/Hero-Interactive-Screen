@@ -427,6 +427,10 @@ export function HeroScreen({
   const [elementRadii, setElementRadii] = useState<Record<string, number | null>>(() =>
     Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.radius])),
   )
+  /** Fill per Fairbnb element frame; editable via the settings panel's Fill swatch. */
+  const [elementFills, setElementFills] = useState<Record<string, string | null>>(() =>
+    Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.fill])),
+  )
   const canvasRef = useRef<HTMLDivElement>(null)
   /**
    * The canvas's width over REFERENCE_CANVAS_WIDTH (see Bounds). Measured before the first paint
@@ -506,6 +510,14 @@ export function HeroScreen({
   const activeElement =
     !codebaseSelected && selectedIds.length === 1 ? AIRBNB_ELEMENTS.find((el) => el.id === selectedIds[0]) : undefined
   const activeRect = activeElement ? elementRects[activeElement.id] : undefined
+  /** Stable per selected frame, so the memoized settings panel skips camera frames. */
+  const activeElementId = activeElement?.id
+  const changeActiveFill = useCallback(
+    (color: string) => {
+      if (activeElementId) setElementFills((current) => ({ ...current, [activeElementId]: color }))
+    },
+    [activeElementId],
+  )
   /** A single selected drawn frame / text (its settings panel shows). */
   const activeDrawn =
     !codebaseSelected && selectedIds.length === 1 ? drawnElements.find((el) => el.id === selectedIds[0]) : undefined
@@ -530,8 +542,8 @@ export function HeroScreen({
   )
   /** What the Share button compares against its last publish (memoized: same values, same array). */
   const shareChanges = useMemo(
-    () => [drawnElements, elementRects, elementRadii, frameComponents],
-    [drawnElements, elementRects, elementRadii, frameComponents],
+    () => [drawnElements, elementRects, elementRadii, elementFills, frameComponents],
+    [drawnElements, elementRects, elementRadii, elementFills, frameComponents],
   )
   const boundsRef = useRef(bounds)
   useEffect(() => {
@@ -1153,7 +1165,8 @@ export function HeroScreen({
             label={el.name}
             rect={elementRects[el.id]}
             naturalSize={el.rect}
-            fill={el.fill}
+            fill={elementFills[el.id]}
+            repaint={elementFills[el.id] !== el.fill ? elementFills[el.id] : null}
             radius={elementRadii[el.id]}
             border={el.border}
             bare={el.bare}
@@ -1492,7 +1505,8 @@ export function HeroScreen({
           y={activeRect.y - activeRect.h / 2 - (codebaseRect.y - codebaseRect.h / 2)}
           width={activeRect.w}
           height={activeRect.h}
-          fill={activeElement.fill}
+          fill={elementFills[activeElement.id]}
+          onFillChange={changeActiveFill}
           radius={elementRadii[activeElement.id]}
           border={activeElement.border}
           tag={activeElement.tag}
