@@ -346,7 +346,9 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
       if (turn.buildFrame) {
         // Reply, then build (the chat closes and the frames' badge spins), then the summary. The
         // components ship as they were when the message was sent.
-        const snapshot = components.filter((c) => elementIds.includes(c.frameId))
+        const snapshot = components
+          .filter((c) => elementIds.includes(c.frameId))
+          .map((c) => (turn.wiresUp ? { ...c, functional: true } : c))
         t = streamReply(sessionId, t, turn.reply).end + REPLY_PAUSE_MS
         at(sessionId, t, () => patchSession(sessionId, () => ({ phase: "building" })))
         t += BUILD_FRAME_MS

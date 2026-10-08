@@ -1,16 +1,6 @@
 import type { ReactNode } from "react"
-import {
-  ArrowRight,
-  ChevronDown,
-  Code2,
-  Globe,
-  GitBranch,
-  Hash,
-  MousePointer2,
-  Redo2,
-  ShieldCheck,
-  Undo2,
-} from "lucide-react"
+import { ChevronDown, Code2, Globe, GitBranch, Hash, MousePointer2, Redo2, Undo2 } from "lucide-react"
+import { LiveProductDemo } from "@/components/hero-screen/live-product-demo"
 import { cn } from "@/lib/utils"
 
 /** Same fluid column as the hero: scales with the viewport, capped at 1280px. */
@@ -21,11 +11,6 @@ const LOGOS = ["moss", "apify", "E2B", "Prelude", "NCCER", "Deepnote"]
 /** Shared shell for the feature cards: copy on one side, a product mockup on the other. */
 const FEATURE_CARD =
   "grid items-center gap-8 rounded-[clamp(0.625rem,0.8vw,0.75rem)] border border-white/70 bg-[#f1efeb] p-[clamp(1rem,1.5vw,1.25rem)] shadow-[0_30px_80px_-30px_rgba(40,50,20,0.25)] lg:grid-cols-[1fr_2fr]"
-
-const ORDER_ITEMS = [
-  { initials: "OC", name: "Organic Cotton Tee", qty: 1, price: "$32.00" },
-  { initials: "SM", name: "Stoneware Mug", qty: 2, price: "$36.00" },
-]
 
 /**
  * Below the hero: a "Loved by" logo strip, the "Canvas and code, unified." headline, and a
@@ -182,70 +167,14 @@ function FeatureCopy({ title, className, children }: { title: string; className?
   )
 }
 
-/** A live checkout page with its order summary, and the same card captured onto the canvas beside it. */
+/**
+ * The "Live product on canvas" showcase: the scripted demo (capture in Build Mode → canvas →
+ * component → Canvas Agent → use it in the codebase) in the same dark frame as the other mockup.
+ */
 function LiveProductMockup() {
   return (
-    <div
-      aria-hidden="true"
-      className="relative overflow-hidden rounded-xl border border-black/80 bg-[radial-gradient(ellipse_at_80%_10%,#6b6966_0%,#2b2a28_45%,#151514_100%)] p-[clamp(0.75rem,1.5vw,1rem)]"
-    >
-      <div className="flex h-[clamp(18rem,30vw,26rem)] items-start gap-[clamp(1rem,5vw,4rem)] overflow-hidden rounded-lg bg-stone-100 pr-[clamp(1rem,3vw,2.5rem)] text-[11px] text-stone-700">
-        {/* Live page */}
-        <div className="relative flex h-full min-w-0 flex-[1.2] flex-col rounded-tr-md border-r-4 border-t-4 border-mi-ink bg-white shadow-[2px_-2px_0_0_#c8ec6f]">
-          <p className="flex items-center justify-center gap-1 border-b border-mi-ink py-3 text-[9px] text-stone-500">
-            <ShieldCheck className="size-3" /> Secure checkout
-          </p>
-          <div className="relative mt-auto px-[8%]">
-            <OrderCard />
-            <MousePointer2 className="absolute -top-1 right-[4%] size-5 fill-mi-ink text-white" />
-          </div>
-        </div>
-
-        {/* Captured onto the canvas */}
-        <div className="hidden min-w-0 flex-1 flex-col gap-1 self-end sm:flex">
-          <p className="text-[9px] text-stone-400">Card</p>
-          <OrderCard />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function OrderCard() {
-  return (
-    <div className="flex flex-col gap-3 border border-mi-ink bg-white px-3 pb-3 pt-4 shadow-[4px_4px_0_0_#1a1a1a]">
-      <p className="font-medium text-stone-900">Order summary</p>
-      <ul className="flex flex-col gap-2 border-b border-stone-300 pb-3">
-        {ORDER_ITEMS.map((item) => (
-          <li key={item.name} className="flex items-center gap-2">
-            <span className="flex size-6 shrink-0 items-center justify-center bg-mi-ink text-[8px] font-bold text-white">
-              {item.initials}
-            </span>
-            <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-[9px] text-stone-900">{item.name}</span>
-              <span className="text-[8px] text-stone-400">Qty {item.qty}</span>
-            </span>
-            <span className="text-[9px] tabular-nums">{item.price}</span>
-          </li>
-        ))}
-      </ul>
-      <div className="flex flex-col gap-1.5 border-b border-stone-300 pb-3 text-[8px]">
-        <p className="flex justify-between">
-          <span className="text-stone-500">Subtotal · 3 items</span>
-          <span className="tabular-nums">$68.00</span>
-        </p>
-        <p className="flex justify-between">
-          <span className="text-stone-500">Shipping · Standard</span>
-          <span>Free</span>
-        </p>
-      </div>
-      <p className="flex items-baseline justify-between">
-        <span className="text-[9px]">Total</span>
-        <span className="text-sm font-semibold tabular-nums text-stone-900">$68.00</span>
-      </p>
-      <span className="flex items-center justify-center gap-1 border border-mi-ink bg-mi-lime py-1.5 text-[9px] font-medium text-mi-lime-ink shadow-[2px_2px_0_0_#1a1a1a]">
-        Continue to shipping <ArrowRight className="size-2.5" />
-      </span>
+    <div className="relative overflow-hidden rounded-xl border border-black/80 bg-[radial-gradient(ellipse_at_80%_10%,#6b6966_0%,#2b2a28_45%,#151514_100%)] p-[clamp(0.75rem,1.5vw,1rem)]">
+      <LiveProductDemo />
     </div>
   )
 }

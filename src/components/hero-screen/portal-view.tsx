@@ -334,7 +334,7 @@ export const PortalView = memo(function PortalView({
                   key={`${loadId}:${title}`}
                   title={title}
                   components={builtComponents.filter((c) => c.cardTitle === title)}
-                  functional={applied.includes("badge-check-in")}
+                  functional={applied.includes("badge-check-in") || builtComponents.some((c) => c.cardTitle === title && c.functional)}
                   previewRef={previewRef}
                 />
               ))}

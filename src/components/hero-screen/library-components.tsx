@@ -67,6 +67,11 @@ export type FrameComponent = {
   label: string
   tone: BadgeTone
   size: BadgeSize
+  /**
+   * Built already wired up (the Canvas Agent was asked for the behaviour along with the build):
+   * in the live app it's a button that checks in, without a Portal Agent turn.
+   */
+  functional?: boolean
 }
 
 /** A fresh instance, as it comes out of the library (the Badge preview's look). */

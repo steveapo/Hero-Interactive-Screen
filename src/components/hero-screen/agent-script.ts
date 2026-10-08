@@ -10,6 +10,9 @@
 
 /* ---------------------------------- Chats ---------------------------------- */
 
+/** Typed to the Canvas Agent in the "Live product on canvas" showcase (matches its chat below). */
+export const CANVAS_AGENT_PROMPT = "Make tapping the badge check me in, then build it"
+
 export type AgentTurn = {
   /** What the agent answers (streamed in word by word). */
   reply: string
@@ -24,6 +27,8 @@ export type AgentTurn = {
    * dropped into them) into the codebase: they show up on the same cards in the live app.
    */
   buildFrame?: boolean
+  /** With `buildFrame`: the built components come out functional (see FrameComponent.functional). */
+  wiresUp?: boolean
 }
 
 export type AgentChat = {
@@ -87,6 +92,22 @@ export const AGENT_CHATS: AgentChat[] = [
         buildFrame: true,
         summary:
           "Done. The Vernazza Sea House trip card in the live app now renders <Badge> from @/components/ui/badge, exactly where you placed it. It's display-only for now; open Build Mode to make it do something.",
+      },
+    ],
+  },
+  {
+    // The "Live product on canvas" showcase (live-product-demo.tsx): the Canvas Agent builds the
+    // designed badge and makes it check in, in one go.
+    elements: ["card-upcoming-trip"],
+    prompt: CANVAS_AGENT_PROMPT,
+    turns: [
+      {
+        reply:
+          "On it. I'll build the frame with your design system's <Badge> where you placed it, and make tapping it check you in to the stay.",
+        buildFrame: true,
+        wiresUp: true,
+        summary:
+          "Done. The Vernazza Sea House card now renders <Badge> from @/components/ui/badge, and tapping it checks you in (tap again to undo). Open the codebase and give it a tap.",
       },
     ],
   },

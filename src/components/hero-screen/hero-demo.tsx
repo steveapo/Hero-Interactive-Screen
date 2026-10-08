@@ -81,8 +81,8 @@ const TURNS = {
   merge: "Your turn: merge the pull request",
 }
 
-const TRIP_CARD = '[data-cursor-id="frame-card-upcoming-trip"]'
-const CODEBASE = '[data-cursor-id="codebase-frame"]'
+export const TRIP_CARD = '[data-cursor-id="frame-card-upcoming-trip"]'
+export const CODEBASE = '[data-cursor-id="codebase-frame"]'
 const LIBRARY_TOGGLE = '[data-cursor-id="sidebar-components"]'
 const LIBRARY_SEARCH = 'input[aria-label="Search components"]'
 const LIBRARY_BADGE = '[data-cursor-id="library-Badge"]'
@@ -91,9 +91,9 @@ const BADGE = '[data-frame-component]'
 const COMPONENT_PANEL = '[data-cursor-id="component-settings"]'
 /** The built badge on the trip card in the live app (a button once it's functional). */
 const BUILT_BADGE = '[data-cursor-id="built-component"]'
-const BUILT_BADGE_BUTTON = `${BUILT_BADGE} button`
+export const BUILT_BADGE_BUTTON = `${BUILT_BADGE} button`
 const PORTAL_MESSAGES = '[data-cursor-id="portal-chat-messages"]'
-const PORTAL_SCREEN = "[data-portal-screen]"
+export const PORTAL_SCREEN = "[data-portal-screen]"
 
 /** The trip card in the live app. */
 const liveTripCard = (api: ScriptApi) => () =>
@@ -119,7 +119,7 @@ async function askPortal(api: ScriptApi, prompt: string) {
 
 /** Zoom in on the trip card (the badge is small next to the whole set), with room on the left for
  * the library and on the right for the settings panel / Build Agent chat. */
-async function focusTripCard(api: ScriptApi) {
+export async function focusTripCard(api: ScriptApi) {
   await panToShow(api, [TRIP_CARD], { fx: 0.55, fy: 0.5 })
   await api.moveTo(TRIP_CARD, { fx: 0.5, fy: 0.45 })
   await api.wheel(0, -80, { mods: { ctrl: true }, duration: 700 })
@@ -139,6 +139,12 @@ async function focusTripCard(api: ScriptApi) {
 
 /** Clip 1: start in Build Mode and capture the trip card to the canvas. */
 export const liveAppClip: DemoScript = async (api) => {
+  await captureInBuildMode(api)
+  await backToCanvas(api)
+}
+
+/** Chapters 1–2 up to the capture: the live app in Build Mode, the trip card captured. */
+export async function captureInBuildMode(api: ScriptApi) {
   /* 1. Start in Build Mode --------------------------------------------------------- */
   await scene(api, "build mode", async () => {
     // The screen opens in the Portal. If the live app is still loading, let it load and play its
@@ -170,7 +176,10 @@ export const liveAppClip: DemoScript = async (api) => {
     await api.click('button[aria-label="Exit area capture"]')
     await api.wait(250)
   })
+}
 
+/** Leave the Portal: the canvas sweeps in around the Codebase frame, the capture beside it. */
+export async function backToCanvas(api: ScriptApi) {
   await scene(api, "back to canvas", async () => {
     if (api.exists('button[aria-label="Back to canvas"]')) await api.click('button[aria-label="Back to canvas"]')
     await api.until(() => !api.exists(PORTAL_SCREEN), 4000)
