@@ -344,50 +344,16 @@ export function AppearanceSection({ radius }: { radius: number | null }) {
   )
 }
 
-/** Preset fills offered when the Fill swatch is clicked (an editable fill). */
-export const FILL_SWATCHES = ["#ffffff", "#f6e9f3", "#fde8e4", "#fdf3dc", "#eaf5d8", "#e3f0fb", "#ece9fb", "#f1f1ef"]
-
 /**
  * Fill colour row + Add Image. A transparent fill reads as #000000 at 0 %. With `onFillChange`,
- * clicking the swatch opens a row of preset colours (FILL_SWATCHES); picking one sets the fill.
+ * the hex is an input: typing a new colour sets the fill.
  */
 export function FillSection({ fill, onFillChange }: { fill: string | null; onFillChange?: (color: string) => void }) {
-  const [picking, setPicking] = useState(false)
   return (
     <Section title="Fill">
       <Row side={<SideButton label="Remove fill" icon={<Minus className="size-3.5" strokeWidth={1.25} />} plain />}>
-        <ColorField
-          name="Fill"
-          color={fill}
-          className="col-span-2"
-          onSwatchClick={onFillChange ? () => setPicking((p) => !p) : undefined}
-        />
+        <ColorField name="Fill" color={fill} className="col-span-2" onChange={onFillChange} />
       </Row>
-      {onFillChange && picking && (
-        <div
-          role="group"
-          aria-label="Fill colours"
-          className="mr-8 flex flex-wrap gap-1.5 rounded-md bg-stone-200/70 p-1.5 animate-in fade-in slide-in-from-top-1 duration-150"
-        >
-          {FILL_SWATCHES.map((color) => (
-            <button
-              key={color}
-              type="button"
-              aria-label={`Fill ${color}`}
-              aria-pressed={color === fill}
-              onClick={() => {
-                onFillChange(color)
-                setPicking(false)
-              }}
-              className={cn(
-                "size-5 rounded-[5px] border border-stone-700/15 outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-[#2f6bf6]",
-                color === fill && "ring-2 ring-[#2f6bf6] ring-offset-1 ring-offset-stone-200",
-              )}
-              style={{ background: color }}
-            />
-          ))}
-        </div>
-      )}
       <Row>
         <button
           type="button"
@@ -535,47 +501,39 @@ export function Field({
   )
 }
 
-/** Swatch + hex + opacity. null = transparent: checkerboard, #000000 at 0 %. With `onSwatchClick` the swatch + hex is a button. */
+/** Swatch + hex + opacity. null = transparent: checkerboard, #000000 at 0 %. With `onChange` the hex is an editable input. */
 export function ColorField({
   name,
   color,
   className,
-  onSwatchClick,
+  onChange,
 }: {
   name: string
   color: string | null
   className?: string
-  onSwatchClick?: () => void
+  /** Makes the hex editable: called once the text is a full #rrggbb colour (as typed). */
+  onChange?: (color: string) => void
 }) {
   const swatch = (
-    <>
-      <SettingTooltip label={`${name} colour`} />
-      <span
-        className="size-3.5 shrink-0 rounded-[4px] border border-stone-700/15"
-        style={{
-          background:
-            color ?? "repeating-conic-gradient(#d6d3d1 0 25%, #ffffff 0 50%) 0 0 / 7px 7px",
-        }}
-      />
-      <span className="truncate font-mono tracking-tight">{color ?? "#000000"}</span>
-    </>
+    <span
+      className="size-3.5 shrink-0 rounded-[4px] border border-stone-700/15 transition-colors duration-300"
+      style={{
+        background:
+          color ?? "repeating-conic-gradient(#d6d3d1 0 25%, #ffffff 0 50%) 0 0 / 7px 7px",
+      }}
+    />
   )
   return (
     <div className={cn("flex h-6 min-w-0 items-center rounded-md bg-stone-200/70 text-[12px] text-stone-900", className)}>
-      {onSwatchClick ? (
-        <button
-          type="button"
-          aria-label={`${name} colour`}
-          onClick={onSwatchClick}
-          className="group/setting relative flex h-full min-w-0 flex-1 items-center gap-2 rounded-l-md pl-1.5 text-left outline-none hover:bg-stone-200"
-        >
-          {swatch}
-        </button>
-      ) : (
-        <span tabIndex={0} className="group/setting relative flex h-full min-w-0 flex-1 items-center gap-2 pl-1.5 outline-none">
-          {swatch}
-        </span>
-      )}
+      <span tabIndex={onChange ? undefined : 0} className="group/setting relative flex h-full min-w-0 flex-1 items-center gap-2 pl-1.5 outline-none">
+        <SettingTooltip label={`${name} colour`} />
+        {swatch}
+        {onChange ? (
+          <HexInput name={name} color={color} onChange={onChange} />
+        ) : (
+          <span className="truncate font-mono tracking-tight">{color ?? "#000000"}</span>
+        )}
+      </span>
       <span
         tabIndex={0}
         className="group/setting relative flex h-full w-[60px] shrink-0 items-center justify-end gap-1.5 border-l border-[#f5f5f4] pr-2 tabular-nums outline-none"
@@ -585,6 +543,38 @@ export function ColorField({
         <span className="text-stone-400">%</span>
       </span>
     </div>
+  )
+}
+
+/** A complete hex colour, with or without its "#". */
+const HEX = /^#?[0-9a-f]{6}$/i
+
+/**
+ * The hex of an editable colour. While typing, the text is a draft; as soon as it's a full
+ * #rrggbb colour it's applied (so the frame changes the moment the last digit lands). Enter or
+ * leaving the field settles it: an incomplete draft goes back to the current colour.
+ */
+function HexInput({ name, color, onChange }: { name: string; color: string | null; onChange: (color: string) => void }) {
+  const current = color ?? "#000000"
+  const [draft, setDraft] = useState<string | null>(null)
+  return (
+    <input
+      type="text"
+      aria-label={`${name} hex`}
+      spellCheck={false}
+      maxLength={7}
+      value={draft ?? current}
+      onChange={(e) => {
+        const next = e.target.value
+        setDraft(next)
+        if (HEX.test(next)) onChange((next.startsWith("#") ? next : `#${next}`).toLowerCase())
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur()
+      }}
+      onBlur={() => setDraft(null)}
+      className="h-full min-w-0 flex-1 bg-transparent font-mono tracking-tight outline-none selection:bg-[#2f6bf6]/25"
+    />
   )
 }
 

@@ -265,8 +265,10 @@ export function DesignFrame({
           className={cn(
             "pointer-events-none absolute left-0 top-0 origin-top-left",
             bare && "[&_[data-anim=block]]:pointer-events-auto [&_[data-anim=fillet]]:pointer-events-auto",
-            // A fill picked for a bare frame paints over the artwork's own background.
-            bare && repaint && "[&_[data-anim=block]]:![background-color:var(--frame-repaint)]",
+            // A fill picked for a bare frame paints over the artwork's own background, fading to it.
+            bare &&
+              repaint &&
+              "[&_[data-anim=block]]:![background-color:var(--frame-repaint)] [&_[data-anim=block]]:transition-[background-color] [&_[data-anim=block]]:duration-300 [&_[data-anim=block]]:ease-out",
           )}
           style={{
             width: naturalSize.w,

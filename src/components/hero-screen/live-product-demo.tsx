@@ -30,21 +30,23 @@ const script: DemoScript = async (api) => {
   await scene(api, "select and recolour", async () => {
     // The card's right side is the card itself (its text hugs the left), so this selects it.
     await api.click(TRIP_CARD, { fx: 0.85, fy: 0.5 })
-    await api.find(FILL_BUTTON)
+    await api.find(FILL_HEX)
     await api.wait(600)
-    revealInList(api, FILL_BUTTON)
-    await api.click(FILL_BUTTON)
-    await api.find(NEW_FILL)
-    await api.wait(350)
-    await api.click(NEW_FILL)
+    revealInList(api, FILL_HEX)
+    // Click into the Fill hex and type over it: the card takes the colour as the last digit lands.
+    await api.click(FILL_HEX)
+    await api.wait(250)
+    await api.type(NEW_FILL, { into: FILL_HEX, replace: true })
+    await api.wait(300)
+    await api.press("Enter", { on: FILL_HEX })
     await api.wait(1800) // hold on it before the loop starts over
   })
 }
 
 const BACK_TO_CANVAS = 'button[aria-label="Back to canvas"]'
-/** The selected frame's Fill swatch in the settings panel, and the colour the card gets. */
-const FILL_BUTTON = 'button[aria-label="Fill colour"]'
-const NEW_FILL = 'button[aria-label="Fill #f6e9f3"]'
+/** The selected frame's Fill hex in the settings panel, and the colour typed into it (a light grey). */
+const FILL_HEX = 'input[aria-label="Fill hex"]'
+const NEW_FILL = "#ededed"
 
 /** Share of the canvas (its larger dimension) the captured card fills once zoomed in. */
 const FILL_SHARE = 0.45
