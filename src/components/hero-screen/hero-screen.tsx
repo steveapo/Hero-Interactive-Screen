@@ -174,8 +174,9 @@ type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number 
  * - "canvas": on the canvas, the Portal already left.
  * - "designed": on the canvas, with the "Check in" badge designed into the trip card's frame.
  * - "built": like "designed", and that badge is already built into the codebase (live app).
+ * - "wired": like "built", and the built badge already checks in when tapped.
  */
-export type HeroStart = "portal" | "canvas" | "designed" | "built"
+export type HeroStart = "portal" | "canvas" | "designed" | "built" | "wired"
 
 /**
  * Load-in intro for a screen that opens on the canvas. While `phase` is "waiting" the screen is
@@ -251,8 +252,11 @@ export function HeroScreen({
   toolsEnabled = true,
   scrollPans = true,
   loadIntro,
+  portalLoadMs,
 }: {
   className?: string
+  /** How long the Portal's live app takes to load (ms). Omitted: the Portal's default. */
+  portalLoadMs?: number
   /** Load-in intro (see LoadIntro). Omitted: everything is simply there. */
   loadIntro?: LoadIntro
   /**
@@ -281,7 +285,7 @@ export function HeroScreen({
 } = {}) {
   /** Library components already in frames when the screen opens. */
   const [seededComponents] = useState<FrameComponent[]>(() =>
-    start === "designed" || start === "built" ? [designedCheckInBadge()] : [],
+    start === "designed" || start === "built" || start === "wired" ? [designedCheckInBadge()] : [],
   )
   const [tool, setTool] = useState<Tool>("select")
   const [codebaseSelected, setCodebaseSelected] = useState(false)
@@ -289,7 +293,13 @@ export function HeroScreen({
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [agentOpen, setAgentOpen] = useState(false)
   /** Simulated Build Agents: sessions per selection, the variants they generate, their cursors. */
-  const agents = useBuildAgents(start === "built" ? seededComponents : [])
+  const agents = useBuildAgents(
+    start === "built"
+      ? seededComponents
+      : start === "wired"
+        ? seededComponents.map((c) => ({ ...c, functional: true }))
+        : [],
+  )
   /** Where each generating agent's cursor sits, in canvas units (measured from the piece it edits). */
   const [cursorAt, setCursorAt] = useState<Record<number, { x: number; y: number }>>({})
   /** "Choose where to build" is on for this agent session: clicking one of its variants builds it. */
@@ -1524,6 +1534,7 @@ export function HeroScreen({
           closing={portalClosing}
           builtVariant={agents.builtVariant}
           builtComponents={agents.builtComponents}
+          loadMs={portalLoadMs}
         />
       )}
 

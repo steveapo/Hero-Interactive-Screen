@@ -89,6 +89,7 @@ export const PortalView = memo(function PortalView({
   closing = false,
   builtVariant = null,
   builtComponents = [],
+  loadMs = PORTAL_LOAD_MS,
 }: {
   onClose: () => void
   closing?: boolean
@@ -96,6 +97,8 @@ export const PortalView = memo(function PortalView({
   builtVariant?: VariantState | null
   /** Library components the Build Agent built into the codebase: they show on their cards in the live app. */
   builtComponents?: FrameComponent[]
+  /** How long the loading state shows before the live app loads in (ms). */
+  loadMs?: number
 }) {
   const [phase, setPhase] = useState<LoadPhase>("start")
   /** Bumped by reload: restarts the loading and remounts the app. */
@@ -117,12 +120,12 @@ export const PortalView = memo(function PortalView({
   useEffect(() => {
     // Next frame: start the progress bar transition from 0.
     const frame = requestAnimationFrame(() => setPhase("loading"))
-    const timer = setTimeout(() => setPhase("loaded"), PORTAL_LOAD_MS)
+    const timer = setTimeout(() => setPhase("loaded"), loadMs)
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(timer)
     }
-  }, [loadId])
+  }, [loadId, loadMs])
 
   // The capture flash removes itself once it has faded.
   useEffect(() => {
@@ -236,7 +239,7 @@ export const PortalView = memo(function PortalView({
 
           <div className="flex items-center justify-end gap-1 text-stone-800">
             {capturing ? (
-              <span className="flex h-7 items-center gap-1.5 rounded-full bg-[#e3f1e5] pl-2.5 pr-1 text-px-13 font-medium text-[#1e7b36] animate-in fade-in zoom-in-95 duration-150">
+              <span className="flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[#e3f1e5] pl-2.5 pr-1 text-px-13 font-medium text-[#1e7b36] animate-in fade-in zoom-in-95 duration-150">
                 <SquareDashedMousePointer className="size-3.5" strokeWidth={1.5} />
                 Area capture
                 <button
@@ -271,7 +274,7 @@ export const PortalView = memo(function PortalView({
                 phase === "start"
                   ? "none"
                   : phase === "loading"
-                    ? `width ${PORTAL_LOAD_MS}ms cubic-bezier(0.2, 0.7, 0.3, 1)`
+                    ? `width ${loadMs}ms cubic-bezier(0.2, 0.7, 0.3, 1)`
                     : "width 200ms ease-out, opacity 300ms ease-out 200ms",
             }}
           />
