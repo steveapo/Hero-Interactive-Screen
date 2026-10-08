@@ -13,10 +13,6 @@ type WindowId = "main" | "secondary"
 const DESKTOP_WINDOW =
   "absolute flex flex-col overflow-hidden rounded-xl border border-black/10 shadow-[0_24px_60px_-20px_rgba(17,17,16,0.35),0_2px_6px_rgba(17,17,16,0.08)]"
 
-/** Layout px of a dragged window that must stay inside the Desktop Area: some of its width, all of its title bar. */
-const KEEP_VISIBLE_X = 120
-const TITLE_BAR_HEIGHT = 32
-
 /**
  * The homepage hero's showcase: a "Desktop Area" holding two windows.
  * - Main: the canvas (the interactive screen). Frames can be selected and moved, but the Portal
@@ -46,7 +42,7 @@ export function HeroShowcase({ className }: { className?: string }) {
         onFocus={() => focus("main")}
       >
         <div className="flex min-h-0 flex-1 flex-col bg-mi-canvas">
-          <HeroScreen className="h-auto min-h-0 flex-1" start="built" githubSyncOpen portalEnabled={false} />
+          <HeroScreen className="h-auto min-h-0 flex-1" start="built" githubSyncOpen portalEnabled={false} toolsEnabled={false} />
         </div>
       </DesktopWindow>
 
@@ -66,7 +62,7 @@ export function HeroShowcase({ className }: { className?: string }) {
 /**
  * One window: compact Safari chrome with a centred title. Any press inside focuses it (captured,
  * so it works even where the content stops the press); pressing the title bar also drags it, kept
- * within the Desktop Area so it can always be grabbed again.
+ * entirely within the Desktop Area's borders.
  */
 function DesktopWindow({
   title,
@@ -95,11 +91,12 @@ function DesktopWindow({
     if (e.button !== 0 || !el || !desktop) return
     e.preventDefault()
     const from = offset
-    // offsetLeft / offsetTop ignore the transform: the placement before any drag.
-    const minX = -el.offsetLeft - el.offsetWidth + KEEP_VISIBLE_X
-    const maxX = desktop.clientWidth - el.offsetLeft - KEEP_VISIBLE_X
+    // offsetLeft / offsetTop ignore the transform: the placement before any drag. The whole
+    // window stays within the Desktop Area's borders.
+    const minX = -el.offsetLeft
+    const maxX = desktop.clientWidth - el.offsetLeft - el.offsetWidth
     const minY = -el.offsetTop
-    const maxY = desktop.clientHeight - el.offsetTop - TITLE_BAR_HEIGHT
+    const maxY = desktop.clientHeight - el.offsetTop - el.offsetHeight
     trackDrag(e, (dx, dy) =>
       setOffset({
         x: Math.min(maxX, Math.max(minX, from.x + dx)),

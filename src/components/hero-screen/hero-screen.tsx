@@ -206,8 +206,14 @@ export function HeroScreen({
   start = "portal",
   githubSyncOpen = false,
   portalEnabled = true,
+  toolsEnabled = true,
 }: {
   className?: string
+  /**
+   * The top toolbar switches tools (clicks and the V / F / T / P shortcuts). Off for the homepage
+   * hero: the toolbar shows, but the Select tool always stays selected.
+   */
+  toolsEnabled?: boolean
   /** Opens with the repo linked and the GitHub Sync popover open ("Sync to Github" showing). Only read on mount. */
   githubSyncOpen?: boolean
   /**
@@ -941,6 +947,7 @@ export function HeroScreen({
 
   // Single-key tool shortcuts shown in the toolbar labels (V, F, T, P)
   useEffect(() => {
+    if (!toolsEnabled) return
     function onKeyDown(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target as HTMLElement | null
@@ -950,7 +957,7 @@ export function HeroScreen({
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [])
+  }, [toolsEnabled])
 
   return (
     <div
@@ -1305,14 +1312,21 @@ export function HeroScreen({
             aria-label={label}
             aria-keyshortcuts={shortcut}
             aria-pressed={tool === id}
-            onClick={() => setTool(id)}
+            aria-disabled={!toolsEnabled || undefined}
+            onClick={() => {
+              if (toolsEnabled) setTool(id)
+            }}
             className={cn(
               "group relative flex size-8 items-center justify-center rounded-lg transition-colors",
-              tool === id ? "bg-[#2f6bf6] text-white" : "text-stone-700 hover:bg-stone-700/5",
+              tool === id
+                ? "bg-[#2f6bf6] text-white"
+                : toolsEnabled
+                  ? "text-stone-700 hover:bg-stone-700/5"
+                  : "cursor-default text-stone-700",
             )}
           >
             <Icon />
-            <Tooltip label={`${label} (${shortcut})`} />
+            {toolsEnabled && <Tooltip label={`${label} (${shortcut})`} />}
           </button>
         ))}
       </div>

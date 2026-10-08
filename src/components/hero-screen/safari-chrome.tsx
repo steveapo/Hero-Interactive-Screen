@@ -38,7 +38,8 @@ export function SafariChrome({
           className="grid h-8 shrink-0 touch-none select-none grid-cols-[1fr_minmax(0,auto)_1fr] items-center gap-3 border-b border-stone-200 bg-[#f6f5f4] px-3"
         >
           <TrafficLights active={active} />
-          <span className={cn("truncate text-px-12 font-medium", active ? "text-stone-500" : "text-stone-400")}>
+          {/* Not through cn(): tailwind-merge reads the custom `text-px-11` size as a text colour and drops it. */}
+          <span className={`truncate text-px-11 font-medium ${active ? "text-stone-500" : "text-stone-400"}`}>
             {title}
           </span>
         </div>
