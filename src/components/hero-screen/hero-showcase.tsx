@@ -53,7 +53,7 @@ export function HeroShowcase({ className }: { className?: string }) {
         z={stack.length - stack.indexOf("secondary")}
         onFocus={() => focus("secondary")}
       >
-        <CodeChangesPanel className="min-h-0 flex-1" />
+        <CodeChangesPanel className="min-h-0 flex-1" sidebarClassName="max-w-[32%]" />
       </DesktopWindow>
     </div>
   )

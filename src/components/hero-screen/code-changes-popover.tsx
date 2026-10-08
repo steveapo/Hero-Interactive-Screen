@@ -279,12 +279,15 @@ export function CodeChangesPanel({
   onClose,
   extra = [],
   className,
+  sidebarClassName,
   role,
   onPointerDown,
 }: {
   onClose?: () => void
   extra?: ChangedFile[]
   className?: string
+  /** Overrides for the file tree's width (e.g. narrower in a small window, leaving the diff more room). */
+  sidebarClassName?: string
   role?: "dialog"
   onPointerDown?: (e: React.PointerEvent) => void
 }) {
@@ -391,7 +394,9 @@ export function CodeChangesPanel({
 
       <div className="flex min-h-0 flex-1 border-t border-stone-700/10">
         {/* File tree */}
-        <aside className="flex w-[400px] max-w-[40%] shrink-0 flex-col border-r border-stone-700/10">
+        <aside
+          className={cn("flex w-[400px] max-w-[40%] shrink-0 flex-col border-r border-stone-700/10", sidebarClassName)}
+        >
           <label className="m-1 flex h-8 shrink-0 items-center gap-2 rounded-md border border-stone-700/15 bg-white px-2 focus-within:border-stone-700/30">
             <Search className="size-3.5 shrink-0 text-stone-500" strokeWidth={1.5} />
             <input
