@@ -26,18 +26,20 @@ const INTRO_VISIBLE_THRESHOLD = 0.35
  *   6. the canvas elements glide in around the Codebase frame
  *   7. the Code Changes window opens (as the Canvas window did) and its diff streams in row by row
  */
+/** Pace of the whole load-in: every step's time (and the windows' opening) is scaled by this. 0.8 = 20% faster. */
+const INTRO_TIME_SCALE = 0.8
 const INTRO = {
-  canvasWindowAt: 400,
-  chromeAt: 950,
-  codebaseAt: 1700,
-  githubAt: 2500,
-  elementsAt: 3000,
-  codeWindowAt: 4300,
+  canvasWindowAt: 400 * INTRO_TIME_SCALE,
+  chromeAt: 950 * INTRO_TIME_SCALE,
+  codebaseAt: 1700 * INTRO_TIME_SCALE,
+  githubAt: 2500 * INTRO_TIME_SCALE,
+  elementsAt: 3000 * INTRO_TIME_SCALE,
+  codeWindowAt: 4300 * INTRO_TIME_SCALE,
 }
 /** How long a window takes to open (ms). */
-const WINDOW_OPEN_MS = 700
+const WINDOW_OPEN_MS = 700 * INTRO_TIME_SCALE
 /** The diff rows start coming in once the Code Changes window is mostly open. */
-const CODE_LINES_AT = INTRO.codeWindowAt + 450
+const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE
 
 /** A window on the Desktop Area: rounded, with a shadow; positioned by its `placement` classes. */
 const DESKTOP_WINDOW =
