@@ -1,11 +1,31 @@
 import type { ReactNode } from "react"
-import { ChevronDown, Code2, Globe, GitBranch, Hash, MousePointer2, Redo2, Undo2 } from "lucide-react"
+import {
+  ArrowRight,
+  ChevronDown,
+  Code2,
+  Globe,
+  GitBranch,
+  Hash,
+  MousePointer2,
+  Redo2,
+  ShieldCheck,
+  Undo2,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /** Same fluid column as the hero: scales with the viewport, capped at 1280px. */
 const COLUMN = "mx-auto w-[min(calc(100%-2*clamp(1.25rem,6vw,8rem)),80rem)]"
 
 const LOGOS = ["moss", "apify", "E2B", "Prelude", "NCCER", "Deepnote"]
+
+/** Shared shell for the feature cards: copy on one side, a product mockup on the other. */
+const FEATURE_CARD =
+  "grid items-center gap-8 rounded-[clamp(0.625rem,0.8vw,0.75rem)] border border-white/70 bg-[#f1efeb] p-[clamp(1rem,1.5vw,1.25rem)] shadow-[0_30px_80px_-30px_rgba(40,50,20,0.25)] lg:grid-cols-[1fr_2fr]"
+
+const ORDER_ITEMS = [
+  { initials: "OC", name: "Organic Cotton Tee", qty: 1, price: "$32.00" },
+  { initials: "SM", name: "Stoneware Mug", qty: 2, price: "$36.00" },
+]
 
 /**
  * Below the hero: a "Loved by" logo strip, the "Canvas and code, unified." headline, and a
@@ -37,7 +57,7 @@ export function FeatureSection() {
       <div className={cn(COLUMN, "flex flex-col pb-[clamp(3rem,6vw,6rem)] pt-[clamp(4rem,7vw,7rem)]")}>
         <h2 className="flex flex-col gap-[0.05em] text-[clamp(2.25rem,1.25rem+2.6vw,3.75rem)] leading-[1.05] tracking-[-0.03em]">
           <span className="font-medium">Canvas and code, unified.</span>
-          <span className="font-pixel font-black tracking-[-0.01em] text-[#56663a] [font-synthesis:none]">
+          <span className="font-pixel font-black tracking-[-0.01em] text-stone-700 [font-synthesis:none]">
             One place for everything.
           </span>
         </h2>
@@ -47,16 +67,22 @@ export function FeatureSection() {
           Code to canvas in one click, canvas to code in one shot.
         </p>
 
-        {/* Feature card */}
-        <div className="mt-[clamp(2.5rem,5vw,4rem)] grid items-center gap-8 rounded-[clamp(0.625rem,0.8vw,0.75rem)] border border-white/70 bg-[#f1efeb] p-[clamp(1rem,1.5vw,1.25rem)] shadow-[0_30px_80px_-30px_rgba(40,50,20,0.25)] lg:grid-cols-[1fr_2fr]">
-          <div className="flex flex-col gap-2 px-[clamp(0.5rem,2vw,2rem)] py-4">
-            <h3 className="text-xl font-medium">Everything in one place</h3>
-            <p className="text-[clamp(1.0625rem,0.95rem+0.4vw,1.375rem)] leading-[1.45] text-stone-500">
+        {/* Feature cards */}
+        <div className="mt-[clamp(2.5rem,5vw,4rem)] flex flex-col gap-[clamp(3rem,7vw,6rem)]">
+          <div className={FEATURE_CARD}>
+            <FeatureCopy title="Everything in one place">
               Your codebase, the canvas, and coding agents, integrated out of the box. No MCP servers, no localhost,
               no devops glue.
-            </p>
+            </FeatureCopy>
+            <ProductMockup />
           </div>
-          <ProductMockup />
+
+          <div className={cn(FEATURE_CARD, "lg:grid-cols-[2fr_1fr]")}>
+            <FeatureCopy title="Live product on canvas" className="lg:order-2">
+              Capture any element of your live product onto the canvas, pixel perfect and fully editable.
+            </FeatureCopy>
+            <LiveProductMockup />
+          </div>
         </div>
       </div>
     </section>
@@ -143,6 +169,83 @@ function ProductMockup() {
           ))}
         </div>
       </div>
+    </div>
+  )
+}
+
+function FeatureCopy({ title, className, children }: { title: string; className?: string; children: ReactNode }) {
+  return (
+    <div className={cn("flex flex-col gap-2 px-[clamp(0.5rem,2vw,2rem)] py-4", className)}>
+      <h3 className="text-xl font-medium">{title}</h3>
+      <p className="text-[clamp(1.0625rem,0.95rem+0.4vw,1.375rem)] leading-[1.45] text-stone-500">{children}</p>
+    </div>
+  )
+}
+
+/** A live checkout page with its order summary, and the same card captured onto the canvas beside it. */
+function LiveProductMockup() {
+  return (
+    <div
+      aria-hidden="true"
+      className="relative overflow-hidden rounded-xl border border-black/80 bg-[radial-gradient(ellipse_at_80%_10%,#6b6966_0%,#2b2a28_45%,#151514_100%)] p-[clamp(0.75rem,1.5vw,1rem)]"
+    >
+      <div className="flex h-[clamp(18rem,30vw,26rem)] items-start gap-[clamp(1rem,5vw,4rem)] overflow-hidden rounded-lg bg-stone-100 pr-[clamp(1rem,3vw,2.5rem)] text-[11px] text-stone-700">
+        {/* Live page */}
+        <div className="relative flex h-full min-w-0 flex-[1.2] flex-col rounded-tr-md border-r-4 border-t-4 border-mi-ink bg-white shadow-[2px_-2px_0_0_#c8ec6f]">
+          <p className="flex items-center justify-center gap-1 border-b border-mi-ink py-3 text-[9px] text-stone-500">
+            <ShieldCheck className="size-3" /> Secure checkout
+          </p>
+          <div className="relative mt-auto px-[8%]">
+            <OrderCard />
+            <MousePointer2 className="absolute -top-1 right-[4%] size-5 fill-mi-ink text-white" />
+          </div>
+        </div>
+
+        {/* Captured onto the canvas */}
+        <div className="hidden min-w-0 flex-1 flex-col gap-1 self-end sm:flex">
+          <p className="text-[9px] text-stone-400">Card</p>
+          <OrderCard />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function OrderCard() {
+  return (
+    <div className="flex flex-col gap-3 border border-mi-ink bg-white px-3 pb-3 pt-4 shadow-[4px_4px_0_0_#1a1a1a]">
+      <p className="font-medium text-stone-900">Order summary</p>
+      <ul className="flex flex-col gap-2 border-b border-stone-300 pb-3">
+        {ORDER_ITEMS.map((item) => (
+          <li key={item.name} className="flex items-center gap-2">
+            <span className="flex size-6 shrink-0 items-center justify-center bg-mi-ink text-[8px] font-bold text-white">
+              {item.initials}
+            </span>
+            <span className="flex min-w-0 flex-1 flex-col">
+              <span className="truncate text-[9px] text-stone-900">{item.name}</span>
+              <span className="text-[8px] text-stone-400">Qty {item.qty}</span>
+            </span>
+            <span className="text-[9px] tabular-nums">{item.price}</span>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-col gap-1.5 border-b border-stone-300 pb-3 text-[8px]">
+        <p className="flex justify-between">
+          <span className="text-stone-500">Subtotal · 3 items</span>
+          <span className="tabular-nums">$68.00</span>
+        </p>
+        <p className="flex justify-between">
+          <span className="text-stone-500">Shipping · Standard</span>
+          <span>Free</span>
+        </p>
+      </div>
+      <p className="flex items-baseline justify-between">
+        <span className="text-[9px]">Total</span>
+        <span className="text-sm font-semibold tabular-nums text-stone-900">$68.00</span>
+      </p>
+      <span className="flex items-center justify-center gap-1 border border-mi-ink bg-mi-lime py-1.5 text-[9px] font-medium text-mi-lime-ink shadow-[2px_2px_0_0_#1a1a1a]">
+        Continue to shipping <ArrowRight className="size-2.5" />
+      </span>
     </div>
   )
 }
