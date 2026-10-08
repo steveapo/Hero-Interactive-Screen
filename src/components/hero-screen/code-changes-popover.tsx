@@ -119,7 +119,7 @@ export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => voi
   }
 
   return (
-    <div className="absolute inset-0 z-50 bg-stone-900/10 animate-in fade-in duration-150" onPointerDown={onClose}>
+    <div className="absolute inset-0 z-[60] bg-stone-900/10 animate-in fade-in duration-150" onPointerDown={onClose}>
       <div
         role="dialog"
         aria-label="Code changes"

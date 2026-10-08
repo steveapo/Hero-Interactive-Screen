@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { flushSync } from "react-dom"
-import { Check, Ellipsis, SquarePen, X } from "lucide-react"
+import { ArrowLeft, Check, Ellipsis, SquarePen, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { screenScale } from "@/lib/screen-scale"
 import { COMPONENT_PULL_REQUEST, PULL_REQUEST, type PullRequest } from "./agent-script"
@@ -1159,18 +1159,38 @@ export function HeroScreen({
       <AgentsPopover agents={agentThumbs} />
 
       {/* Top bar: two floating groups (canvas title on the left, actions on the right), each on
-          its own panel background so they read over whatever is on the canvas beneath them */}
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-11 items-center justify-between pl-1 pr-1.5 *:pointer-events-auto">
-        <div className={cn("flex items-center gap-1.5 pr-1", TOP_GROUP)}>
+          its own panel background so they read over whatever is on the canvas beneath them.
+          While the Portal is open it stays on top of it, with "Back to Canvas" on the left. */}
+      <header
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 flex h-11 items-center justify-between pl-1 pr-1.5 *:pointer-events-auto",
+          portalOpen && !portalClosing ? "z-[60]" : "z-40",
+        )}
+      >
+        {portalOpen && !portalClosing ? (
           <button
             type="button"
-            aria-label="Home"
-            className="flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+            onClick={closePortal}
+            className={cn(
+              "flex items-center gap-1.5 px-2.5 text-px-13 font-medium text-stone-900 hover:bg-[#e9e9e7]",
+              TOP_GROUP,
+            )}
           >
-            <HomeIcon />
+            <ArrowLeft className="size-3.5" strokeWidth={1.5} />
+            Back to Canvas
           </button>
-          <CanvasTitle />
-        </div>
+        ) : (
+          <div className={cn("flex items-center gap-1.5 pr-1", TOP_GROUP)}>
+            <button
+              type="button"
+              aria-label="Home"
+              className="flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+            >
+              <HomeIcon />
+            </button>
+            <CanvasTitle />
+          </div>
+        )}
 
         <div className={cn("flex items-center gap-1 pr-1.5", TOP_GROUP)}>
           <button
@@ -1204,14 +1224,17 @@ export function HeroScreen({
             <span className="text-red-600">−{changeTotals.removed}</span>
             <Tooltip label="View code changes" />
           </button>
-          <button
-            type="button"
-            aria-label="Open preview"
-            className="group relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
-          >
-            <PlayCircleIcon />
-            <Tooltip label="Open preview" />
-          </button>
+          {/* Not in the Portal's toolbar: the Portal is the preview */}
+          {!portalOpen && (
+            <button
+              type="button"
+              aria-label="Open preview"
+              className="group relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+            >
+              <PlayCircleIcon />
+              <Tooltip label="Open preview" />
+            </button>
+          )}
           {/* Draft project: no repo linked yet, so the button offers to create one */}
           <GithubButton
             connected={false}
