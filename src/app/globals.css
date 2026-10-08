@@ -5,14 +5,12 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * DigiDecay (licensed, Softulka) for the hero's pixel line. Drop the font files into
- * public/fonts/; until they exist the browser falls back to Doto.
+ * DigiDecay (licensed, Softulka) for the hero's pixel line, served from public/DigiDecay.otf.
+ * Until it loads (or if it's missing) the browser falls back to Doto.
  */
 @font-face {
   font-family: "DigiDecay";
-  src:
-    url("/fonts/DigiDecay.woff2") format("woff2"),
-    url("/fonts/DigiDecay.otf") format("opentype");
+  src: url("/DigiDecay.otf") format("opentype");
   font-weight: 400 900;
   font-style: normal;
   font-display: swap;
