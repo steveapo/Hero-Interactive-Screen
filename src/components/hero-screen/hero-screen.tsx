@@ -207,8 +207,15 @@ export function HeroScreen({
   githubSyncOpen = false,
   portalEnabled = true,
   toolsEnabled = true,
+  scrollPans = true,
 }: {
   className?: string
+  /**
+   * Plain scroll / trackpad swipes over the canvas pan it. Off for the homepage hero: the canvas
+   * doesn't scroll and the page scrolls through it (pinch or ⌘/Ctrl + scroll still zoom; dragging
+   * empty canvas still pans).
+   */
+  scrollPans?: boolean
   /**
    * The top toolbar switches tools (clicks and the V / F / T / P shortcuts). Off for the homepage
    * hero: the toolbar shows, but the Select tool always stays selected.
@@ -905,9 +912,12 @@ export function HeroScreen({
     }
 
     function onWheel(e: WheelEvent) {
+      const zooming = e.ctrlKey || e.metaKey
+      // No canvas scrolling: leave the event alone so the page scrolls.
+      if (!zooming && !scrollPans) return
       e.preventDefault()
       const unit = e.deltaMode === 1 ? 16 : 1 // line-based deltas (some mice) → px
-      if (e.ctrlKey || e.metaKey) {
+      if (zooming) {
         const { px, py } = fromCentre(e.clientX, e.clientY)
         setCamera((c) => zoomAt(c, c.zoom * Math.exp(-e.deltaY * unit * WHEEL_ZOOM_SPEED), px, py, boundsRef.current))
       } else {
@@ -938,7 +948,7 @@ export function HeroScreen({
       canvas.removeEventListener("gesturestart", onGestureStart)
       canvas.removeEventListener("gesturechange", onGestureChange)
     }
-  }, [])
+  }, [scrollPans])
 
   function endPan() {
     lastPointer.current = null

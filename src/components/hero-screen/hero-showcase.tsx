@@ -42,7 +42,14 @@ export function HeroShowcase({ className }: { className?: string }) {
         onFocus={() => focus("main")}
       >
         <div className="flex min-h-0 flex-1 flex-col bg-mi-canvas">
-          <HeroScreen className="h-auto min-h-0 flex-1" start="built" githubSyncOpen portalEnabled={false} toolsEnabled={false} />
+          <HeroScreen
+            className="h-auto min-h-0 flex-1"
+            start="built"
+            githubSyncOpen
+            portalEnabled={false}
+            toolsEnabled={false}
+            scrollPans={false}
+          />
         </div>
       </DesktopWindow>
 
