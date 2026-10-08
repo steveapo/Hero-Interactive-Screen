@@ -26,8 +26,8 @@ const INTRO_VISIBLE_THRESHOLD = 0.35
  *   6. the canvas elements glide in around the Codebase frame
  *   7. the Code Changes window opens (as the Canvas window did) and its diff streams in row by row
  */
-/** Pace of the whole load-in: every step's time (and the windows' opening) is scaled by this. 0.8 = 20% faster. */
-const INTRO_TIME_SCALE = 0.8
+/** Pace of the whole load-in: every step's time (and the windows' opening) is scaled by this. 0.64 = 20% faster, twice over. */
+const INTRO_TIME_SCALE = 0.64
 const INTRO = {
   canvasWindowAt: 400 * INTRO_TIME_SCALE,
   chromeAt: 950 * INTRO_TIME_SCALE,
