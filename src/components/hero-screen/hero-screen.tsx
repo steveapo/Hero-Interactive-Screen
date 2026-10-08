@@ -1185,10 +1185,9 @@ export function HeroScreen({
           <button
             type="button"
             onClick={closePortal}
-            className={cn(
-              "flex items-center gap-2 px-3.5 text-px-11 font-medium text-stone-900 hover:bg-[#e6e6e4]",
-              PORTAL_TOP_GROUP,
-            )}
+            // Not through cn(): tailwind-merge reads the custom `text-px-11` size as a text colour and
+            // drops it in favour of `text-stone-900`.
+            className={`flex items-center gap-2 px-3.5 text-px-11 font-medium text-stone-900 hover:bg-[#e6e6e4] ${PORTAL_TOP_GROUP}`}
           >
             <ArrowLeft className="size-3" strokeWidth={1.5} />
             Back to Canvas
