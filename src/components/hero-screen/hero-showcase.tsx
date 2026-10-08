@@ -39,6 +39,8 @@ const INTRO = {
 }
 /** How long a window takes to open (ms). */
 const WINDOW_OPEN_MS = 700 * INTRO_TIME_SCALE
+/** The canvas elements' entrance (its sweep of delays and each glide) plays 20% faster than leaving the Portal's. */
+const ELEMENTS_TIME_SCALE = 0.8
 /** The diff rows start coming in once the Code Changes window is mostly open. */
 const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE
 
@@ -86,6 +88,7 @@ export function HeroShowcase({ className }: { className?: string }) {
       codebaseAt: INTRO.codebaseAt,
       githubAt: INTRO.githubAt,
       elementsAt: INTRO.elementsAt,
+      elementsTimeScale: ELEMENTS_TIME_SCALE,
     }),
     [intro],
   )

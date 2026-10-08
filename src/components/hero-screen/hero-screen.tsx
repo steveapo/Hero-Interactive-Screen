@@ -29,7 +29,7 @@ import {
   type FrameComponent,
   type InsertableComponent,
 } from "./library-components"
-import { BuildAgentButton, DesignFrame, type CanvasEntrance, type Corner } from "./planner-frame"
+import { BuildAgentButton, DesignFrame, ENTRANCE_DURATION_MS, type CanvasEntrance, type Corner } from "./planner-frame"
 import { PortalView } from "./portal-view"
 import { ShareButton } from "./share-popover"
 import { TextSettingsPanel } from "./text-settings-panel"
@@ -191,6 +191,8 @@ export type LoadIntro = {
   codebaseAt: number
   githubAt: number
   elementsAt: number
+  /** Time scale of the canvas elements' entrance (its delays and glides): 0.8 = 20% faster. Default 1. */
+  elementsTimeScale?: number
 }
 
 type IntroStep = "chrome" | "codebase" | "github" | "elements"
@@ -972,10 +974,14 @@ export function HeroScreen({
     // from the top-left diagonal so everything above the frame starts the sweep.
     const angle = Math.atan2(dx, -dy) / (2 * Math.PI) // −½…½, clockwise from up
     const sweep = (((angle - ENTER_SWEEP_START) % 1) + 1) % 1 // 0…1 from the start diagonal
+    // The load-in may play the entrance faster (its delays and glides alike); leaving the Portal
+    // always plays it at its own pace.
+    const pace = loadIntro?.elementsTimeScale ?? 1
     return {
       x: outsideVertically ? 0 : travel(dx),
       y: outsideVertically ? travel(dy) : 0,
-      delay: Math.round(ENTER_BASE_DELAY + sweep * ENTER_SWEEP_MS),
+      delay: Math.round((ENTER_BASE_DELAY + sweep * ENTER_SWEEP_MS) * pace),
+      duration: Math.round(ENTRANCE_DURATION_MS * pace),
     }
   }
 

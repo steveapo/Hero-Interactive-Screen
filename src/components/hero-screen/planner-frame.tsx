@@ -16,11 +16,12 @@ export type Corner = { sx: -1 | 1; sy: -1 | 1 }
 /**
  * Canvas reveal around the Portal: `"hidden"` while the Portal is open (or fading out), so only
  * the Codebase frame is on the canvas; then an entrance where the element glides in from
- * `x`/`y` screen px away (its side of the Codebase frame) after `delay` ms.
+ * `x`/`y` screen px away (its side of the Codebase frame) after `delay` ms, over `duration` ms
+ * (ENTRANCE_DURATION_MS when omitted).
  */
-export type CanvasEntrance = "hidden" | { x: number; y: number; delay: number }
+export type CanvasEntrance = "hidden" | { x: number; y: number; delay: number; duration?: number }
 
-const ENTRANCE_DURATION_MS = 1280
+export const ENTRANCE_DURATION_MS = 1280
 /**
  * Long, soft ease-out (fast start, very gradual settle) with no bounce, so elements drift into
  * place. Opacity has its own gentler curve so the fade doesn't finish before the glide gets going.
@@ -46,7 +47,7 @@ export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntranc
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
     // Two animations: the glide (transform) and the fade (opacity), each on its own curve.
     // `backwards` keeps the start frame (hidden, offset) applied during the delay.
-    const timing = { duration: ENTRANCE_DURATION_MS, delay: e.delay, fill: "backwards" } as const
+    const timing = { duration: e.duration ?? ENTRANCE_DURATION_MS, delay: e.delay, fill: "backwards" } as const
     const glide = el.animate(
       [
         { transform: `translate(${e.x}px, ${e.y}px) scale(${ENTRANCE_START_SCALE})` },
