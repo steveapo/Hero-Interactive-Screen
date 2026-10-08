@@ -1178,11 +1178,11 @@ export function HeroScreen({
             type="button"
             onClick={closePortal}
             className={cn(
-              "flex items-center gap-2 px-3.5 text-px-13 font-medium text-stone-900 hover:bg-[#e6e6e4]",
+              "flex items-center gap-2 px-3.5 text-px-11 font-medium text-stone-900 hover:bg-[#e6e6e4]",
               PORTAL_TOP_GROUP,
             )}
           >
-            <ArrowLeft className="size-3.5" strokeWidth={1.5} />
+            <ArrowLeft className="size-3" strokeWidth={1.5} />
             Back to Canvas
           </button>
         ) : (
