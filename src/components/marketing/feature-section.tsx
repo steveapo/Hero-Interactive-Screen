@@ -168,8 +168,8 @@ function FeatureCopy({ title, className, children }: { title: string; className?
 }
 
 /**
- * The "Live product on canvas" showcase: the scripted demo (capture in Build Mode → canvas →
- * component → Canvas Agent → use it in the codebase) in the same dark frame as the other mockup.
+ * The "Live product on canvas" showcase: the scripted demo (capture in Build Mode → back to the
+ * canvas, on a loop) in the same dark frame as the other mockup.
  */
 function LiveProductMockup() {
   return (
