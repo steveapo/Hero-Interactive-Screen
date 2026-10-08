@@ -1137,7 +1137,7 @@ export function HeroScreen({
           canvas content (frames go up to z-12), below the sidebar, panels and top bar. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-[15] shadow-[inset_0_0_56px_28px_var(--color-mi-canvas)]"
+        className="pointer-events-none absolute inset-0 z-[15] shadow-[inset_0_0_8px_3px_var(--color-mi-canvas)]"
       />
 
       {marquee && (
