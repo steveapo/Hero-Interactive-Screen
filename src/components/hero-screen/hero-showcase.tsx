@@ -39,10 +39,12 @@ const INTRO = {
 }
 /** How long a window takes to open (ms). */
 const WINDOW_OPEN_MS = 700 * INTRO_TIME_SCALE
+/** The Code Changes window opens about 25% slower than the Canvas window. */
+const CODE_WINDOW_OPEN_MS = WINDOW_OPEN_MS * 1.25
 /** The canvas elements' entrance (its sweep of delays and each glide) plays 20% faster than leaving the Portal's. */
 const ELEMENTS_TIME_SCALE = 0.8
-/** The diff rows start coming in once the Code Changes window is mostly open. */
-const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE
+/** The diff rows start coming in once the Code Changes window is mostly open (at its slower pace). */
+const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * 1.25
 
 /** A window on the Desktop Area: rounded, with a shadow; positioned by its `placement` classes. */
 const DESKTOP_WINDOW =
@@ -134,6 +136,7 @@ export function HeroShowcase({ className }: { className?: string }) {
         onFocus={() => focus("secondary")}
         opening={intro}
         openDelay={INTRO.codeWindowAt}
+        openDuration={CODE_WINDOW_OPEN_MS}
       >
         <CodeChangesPanel
           className="min-h-0 flex-1"
@@ -158,6 +161,7 @@ function DesktopWindow({
   onFocus,
   opening,
   openDelay = 0,
+  openDuration = WINDOW_OPEN_MS,
   children,
 }: {
   title: string
@@ -171,6 +175,8 @@ function DesktopWindow({
   opening?: IntroPhase
   /** How long after "play" the window opens (ms). */
   openDelay?: number
+  /** How long the opening takes (ms). */
+  openDuration?: number
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -191,7 +197,7 @@ function DesktopWindow({
         { visibility: "visible", opacity: 1, scale: "1", translate: "0 0" },
       ],
       {
-        duration: WINDOW_OPEN_MS,
+        duration: openDuration,
         delay: openDelay,
         easing: "cubic-bezier(0.22, 1, 0.36, 1)",
         fill: "backwards",
