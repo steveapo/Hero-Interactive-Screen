@@ -23,14 +23,14 @@ export function HeroShowcase({ className }: { className?: string }) {
       )}
     >
       {/* Main window: the canvas */}
-      <SafariChrome compact className={cn(DESKTOP_WINDOW, "left-[3%] top-[4%] h-[88%] w-[70%] flex-none")}>
+      <SafariChrome compact title="ModeInspect Canvas" className={cn(DESKTOP_WINDOW, "left-[3%] top-[4%] h-[88%] w-[70%] flex-none")}>
         <div className="flex min-h-0 flex-1 flex-col bg-mi-canvas">
           <HeroScreen className="h-auto min-h-0 flex-1" start="built" githubSyncOpen portalEnabled={false} />
         </div>
       </SafariChrome>
 
       {/* Secondary window: the code diff */}
-      <SafariChrome compact className={cn(DESKTOP_WINDOW, "bottom-[6%] right-[3%] z-10 h-[58%] w-[44%] flex-none")}>
+      <SafariChrome compact title="Code Changes" className={cn(DESKTOP_WINDOW, "bottom-[6%] right-[3%] z-10 h-[58%] w-[44%] flex-none")}>
         <CodeChangesPanel className="min-h-0 flex-1" />
       </SafariChrome>
     </div>
