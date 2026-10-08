@@ -12,7 +12,7 @@ import { useBuildAgents, type PlaceVariants, type VariantState } from "./build-a
 import { AIRBNB_ELEMENTS } from "./airbnb-elements"
 import { CanvasText, DrawnFrame, TEXT_LINE_HEIGHT, type CanvasElement } from "./canvas-elements"
 import { builtVariantChange } from "./built-change"
-import { CODE_CHANGES, CodeChangesPopover, totalsOf } from "./code-changes-popover"
+import { allChanges, CodeChangesPopover, totalsOf } from "./code-changes-popover"
 import { CodebaseFrame, CANVAS_ZOOM, CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
 import { CodebaseSettingsPanel } from "./codebase-settings-panel"
 import { trackDrag, useMeasuredRect, type CanvasRect } from "./drag"
@@ -239,10 +239,12 @@ export function HeroScreen({
     ],
     [builtComponents, builtVariant],
   )
-  const changeTotals = useMemo(() => totalsOf([...sessionChanges, ...CODE_CHANGES]), [sessionChanges])
+  /** Every changed file, once each (a file changed this session and before shows as one). */
+  const allFiles = useMemo(() => allChanges(sessionChanges), [sessionChanges])
+  const changeTotals = useMemo(() => totalsOf(allFiles), [allFiles])
   const githubChanges = useMemo(
-    () => ({ files: sessionChanges.length + CODE_CHANGES.length, ...changeTotals }),
-    [sessionChanges, changeTotals],
+    () => ({ files: allFiles.length, ...changeTotals }),
+    [allFiles, changeTotals],
   )
   /** The agents' thumbs for the AgentsPopover (memoized: it only changes with the sessions). */
   const agentThumbs = useMemo(() => agents.sessions.map((s) => ({ id: s.id, working: s.working })), [agents.sessions])

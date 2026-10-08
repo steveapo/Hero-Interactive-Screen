@@ -213,7 +213,7 @@ export const PortalView = memo(function PortalView({
         {/* Browser bar */}
         <header className="relative grid h-11 shrink-0 grid-cols-[1fr_minmax(0,440px)_1fr] items-center gap-3 border-b border-stone-200 bg-stone-50 px-2">
           <div className="flex items-center gap-0.5">
-            <BarButton label="Back to canvas" onClick={onClose}>
+            <BarButton label="Back">
               <ArrowLeft className="size-4" strokeWidth={1.5} />
             </BarButton>
             <BarButton label="Forward">

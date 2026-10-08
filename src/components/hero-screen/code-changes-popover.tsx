@@ -64,26 +64,166 @@ const CODEBASE_FRAME_DIFF: DiffRow[] = [
   ctx(18, 24, "  zoom,"),
 ]
 
+/** A file that's new in this change: every line added. */
+const newFile = (lines: string[]): DiffRow[] => lines.map((text, i) => add(i + 1, text))
+
+const FAIRBNB_SCREEN_DIFF: DiffRow[] = [
+  ctx(1, 1, `"use client"`),
+  ctx(2, 2, ""),
+  change(3, `import { useState } from "react"`, 3, `import { useEffect, useRef, useState } from "react"`),
+  change(4, `import { AIRBNB_TRIPS } from "./airbnb-data"`, 4, `import { FAIRBNB_TRIPS, type Trip } from "./fairbnb-data"`),
+  ctx(5, 5, `import { cn } from "./utils"`),
+  ctx(6, 6, ""),
+  change(7, "/** The Airbnb home screen, at desktop size. */", 7, "/** The Fairbnb home screen, laid out in cqw so it scales with its frame. */"),
+  change(8, "export function AirbnbScreen() {", 8, "export function FairbnbScreen({ className }: { className?: string }) {"),
+  ctx(9, 9, "  const [tab, setTab] = useState<\"stays\" | \"trips\">(\"stays\")"),
+  add(10, "  const rootRef = useRef<HTMLDivElement>(null)"),
+  add(11, ""),
+  add(12, "  // Cards come in one by one once the screen is on the page."),
+  add(13, "  useEffect(() => {"),
+  add(14, "    rootRef.current?.setAttribute(\"data-intro\", \"on\")"),
+  add(15, "  }, [])"),
+  ctx(10, 16, ""),
+  ctx(11, 17, "  return ("),
+  change(12, `    <div className="flex h-[900px] w-[1440px] flex-col bg-white">`, 18, `    <div ref={rootRef} className={cn("@container flex size-full flex-col bg-white", className)}>`),
+  change(13, `      <nav className="flex h-20 items-center justify-between px-12">`, 19, `      <nav className="flex h-[5.5cqw] items-center justify-between px-[3.3cqw]">`),
+  change(14, `        <span className="text-2xl font-bold text-[#ff385c]">airbnb</span>`, 20, `        <span className="text-[1.7cqw] font-bold text-[#ff385c]">fairbnb</span>`),
+  ctx(15, 21, "        <Tabs value={tab} onChange={setTab} />"),
+  ctx(16, 22, "      </nav>"),
+  change(17, `      <section className="grid grid-cols-4 gap-6 px-12">`, 23, `      <section className="grid grid-cols-4 gap-[1.6cqw] px-[3.3cqw]">`),
+  change(18, "        {AIRBNB_TRIPS.map((trip) => (", 24, "        {FAIRBNB_TRIPS.map((trip: Trip) => ("),
+  ctx(19, 25, "          <TripCard key={trip.id} trip={trip} />"),
+  ctx(20, 26, "        ))}"),
+  ctx(21, 27, "      </section>"),
+  ctx(22, 28, "    </div>"),
+  ctx(23, 29, "  )"),
+  ctx(24, 30, "}"),
+  ctx(25, 31, ""),
+  change(26, "function TripCard({ trip }: { trip: (typeof AIRBNB_TRIPS)[number] }) {", 32, "function TripCard({ trip }: { trip: Trip }) {"),
+  ctx(27, 33, "  return ("),
+  change(28, `    <article className="flex flex-col gap-3">`, 34, `    <article data-anim="card" className="relative flex flex-col gap-[0.8cqw]">`),
+  change(29, `      <img src={trip.image} alt="" className="aspect-square rounded-xl object-cover" />`, 35, `      <img src={trip.image} alt="" className="aspect-square rounded-[0.9cqw] object-cover" />`),
+  change(30, `      <p className="text-[15px] font-semibold">{trip.title}</p>`, 36, `      <p className="text-[1.6cqw] font-semibold tracking-tight text-[#222222]">{trip.title}</p>`),
+]
+
+const HERO_SCREEN_DIFF: DiffRow[] = [
+  ctx(1, 1, `"use client"`),
+  ctx(2, 2, ""),
+  change(3, `import { useState } from "react"`, 3, `import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"`),
+  add(4, `import { flushSync } from "react-dom"`),
+  ctx(4, 5, `import { cn } from "@/lib/utils"`),
+  add(6, `import { screenScale } from "@/lib/screen-scale"`),
+  ctx(5, 7, `import { CodebaseFrame, CANVAS_ZOOM, CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"`),
+  add(8, `import { FrameSettingsPanel } from "./frame-settings-panel"`),
+  add(9, `import { PortalView } from "./portal-view"`),
+  ctx(6, 10, ""),
+  change(7, `type Tool = "select" | "frame"`, 11, `type Tool = "select" | "frame" | "text" | "code"`),
+  ctx(8, 12, ""),
+  add(13, "/* ------------------------------ Camera limits ------------------------------ */"),
+  add(14, "// The hero canvas is a showcase, not an infinite canvas: zoom and pan are both bounded."),
+  add(15, ""),
+  add(16, "const MIN_ZOOM = 0.24"),
+  add(17, "const MAX_ZOOM = 0.4"),
+  add(18, ""),
+  add(19, "/** Wheel → zoom sensitivity for pinch / ⌘-scroll. */"),
+  add(20, "const WHEEL_ZOOM_SPEED = 0.01"),
+  ctx(9, 21, ""),
+  ctx(10, 22, "export function HeroScreen({ className }: { className?: string }) {"),
+  ctx(11, 23, `  const [tool, setTool] = useState<Tool>("select")`),
+  change(12, "  const [selected, setSelected] = useState(false)", 24, "  const [codebaseSelected, setCodebaseSelected] = useState(false)"),
+  add(25, "  /** Ids of the selected Fairbnb element frames. */"),
+  add(26, "  const [selectedIds, setSelectedIds] = useState<string[]>([])"),
+  add(27, "  const [portalOpen, setPortalOpen] = useState(true)"),
+  ctx(13, 28, "  const [camera, setCamera] = useState(initialCamera)"),
+  ctx(14, 29, ""),
+  ctx(15, 30, "  return ("),
+  change(16, `    <div className="relative h-dvh w-full overflow-hidden bg-stone-100">`, 31, `    <div ref={rootRef} data-hero-root className={cn("relative h-dvh w-full select-none overflow-hidden bg-mi-canvas", className)}>`),
+  ctx(17, 32, "      <div ref={canvasRef} data-hero-canvas className=\"absolute inset-0 touch-none\">"),
+  ctx(18, 33, "        <CodebaseFrame"),
+  change(19, "          selected={selected}", 34, "          selected={codebaseSelected}"),
+  add(35, "          onOpen={() => setPortalOpen(true)}"),
+]
+
+const FRAME_SETTINGS_PANEL_DIFF: DiffRow[] = newFile([
+  `"use client"`,
+  "",
+  `import { memo, useState } from "react"`,
+  `import { ChevronDown, ChevronRight, Ellipsis, Minus, Plus, Scan } from "lucide-react"`,
+  `import { cn } from "@/lib/utils"`,
+  `import { FrameGlyph } from "./planner-frame"`,
+  "",
+  "/* --------------------------------- Types ---------------------------------- */",
+  "",
+  `export type LayoutMode = "freeform" | "row" | "column" | "grid"`,
+  `export type CssPosition = "static" | "relative" | "absolute"`,
+  "/** Per-side lengths in canvas px. */",
+  "export type Sides = { top: number; right: number; bottom: number; left: number }",
+  "",
+  "export const NO_SIDES: Sides = { top: 0, right: 0, bottom: 0, left: 0 }",
+  "",
+  `const SELECT_BLUE = "#2f6bf6"`,
+  "",
+  `/** 16.384 → "16.4px"; null → "auto". */`,
+  "export function px(value: number | null) {",
+  "  return value === null ? \"auto\" : `${Math.round(value * 10) / 10}px`",
+  "}",
+  "",
+  "/* ------------------------------ Frame panel ------------------------------- */",
+  "",
+  "/** Right-side settings for a selected design frame. */",
+  "export const FrameSettingsPanel = memo(function FrameSettingsPanel({",
+  "  tag = \"div\",",
+  "  position = \"static\",",
+  "  x,",
+  "  y,",
+  "  width,",
+  "  height,",
+  "  layout = \"freeform\",",
+  "  padding = NO_SIDES,",
+  "  fill,",
+  "  radius,",
+  "  border,",
+  "}: FrameSettingsProps) {",
+  "  return (",
+  "    <SettingsPanelShell icon={<FrameGlyph />} title={tag}>",
+  "      <PositionSection position={position} x={x} y={y} />",
+  "      <SizeSection width={px(width)} height={px(height)} />",
+  "      <LayoutSection layout={layout} padding={padding} />",
+  "      <FillSection fill={fill} />",
+  "    </SettingsPanelShell>",
+  "  )",
+  "})",
+])
+
+/** The project's changes before this session: the screen and a few components, each with its diff. */
 export const CODE_CHANGES: ChangedFile[] = [
-  { path: "package.json", added: 1, removed: 0 },
-  { path: "public/status.png", added: 1, removed: 0, isNew: true },
-  { path: "src/app/copy-project/fairbnb-screen.tsx", added: 123, removed: 104 },
-  { path: "src/components/hero-screen/fairbnb-elements.tsx", added: 271, removed: 0, isNew: true },
-  { path: "src/components/hero-screen/build-agent-composer.tsx", added: 79, removed: 0, isNew: true },
-  { path: "src/components/hero-screen/canvas-elements.tsx", added: 209, removed: 0, isNew: true },
+  { path: "src/app/copy-project/fairbnb-screen.tsx", added: 123, removed: 104, diff: FAIRBNB_SCREEN_DIFF },
   { path: "src/components/hero-screen/codebase-frame.tsx", added: 23, removed: 9, diff: CODEBASE_FRAME_DIFF },
-  { path: "src/components/hero-screen/codebase-settings-panel.tsx", added: 122, removed: 4 },
-  { path: "src/components/hero-screen/drag.tsx", added: 86, removed: 0, isNew: true },
-  { path: "src/components/hero-screen/frame-settings-panel.tsx", added: 388, removed: 0, isNew: true },
-  { path: "src/components/hero-screen/hero-screen.tsx", added: 702, removed: 18 },
-  { path: "src/components/hero-screen/left-sidebar.tsx", added: 46, removed: 0 },
-  { path: "src/components/hero-screen/planner-frame.tsx", added: 241, removed: 6 },
-  { path: "src/components/hero-screen/text-settings-panel.tsx", added: 196, removed: 0, isNew: true },
+  { path: "src/components/hero-screen/frame-settings-panel.tsx", added: 388, removed: 0, isNew: true, diff: FRAME_SETTINGS_PANEL_DIFF },
+  { path: "src/components/hero-screen/hero-screen.tsx", added: 702, removed: 18, diff: HERO_SCREEN_DIFF },
 ]
 
 export const CODE_CHANGES_TOTAL = {
   added: CODE_CHANGES.reduce((sum, f) => sum + f.added, 0),
   removed: CODE_CHANGES.reduce((sum, f) => sum + f.removed, 0),
+}
+
+/**
+ * This session's changes (`extra`) on top of the project's, one entry per file: a file changed in
+ * both shows once, with both changes' line counts and the session's diff.
+ */
+export function allChanges(extra: ChangedFile[] = []): ChangedFile[] {
+  const merged = new Map<string, ChangedFile>()
+  for (const file of [...extra, ...CODE_CHANGES]) {
+    const seen = merged.get(file.path)
+    merged.set(
+      file.path,
+      seen
+        ? { ...seen, added: seen.added + file.added, removed: seen.removed + file.removed, diff: seen.diff ?? file.diff }
+        : file,
+    )
+  }
+  return [...merged.values()]
 }
 
 /** Totals over a list of changed files. */
@@ -106,7 +246,7 @@ const DEFAULT_FILE = "src/components/hero-screen/codebase-frame.tsx"
  * `extra`: changes made this session (e.g. a variant the Build Agent built); the first is selected.
  */
 export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => void; extra?: ChangedFile[] }) {
-  const files = [...extra, ...CODE_CHANGES]
+  const files = allChanges(extra)
   const totals = totalsOf(files)
   const [selected, setSelected] = useState(() => extra[0]?.path ?? DEFAULT_FILE)
   const [query, setQuery] = useState("")
@@ -300,14 +440,15 @@ function FileDiff({ file }: { file: ChangedFile }) {
   if (!file.diff) {
     return <p className="px-4 py-3 text-px-12 text-stone-500">No preview available for this file.</p>
   }
+  // A preview: it shows as many lines as fit and doesn't scroll (long lines and files are clipped).
   return (
-    <div data-diff className="grid size-full grid-cols-2 overflow-y-auto font-mono text-px-11 leading-[18px]">
-      <div className="min-w-0 overflow-x-auto border-r border-stone-700/15">
+    <div data-diff className="grid size-full grid-cols-2 overflow-hidden font-mono text-px-11 leading-[18px]">
+      <div className="min-w-0 overflow-hidden border-r border-stone-700/15">
         {file.diff.map(([left], i) => (
           <DiffLine key={i} side={left} />
         ))}
       </div>
-      <div className="min-w-0 overflow-x-auto">
+      <div className="min-w-0 overflow-hidden">
         {file.diff.map(([, right], i) => (
           <DiffLine key={i} side={right} />
         ))}
