@@ -205,10 +205,17 @@ export function HeroScreen({
   reopened = false,
   start = "portal",
   githubSyncOpen = false,
+  portalEnabled = true,
 }: {
   className?: string
   /** Opens with the repo linked and the GitHub Sync popover open ("Sync to Github" showing). Only read on mount. */
   githubSyncOpen?: boolean
+  /**
+   * The Codebase frame can be opened in the Portal (double-click it, or "Open Build Mode" in its
+   * settings). Off for the homepage hero: frames can still be selected and moved, but the Portal
+   * never opens from the canvas.
+   */
+  portalEnabled?: boolean
   /** Follows a previous demo run: open the Portal out of the canvas colour it ended on. */
   reopened?: boolean
   /** Where the screen opens; see HeroStart. Only read on mount. */
@@ -269,6 +276,10 @@ export function HeroScreen({
    * inside the Portal; leaving it reveals the canvas.
    */
   const [portalOpen, setPortalOpen] = useState(start === "portal")
+  /** Open the Codebase frame in the Portal, unless this screen keeps the Portal shut (`portalEnabled`). */
+  const openPortal = useCallback(() => {
+    if (portalEnabled) setPortalOpen(true)
+  }, [portalEnabled])
   /** The Portal is fading out (PORTAL_EXIT_MS); the canvas elements stay hidden until it's gone. */
   const [portalClosing, setPortalClosing] = useState(false)
   /** Bumped once the Portal has closed: the canvas elements replay their entrance (see `entranceFor`). */
@@ -1004,7 +1015,7 @@ export function HeroScreen({
           selected={codebaseSelected}
           onSelect={selectCodebase}
           onMoveStart={(e) => startMove(e, "codebase")}
-          onOpen={() => setPortalOpen(true)}
+          onOpen={openPortal}
           covered={canvasCovered}
           zoom={camera.zoom}
           offsetX={camera.x + codebaseRect.x * camera.zoom}
@@ -1311,7 +1322,7 @@ export function HeroScreen({
       {libraryDrag && <ComponentDragGhost x={libraryDrag.x} y={libraryDrag.y} zoom={camera.zoom} />}
 
       {/* Settings show for a single selection only */}
-      {codebaseSelected && selectedIds.length === 0 && <CodebaseSettingsPanel onOpenBuildMode={() => setPortalOpen(true)} />}
+      {codebaseSelected && selectedIds.length === 0 && <CodebaseSettingsPanel onOpenBuildMode={openPortal} />}
       {selectedComponent && selectedIds.length === 0 && (
         <ComponentSettingsPanel
           key={`component-settings:${selectedComponent.id}`}

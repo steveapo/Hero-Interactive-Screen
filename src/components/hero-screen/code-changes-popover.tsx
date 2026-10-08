@@ -246,6 +246,48 @@ const DEFAULT_FILE = "src/components/hero-screen/codebase-frame.tsx"
  * `extra`: changes made this session (e.g. a variant the Build Agent built); the first is selected.
  */
 export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => void; extra?: ChangedFile[] }) {
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") onClose()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [onClose])
+
+  return (
+    <div
+      className="absolute inset-0 z-[60] flex items-center justify-center bg-stone-900/30 p-6 animate-in fade-in duration-150"
+      onPointerDown={onClose}
+    >
+      <CodeChangesPanel
+        role="dialog"
+        onClose={onClose}
+        extra={extra}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="h-[72%] w-[75%] rounded-2xl shadow-[0_12px_40px_-8px_rgba(17,17,16,0.25),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in zoom-in-95 duration-150"
+      />
+    </div>
+  )
+}
+
+/**
+ * The code changes review itself (header, file tree, split diff), without a backdrop: the popover
+ * centres it over the screen; the hero's Desktop Area shows it as a window of its own. The close
+ * button only shows when `onClose` is given.
+ */
+export function CodeChangesPanel({
+  onClose,
+  extra = [],
+  className,
+  role,
+  onPointerDown,
+}: {
+  onClose?: () => void
+  extra?: ChangedFile[]
+  className?: string
+  role?: "dialog"
+  onPointerDown?: (e: React.PointerEvent) => void
+}) {
   const files = allChanges(extra)
   const totals = totalsOf(files)
   const [selected, setSelected] = useState(() => extra[0]?.path ?? DEFAULT_FILE)
@@ -256,14 +298,6 @@ export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => voi
 
   const q = query.trim().toLowerCase()
   const tree = buildTree(q ? files.filter((f) => f.path.toLowerCase().includes(q)) : files)
-
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape") onClose()
-    }
-    document.addEventListener("keydown", onKeyDown)
-    return () => document.removeEventListener("keydown", onKeyDown)
-  }, [onClose])
 
   function toggleFolder(path: string) {
     setCollapsed((paths) => (paths.includes(path) ? paths.filter((p) => p !== path) : [...paths, path]))
@@ -328,15 +362,11 @@ export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => voi
   }
 
   return (
-    <div
-      className="absolute inset-0 z-[60] flex items-center justify-center bg-stone-900/30 p-6 animate-in fade-in duration-150"
-      onPointerDown={onClose}
-    >
       <div
-        role="dialog"
+        role={role}
         aria-label="Code changes"
-        onPointerDown={(e) => e.stopPropagation()}
-        className="flex h-[72%] w-[75%] min-w-0 flex-col overflow-hidden rounded-2xl bg-[#f3f3f1] shadow-[0_12px_40px_-8px_rgba(17,17,16,0.25),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in zoom-in-95 duration-150"
+        onPointerDown={onPointerDown}
+        className={cn("flex min-w-0 flex-col overflow-hidden bg-[#f3f3f1]", className)}
       >
       <header className="flex shrink-0 items-start justify-between gap-4 px-3.5 pb-3 pt-3">
         <div className="flex flex-col gap-3">
@@ -347,14 +377,16 @@ export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => voi
             <span className="text-red-600">−{totals.removed}</span>
           </p>
         </div>
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={onClose}
-          className="flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
-        >
-          <X className="size-4" strokeWidth={1.25} />
-        </button>
+        {onClose && (
+          <button
+            type="button"
+            aria-label="Close"
+            onClick={onClose}
+            className="flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+          >
+            <X className="size-4" strokeWidth={1.25} />
+          </button>
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1 border-t border-stone-700/10">
@@ -386,7 +418,6 @@ export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => voi
         </div>
       </div>
       </div>
-    </div>
   )
 }
 
