@@ -143,7 +143,9 @@ export function HeroShowcase({ className }: { className?: string }) {
         openDuration={CODE_WINDOW_OPEN_MS}
       >
         <CodeChangesPanel
-          className="min-h-0 flex-1"
+          // Zoomed out (CSS zoom re-lays it out smaller, so more of the tree and diff fits; the
+          // window's title bar keeps its size).
+          className="min-h-0 flex-1 [zoom:0.85]"
           sidebarClassName="max-w-[32%]"
           revealDelay={intro === "play" ? CODE_LINES_AT : undefined}
           revealTimeScale={CODE_WINDOW_TIME_SCALE}
