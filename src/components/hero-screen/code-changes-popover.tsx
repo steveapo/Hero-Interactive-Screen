@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ChevronRight, X } from "lucide-react"
+import { ChevronDown, Folder, Search, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 /* ------------------------------- Mock data -------------------------------- */
@@ -16,6 +16,8 @@ export type ChangedFile = {
   added: number
   removed: number
   isNew?: boolean
+  /** Deleted in this change ("Removed" in the file tree). */
+  isRemoved?: boolean
   /** Split-diff rows shown when the file is expanded. */
   diff?: DiffRow[]
 }
@@ -94,17 +96,25 @@ export function totalsOf(files: ChangedFile[]) {
 
 /* -------------------------------- Popover --------------------------------- */
 
+/** Where the review opens when nothing was built this session: the file with a diff preview. */
+const DEFAULT_FILE = "src/components/hero-screen/codebase-frame.tsx"
+
 /**
- * "Code changes" panel opened from the top bar's +/− counter. Closes on ×, Escape or backdrop click.
- * `extra`: changes made this session (e.g. a variant the Build Agent built), listed first and open.
+ * "Code changes" view opened from the top bar's +/− counter: a filterable file tree on the left,
+ * the selected file's split diff on the right. Closes on × or Escape.
+ * `extra`: changes made this session (e.g. a variant the Build Agent built); the first is selected.
  */
 export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => void; extra?: ChangedFile[] }) {
   const files = [...extra, ...CODE_CHANGES]
   const totals = totalsOf(files)
-  const [expanded, setExpanded] = useState<string[]>(() => [
-    ...extra.map((f) => f.path),
-    "src/components/hero-screen/codebase-frame.tsx",
-  ])
+  const [selected, setSelected] = useState(() => extra[0]?.path ?? DEFAULT_FILE)
+  const [query, setQuery] = useState("")
+  /** Folder paths the user has collapsed (all open by default). */
+  const [collapsed, setCollapsed] = useState<string[]>([])
+  const selectedFile = files.find((f) => f.path === selected)
+
+  const q = query.trim().toLowerCase()
+  const tree = buildTree(q ? files.filter((f) => f.path.toLowerCase().includes(q)) : files)
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -114,80 +124,179 @@ export function CodeChangesPopover({ onClose, extra = [] }: { onClose: () => voi
     return () => document.removeEventListener("keydown", onKeyDown)
   }, [onClose])
 
-  function toggle(path: string) {
-    setExpanded((paths) => (paths.includes(path) ? paths.filter((p) => p !== path) : [...paths, path]))
+  function toggleFolder(path: string) {
+    setCollapsed((paths) => (paths.includes(path) ? paths.filter((p) => p !== path) : [...paths, path]))
+  }
+
+  function renderNode(node: TreeNode, depth: number): React.ReactNode {
+    return (
+      <>
+        {node.folders.map((folder) => {
+          const open = !collapsed.includes(folder.path)
+          return (
+            <li key={folder.path}>
+              <button
+                type="button"
+                aria-expanded={open}
+                onClick={() => toggleFolder(folder.path)}
+                className="flex h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left text-px-12 text-stone-700 hover:bg-stone-700/5"
+                style={{ paddingLeft: 8 + depth * 12 }}
+              >
+                <ChevronDown
+                  className={cn("size-3.5 shrink-0 text-stone-500 transition-transform", !open && "-rotate-90")}
+                  strokeWidth={1.25}
+                />
+                <Folder className="size-3.5 shrink-0 text-stone-600" strokeWidth={1.25} />
+                <span className="truncate">{folder.name}</span>
+              </button>
+              {open && <ul>{renderNode(folder, depth + 1)}</ul>}
+            </li>
+          )
+        })}
+        {node.files.map((file) => {
+          const name = file.path.slice(file.path.lastIndexOf("/") + 1)
+          const active = file.path === selected
+          return (
+            <li key={file.path} data-file-path={file.path}>
+              <button
+                type="button"
+                aria-current={active ? "true" : undefined}
+                onClick={() => setSelected(file.path)}
+                className={cn(
+                  "flex h-7 w-full items-center gap-2 rounded-md pr-2 text-left text-px-11 transition-colors",
+                  active ? "bg-stone-700/10" : "hover:bg-stone-700/5",
+                )}
+                // Lines up with the folder names above (chevron + folder icon + gaps).
+                style={{ paddingLeft: 8 + depth * 12 + 20 }}
+              >
+                <span className="min-w-0 flex-1 truncate font-medium text-stone-900">{name}</span>
+                <span className="flex shrink-0 items-center gap-2 tabular-nums">
+                  {file.isNew && <span className="text-stone-700">Added</span>}
+                  {file.isRemoved && <span className="text-stone-700">Removed</span>}
+                  <span>
+                    <span className="text-green-700">+{file.added}</span>
+                    <span className="text-red-600">−{file.removed}</span>
+                  </span>
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </>
+    )
   }
 
   return (
-    <div className="absolute inset-0 z-[60] bg-stone-900/10 animate-in fade-in duration-150" onPointerDown={onClose}>
-      <div
-        role="dialog"
-        aria-label="Code changes"
-        onPointerDown={(e) => e.stopPropagation()}
-        className="absolute inset-x-16 bottom-14 top-[52px] flex flex-col overflow-hidden rounded-2xl bg-[#f3f3f1] shadow-[0_12px_40px_-8px_rgba(17,17,16,0.25),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in zoom-in-95 duration-150"
-      >
-        <header className="flex items-start justify-between gap-4 border-b border-stone-700/5 px-3 pb-3 pt-4">
-          <div className="flex flex-col gap-3">
-            <h2 className="text-[15px] font-medium leading-5 text-stone-900">Code changes</h2>
-            <p className="flex items-center gap-1.5 text-px-12 tabular-nums text-stone-500">
-              {files.length} files changed
-              <span className="text-green-700">+{totals.added}</span>
-              <span className="text-red-600">−{totals.removed}</span>
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={onClose}
-            className="flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
-          >
-            <X className="size-4" strokeWidth={1.25} />
-          </button>
-        </header>
+    <div
+      role="dialog"
+      aria-label="Code changes"
+      onPointerDown={(e) => e.stopPropagation()}
+      className="absolute inset-0 z-[60] flex flex-col bg-[#f3f3f1] animate-in fade-in duration-150"
+    >
+      <header className="flex shrink-0 items-start justify-between gap-4 px-3.5 pb-3 pt-3">
+        <div className="flex flex-col gap-3">
+          <h2 className="text-[15px] font-medium leading-5 text-stone-900">Code changes</h2>
+          <p className="flex items-center gap-2 text-px-11 tabular-nums text-stone-600">
+            {files.length} files changed
+            <span className="text-green-700">+{totals.added}</span>
+            <span className="text-red-600">−{totals.removed}</span>
+          </p>
+        </div>
+        <button
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+          className="flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+        >
+          <X className="size-4" strokeWidth={1.25} />
+        </button>
+      </header>
 
-        <ul className="flex min-h-0 flex-1 flex-col gap-2.5 overflow-y-auto p-2.5">
-          {files.map((file) => {
-            const open = expanded.includes(file.path)
-            return (
-              <li key={file.path} data-file-path={file.path} className="shrink-0 overflow-hidden rounded-lg bg-white">
-                <button
-                  type="button"
-                  aria-expanded={open}
-                  onClick={() => toggle(file.path)}
-                  className="flex min-h-[26px] w-full items-center gap-2 px-2.5 py-1.5 text-left text-px-12 hover:bg-stone-700/[0.02]"
-                >
-                  <ChevronRight
-                    className={cn("size-3 shrink-0 text-stone-500 transition-transform", open && "rotate-90")}
-                    strokeWidth={1.5}
-                  />
-                  <span className="min-w-0 flex-1 truncate font-medium text-stone-800">{file.path}</span>
-                  <span className="flex shrink-0 items-center gap-1.5 tabular-nums">
-                    {file.isNew && <span className="text-stone-700">Added</span>}
-                    <span>
-                      <span className="text-green-700">+{file.added}</span>
-                      <span className="text-red-600">−{file.removed}</span>
-                    </span>
-                  </span>
-                </button>
-                {open && <FileDiff file={file} />}
-              </li>
-            )
-          })}
-        </ul>
+      <div className="flex min-h-0 flex-1 border-t border-stone-700/10">
+        {/* File tree */}
+        <aside className="flex w-[400px] max-w-[40%] shrink-0 flex-col border-r border-stone-700/10">
+          <label className="m-1 flex h-8 shrink-0 items-center gap-2 rounded-md border border-stone-700/15 bg-white px-2 focus-within:border-stone-700/30">
+            <Search className="size-3.5 shrink-0 text-stone-500" strokeWidth={1.5} />
+            <input
+              aria-label="Filter files"
+              placeholder="Filter files..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              spellCheck={false}
+              className="min-w-0 flex-1 select-text bg-transparent text-px-13 text-stone-900 outline-none placeholder:text-stone-500"
+            />
+          </label>
+          <ul data-file-tree className="min-h-0 flex-1 overflow-y-auto px-1 pb-2 pt-1">
+            {tree.folders.length === 0 && tree.files.length === 0 ? (
+              <li className="px-2 py-3 text-px-12 text-stone-500">No files match “{query}”.</li>
+            ) : (
+              renderNode(tree, 0)
+            )}
+          </ul>
+        </aside>
+
+        {/* Selected file's diff */}
+        <div className="min-w-0 flex-1 bg-white">
+          {selectedFile ? <FileDiff key={selectedFile.path} file={selectedFile} /> : null}
+        </div>
       </div>
     </div>
   )
 }
 
+/* ------------------------------- File tree -------------------------------- */
+
+type TreeNode = { name: string; path: string; folders: TreeNode[]; files: ChangedFile[] }
+
+/**
+ * Folders from the file paths: folders before files, each alphabetical. A folder holding nothing
+ * but one subfolder is merged into it ("public/airbnb", "api/recording").
+ */
+function buildTree(files: ChangedFile[]): TreeNode {
+  const root: TreeNode = { name: "", path: "", folders: [], files: [] }
+  for (const file of files) {
+    const dirs = file.path.split("/").slice(0, -1)
+    let node = root
+    for (const dir of dirs) {
+      const path = node.path ? `${node.path}/${dir}` : dir
+      let child = node.folders.find((f) => f.path === path)
+      if (!child) {
+        child = { name: dir, path, folders: [], files: [] }
+        node.folders.push(child)
+      }
+      node = child
+    }
+    node.files.push(file)
+  }
+  return tidy(root)
+}
+
+function tidy(node: TreeNode): TreeNode {
+  const folders = node.folders.map((folder) => {
+    let merged = folder
+    while (merged.files.length === 0 && merged.folders.length === 1) {
+      const only = merged.folders[0]
+      merged = { ...only, name: `${merged.name}/${only.name}` }
+    }
+    return tidy(merged)
+  })
+  const byName = (a: string, b: string) => a.localeCompare(b)
+  return {
+    ...node,
+    folders: folders.sort((a, b) => byName(a.name, b.name)),
+    files: [...node.files].sort((a, b) => byName(a.path, b.path)),
+  }
+}
+
+/* --------------------------------- Diff ----------------------------------- */
+
 function FileDiff({ file }: { file: ChangedFile }) {
   if (!file.diff) {
-    return (
-      <p className="border-t border-stone-700/5 px-8 py-3 text-px-12 text-stone-500">No preview available for this file.</p>
-    )
+    return <p className="px-4 py-3 text-px-12 text-stone-500">No preview available for this file.</p>
   }
   return (
-    <div className="grid grid-cols-2 border-t border-stone-700/5 font-mono text-px-10 leading-[13px]">
-      <div className="min-w-0 overflow-x-auto border-r border-stone-700/10">
+    <div data-diff className="grid size-full grid-cols-2 overflow-y-auto font-mono text-px-11 leading-[18px]">
+      <div className="min-w-0 overflow-x-auto border-r border-stone-700/15">
         {file.diff.map(([left], i) => (
           <DiffLine key={i} side={left} />
         ))}
@@ -202,13 +311,13 @@ function FileDiff({ file }: { file: ChangedFile }) {
 }
 
 function DiffLine({ side }: { side: DiffSide }) {
-  if (!side) return <div className="h-[13px] bg-stone-100" aria-hidden="true" />
+  if (!side) return <div className="h-[18px] bg-stone-50" aria-hidden="true" />
   return (
     <div
       className={cn(
-        "flex h-[13px] w-max min-w-full",
-        side.kind === "add" && "bg-green-200/70",
-        side.kind === "del" && "bg-red-200/70",
+        "flex h-[18px] w-max min-w-full",
+        side.kind === "add" && "bg-green-300/70",
+        side.kind === "del" && "bg-red-100",
       )}
     >
       <span
@@ -220,7 +329,7 @@ function DiffLine({ side }: { side: DiffSide }) {
       >
         {side.n}
       </span>
-      <span className="whitespace-pre pr-3 text-stone-800">{side.text}</span>
+      <span className="whitespace-pre pl-1 pr-3 text-stone-800">{side.text}</span>
     </div>
   )
 }

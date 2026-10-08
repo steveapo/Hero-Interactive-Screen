@@ -501,15 +501,15 @@ export const heroDemoV1Script: DemoScript = async (api) => {
     const dialog = '[role="dialog"][aria-label="Code changes"]'
     await api.find(dialog)
     await api.wait(450)
-    // The built variant's change is first and open; read down its diff.
-    const diff = `${dialog} li:first-child .grid`
-    await api.moveTo(diff, { fx: 0.25, fy: 0.25 })
+    // The built variant's change is selected; read down its diff (it fills the pane, its lines sit at the top).
+    const diff = `${dialog} [data-diff]`
+    await api.moveTo(diff, { fx: 0.25, fy: 0.05 })
     await api.wait(800)
-    await api.moveTo(diff, { fx: 0.75, fy: 0.55, duration: 900 })
+    await api.moveTo(diff, { fx: 0.75, fy: 0.15, duration: 900 })
     await api.wait(1100)
-    await api.moveTo(diff, { fx: 0.72, fy: 0.9, duration: 600 })
+    await api.moveTo(diff, { fx: 0.72, fy: 0.25, duration: 600 })
     await api.wait(600)
-    await api.scroll(`${dialog} ul`, 220, 800)
+    await api.scroll(`${dialog} [data-file-tree]`, 220, 800)
     await api.wait(500)
     await api.click(`${dialog} button[aria-label="Close"]`)
     await api.wait(350)
