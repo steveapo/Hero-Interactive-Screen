@@ -1,14 +1,77 @@
 "use client"
 
+import { useLayoutEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
 import { CODEBASE_WIDTH } from "./codebase-frame"
 import type { CanvasRect } from "./drag"
 
 const SELECT_BLUE = "#2f6bf6"
 const LABEL_GREY = "#78716c"
+/** The Build Agent's working outline: green like its lime badge, but dark enough to read on the canvas. */
+const AGENT_GREEN = "#5aa312"
 
 /** A frame corner: -1 = left/top, 1 = right/bottom. */
 export type Corner = { sx: -1 | 1; sy: -1 | 1 }
+
+/**
+ * Canvas reveal around the Portal: `"hidden"` while the Portal is open (or fading out), so only
+ * the Codebase frame is on the canvas; then an entrance where the element glides in from
+ * `x`/`y` screen px away (its side of the Codebase frame) after `delay` ms, over `duration` ms
+ * (ENTRANCE_DURATION_MS when omitted).
+ */
+export type CanvasEntrance = "hidden" | { x: number; y: number; delay: number; duration?: number }
+
+export const ENTRANCE_DURATION_MS = 1280
+/**
+ * Long, soft ease-out (fast start, very gradual settle) with no bounce, so elements drift into
+ * place. Opacity has its own gentler curve so the fade doesn't finish before the glide gets going.
+ */
+const ENTRANCE_EASING = "cubic-bezier(0.16, 1, 0.3, 1)"
+const ENTRANCE_FADE_EASING = "cubic-bezier(0.4, 0, 0.2, 1)"
+/** Elements start slightly smaller and grow as they arrive. */
+const ENTRANCE_START_SCALE = 0.96
+
+/**
+ * Hides an element or plays its entrance. Both are done inline (style + Web Animations API) so
+ * they work without any stylesheet rule. The entrance plays once, on mount: the canvas remounts
+ * its elements on each reveal. Spread `style` before the element's own style.
+ */
+export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntrance | null | undefined) {
+  const ref = useRef<T>(null)
+  const onMount = useRef(entrance)
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    const e = onMount.current
+    if (!el || !e || e === "hidden") return
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    // Two animations: the glide (transform) and the fade (opacity), each on its own curve.
+    // `backwards` keeps the start frame (hidden, offset) applied during the delay.
+    const timing = { duration: e.duration ?? ENTRANCE_DURATION_MS, delay: e.delay, fill: "backwards" } as const
+    const glide = el.animate(
+      [
+        { transform: `translate(${e.x}px, ${e.y}px) scale(${ENTRANCE_START_SCALE})` },
+        { transform: "translate(0px, 0px) scale(1)" },
+      ],
+      { ...timing, easing: ENTRANCE_EASING },
+    )
+    const fade = el.animate(
+      [
+        { opacity: 0, offset: 0 },
+        { opacity: 1, offset: 0.5 },
+        { opacity: 1, offset: 1 },
+      ],
+      { ...timing, easing: ENTRANCE_FADE_EASING },
+    )
+    return () => {
+      glide.cancel()
+      fade.cancel()
+    }
+  }, [])
+
+  const style: React.CSSProperties | undefined = entrance === "hidden" ? { opacity: 0, pointerEvents: "none" } : undefined
+  return { ref, style }
+}
 
 const CORNERS: (Corner & { cursor: string })[] = [
   { sx: -1, sy: -1, cursor: "nwse-resize" },
@@ -69,9 +132,9 @@ export function RadiusThumbs({
 }
 
 /**
- * A static design frame on the hero canvas: one element of the iPad Calendar (see calendar-elements).
- * The artwork is authored in cqw of the iPad screen, so it is laid out at its natural canvas size
- * inside a container as wide as the iPad, then scaled with zoom. Resizing the frame crops the
+ * A static design frame on the hero canvas: one element of the Fairbnb desktop app (see airbnb-elements).
+ * The artwork is authored in cqw of the desktop screen, so it is laid out at its natural canvas size
+ * inside a container as wide as the screen, then scaled with zoom. Resizing the frame crops the
  * artwork from the top-left, like a design frame does; it doesn't reflow.
  */
 export function DesignFrame({
@@ -83,6 +146,7 @@ export function DesignFrame({
   radius,
   border,
   bare = false,
+  repaint = null,
   labelOnSelect = false,
   children,
   selected,
@@ -93,9 +157,11 @@ export function DesignFrame({
   showAgentButton,
   onOpenAgent,
   working = false,
+  agentBusy = false,
   zoom,
   offsetX,
   offsetY,
+  entrance,
 }: {
   id: string
   label: string
@@ -109,13 +175,16 @@ export function DesignFrame({
   radius: number | null
   /** 1px border colour; null = none. */
   border: string | null
-  /** The artwork paints its own shape (e.g. a carved event): the frame itself stays transparent. */
+  /** The artwork paints its own shape (e.g. a card with its own shadow): the frame itself stays transparent. */
   bare?: boolean
+  /** A bare frame's fill changed in the settings panel: painted over the artwork's own background. */
+  repaint?: string | null
   /** Only show the name above the frame while it is selected. */
   labelOnSelect?: boolean
   children: React.ReactNode
   selected: boolean
-  onSelect: () => void
+  /** Pointer pressed on the frame (Shift adds it to / removes it from the selection). */
+  onSelect: (e: React.PointerEvent) => void
   /** Pointer pressed on the frame: the canvas may start dragging it. */
   onMoveStart: (e: React.PointerEvent) => void
   /** Pointer pressed on a corner thumb. */
@@ -127,22 +196,33 @@ export function DesignFrame({
   onOpenAgent: () => void
   /** The Build Agent is working on this frame: overlay + marching dashed outline. */
   working?: boolean
+  /** A Build Agent is generating variants from / building this frame: a spinning agent badge. */
+  agentBusy?: boolean
   /** Current canvas zoom — scales the frame; labels stay screen-sized. */
   zoom: number
   /** Screen-px offset of the canvas origin from the viewport centre (canvas pan). */
   offsetX: number
   offsetY: number
+  /** Glide in when the canvas is revealed (leaving the Portal). */
+  entrance?: CanvasEntrance | null
 }) {
+  const enter = useCanvasEntrance<HTMLDivElement>(entrance)
   return (
     <div
+      ref={enter.ref}
       data-cursor-id={`frame-${id}`}
       className={cn(
         "absolute -translate-x-1/2 -translate-y-1/2",
+        // Selected (or an agent's badge on it): above the other canvas elements, so its Build
+        // Agent button and "Agent" label, which reach outside the frame, are never covered.
+        // (Still below the Build Agent chat and the panels.)
+        (selected || agentBusy) && "z-10",
         // bare frames interlock (e.g. Intentionality in Explains' cutout): only the painted shape
         // takes the pointer, so the frame underneath stays clickable through the empty corners
         bare && "pointer-events-none",
       )}
       style={{
+        ...enter.style,
         left: `calc(50% + ${offsetX + rect.x * zoom}px)`,
         top: `calc(50% + ${offsetY + rect.y * zoom}px)`,
         width: rect.w * zoom,
@@ -150,7 +230,7 @@ export function DesignFrame({
       }}
       onPointerDown={(e) => {
         e.stopPropagation()
-        onSelect()
+        onSelect(e)
         onMoveStart(e)
       }}
     >
@@ -185,8 +265,17 @@ export function DesignFrame({
           className={cn(
             "pointer-events-none absolute left-0 top-0 origin-top-left",
             bare && "[&_[data-anim=block]]:pointer-events-auto [&_[data-anim=fillet]]:pointer-events-auto",
+            // A fill picked for a bare frame paints over the artwork's own background, fading to it.
+            bare &&
+              repaint &&
+              "[&_[data-anim=block]]:![background-color:var(--frame-repaint)] [&_[data-anim=block]]:transition-[background-color] [&_[data-anim=block]]:duration-300 [&_[data-anim=block]]:ease-out",
           )}
-          style={{ width: naturalSize.w, height: naturalSize.h, transform: `scale(${zoom})` }}
+          style={{
+            width: naturalSize.w,
+            height: naturalSize.h,
+            transform: `scale(${zoom})`,
+            ...(bare && repaint ? ({ "--frame-repaint": repaint } as React.CSSProperties) : {}),
+          }}
         >
           <div className="@container absolute left-0 top-0 h-full" style={{ width: CODEBASE_WIDTH }}>
             <div className="relative h-full" style={{ width: naturalSize.w }}>
@@ -196,19 +285,24 @@ export function DesignFrame({
         </div>
 
         {/* Build Agent working: tint the frame's content */}
-        {working && <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[#2f6bf6]/25" />}
+        {working && <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[#5aa312]/15" />}
       </div>
 
-      {/* Build Agent working: dashed outline whose dashes march clockwise */}
-      {working && (
-        <svg aria-hidden="true" className="pointer-events-none absolute -inset-[5px] overflow-visible" style={{ width: "calc(100% + 10px)", height: "calc(100% + 10px)" }}>
-          <rect width="100%" height="100%" rx="3" fill="none" stroke={SELECT_BLUE} strokeOpacity="0.25" strokeWidth="3" />
+      {/* Build Agent working on it (reading, replying, generating or building): a green dashed
+          outline whose dashes march clockwise */}
+      {(working || agentBusy) && (
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute -inset-[5px] overflow-visible"
+          style={{ width: "calc(100% + 10px)", height: "calc(100% + 10px)" }}
+        >
+          <rect width="100%" height="100%" rx="3" fill="none" stroke={AGENT_GREEN} strokeOpacity="0.25" strokeWidth="3" />
           <rect
             width="100%"
             height="100%"
             rx="3"
             fill="none"
-            stroke={SELECT_BLUE}
+            stroke={AGENT_GREEN}
             strokeWidth="3"
             strokeDasharray="10 6"
             className="animate-mi-march"
@@ -250,15 +344,31 @@ export function DesignFrame({
             <RadiusThumbs w={rect.w} h={rect.h} radius={radius ?? 0} zoom={zoom} onRadiusStart={onRadiusStart} />
           )}
 
-          {showAgentButton && <BuildAgentButton onClick={onOpenAgent} />}
+          {showAgentButton && !agentBusy && <BuildAgentButton onClick={onOpenAgent} />}
         </>
       )}
+
+      {/* A Build Agent is generating from / building this frame (chat closed): only its spinning badge */}
+      {agentBusy && <BuildAgentBadge />}
     </div>
   )
 }
 
-/** Lime Build Agent button off the frame's top-right corner; hover spins the star and shows "Agent". */
-function BuildAgentButton({ onClick }: { onClick: () => void }) {
+/** The Build Agent button's badge, spinning: an agent is busy with this frame. */
+export function BuildAgentBadge() {
+  return (
+    <span
+      data-agent-busy
+      aria-label="Build Agent working"
+      className="pointer-events-none absolute left-full top-0 ml-2.5 flex size-[26px] items-center justify-center rounded-full bg-mi-lime text-stone-900 shadow-[0_4px_12px_-2px_rgba(90,122,24,0.28)] animate-in zoom-in-75 fade-in duration-200"
+    >
+      <AgentStar className="size-[13px] animate-spin [animation-duration:2.4s]" />
+    </span>
+  )
+}
+
+/** Lime Build Agent button off the frame's (or selection's) top-right corner; hover spins the star and shows "Agent". */
+export function BuildAgentButton({ onClick }: { onClick: () => void }) {
   return (
     <button
       type="button"

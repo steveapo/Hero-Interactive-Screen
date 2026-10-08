@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import {
   Archive,
   ArrowLeft,
@@ -27,12 +28,24 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react"
-import { PlannerScreen } from "@/app/copy-project/planner-screen"
+import { AirbnbScreen } from "@/app/copy-project/airbnb-screen"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
+import { screenScale } from "@/lib/screen-scale"
+import { PORTAL_FALLBACK, PORTAL_TURNS, type PortalTurn } from "./agent-script"
+import { wordsOf, type VariantState } from "./build-agents"
+import { CQW, FrameBadge, type FrameComponent } from "./library-components"
 import { AgentStar } from "./planner-frame"
+import { FinishedEventCard } from "./variant-frame"
 
-/** How long the darkened loading state shows before the live Calendar app loads in. */
+/** Portal Agent: thinking time before a reply, and one streamed word (ms). */
+const PORTAL_THINK_MS = 1300
+const PORTAL_WORD_MS = 40
+
+type PortalChatEntry = { id: number; name: string; seeded: boolean }
+type PortalMessage = { id: number; role: "user" | "agent"; text: string; shown?: number; turn?: PortalTurn }
+
+/** How long the darkened loading state shows before the live Fairbnb app loads in. */
 const PORTAL_LOAD_MS = 2000
 
 /** Route the portal previews. */
@@ -60,33 +73,62 @@ const CAPTURE_BLUE = "#2f6bf6"
 
 /**
  * Portal View: the live Codebase app opened full-screen (double-click the Codebase frame).
- * The preview is darkened with a spinner for ~2s, then the Calendar app loads in and plays its
- * intro. Back (or Escape) returns to the canvas; reload replays the loading.
+ * The preview is darkened with a spinner for ~2s, then the Fairbnb app loads in and plays its
+ * intro. Back (or Escape / ⇧O) returns to the canvas; reload replays the loading. While
+ * `closing`, the view fades out before the canvas unmounts it.
  *
  * Capture: "Capture a selection" enters Area capture mode (the button becomes a badge). Hovering
  * an element of the app outlines it; clicking it flashes a blue overlay over it (the mode stays
  * on until the badge's ✕ or Escape). "Capture the page" flashes the whole page.
+ *
+ * Memoized: the canvas around it re-renders on every resize frame (the hero window growing with
+ * the page scroll), while the Portal only changes with its own props and state.
  */
-export function PortalView({ onClose }: { onClose: () => void }) {
-  const [phase, setPhase] = useState<LoadPhase>("start")
+export const PortalView = memo(function PortalView({
+  onClose,
+  closing = false,
+  builtVariant = null,
+  builtComponents = [],
+  loadMs = PORTAL_LOAD_MS,
+}: {
+  onClose: () => void
+  closing?: boolean
+  /** A variant the Build Agent built into the codebase: it replaces its source card in the live app. */
+  builtVariant?: VariantState | null
+  /** Library components the Build Agent built into the codebase: they show on their cards in the live app. */
+  builtComponents?: FrameComponent[]
+  /** How long the loading state shows before the live app loads in (ms). 0: no loading and no intro. */
+  loadMs?: number
+}) {
+  /** loadMs 0: the live app is simply there (no loading state, no intro), also after a reload. */
+  const instant = loadMs === 0
+  const [phase, setPhase] = useState<LoadPhase>(instant ? "loaded" : "start")
   /** Bumped by reload: restarts the loading and remounts the app. */
   const [loadId, setLoadId] = useState(0)
   const [capturing, setCapturing] = useState(false)
   /** Element under the cursor in Area capture mode. */
   const [hover, setHover] = useState<Box | null>(null)
   const [pulse, setPulse] = useState<Pulse | null>(null)
+  /** Changes the Portal Agent has applied to the live app (see `data-portal-applied` in globals.css). */
+  const [applied, setApplied] = useState<string[]>([])
+  /** Stable, so the chat (memoized) doesn't re-render with every hover / phase change here. */
+  const applyChange = useCallback(
+    (change: string) => setApplied((list) => (list.includes(change) ? list : [...list, change])),
+    [],
+  )
   const previewRef = useRef<HTMLDivElement>(null)
   const nextPulseId = useRef(1)
 
   useEffect(() => {
+    if (instant) return
     // Next frame: start the progress bar transition from 0.
     const frame = requestAnimationFrame(() => setPhase("loading"))
-    const timer = setTimeout(() => setPhase("loaded"), PORTAL_LOAD_MS)
+    const timer = setTimeout(() => setPhase("loaded"), loadMs)
     return () => {
       cancelAnimationFrame(frame)
       clearTimeout(timer)
     }
-  }, [loadId])
+  }, [loadId, loadMs, instant])
 
   // The capture flash removes itself once it has faded.
   useEffect(() => {
@@ -95,12 +137,13 @@ export function PortalView({ onClose }: { onClose: () => void }) {
     return () => clearTimeout(timer)
   }, [pulse])
 
-  // Escape leaves Area capture mode first, then the portal.
+  // Escape (or ⇧O, for hosts where Escape is already taken) leaves Area capture mode first, then the portal.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       const target = e.target as HTMLElement | null
       if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) return
-      if (e.key !== "Escape") return
+      const isShiftO = e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "o"
+      if (e.key !== "Escape" && !isShiftO) return
       if (capturing) stopCapture()
       else onClose()
     }
@@ -109,7 +152,7 @@ export function PortalView({ onClose }: { onClose: () => void }) {
   }, [onClose, capturing])
 
   function reload() {
-    setPhase("start")
+    setPhase(instant ? "loaded" : "start")
     setLoadId((id) => id + 1)
   }
 
@@ -124,13 +167,20 @@ export function PortalView({ onClose }: { onClose: () => void }) {
     return target instanceof SVGElement ? (target.closest("svg") ?? target) : target
   }
 
-  /** An element's box relative to the preview, with its own corner radius. */
+  /** An element's box relative to the preview (its layout px), with its own corner radius. */
   function boxOf(el: Element): Box | null {
     const preview = previewRef.current
     if (!preview) return null
     const p = preview.getBoundingClientRect()
     const r = el.getBoundingClientRect()
-    return { left: r.left - p.left, top: r.top - p.top, width: r.width, height: r.height, radius: getComputedStyle(el).borderRadius }
+    const k = screenScale(preview) // the screen may be drawn scaled
+    return {
+      left: (r.left - p.left) / k,
+      top: (r.top - p.top) / k,
+      width: r.width / k,
+      height: r.height / k,
+      radius: getComputedStyle(el).borderRadius,
+    }
   }
 
   function flash(box: Box | "page") {
@@ -154,7 +204,14 @@ export function PortalView({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="absolute inset-0 z-50 flex bg-stone-100 animate-in fade-in duration-150"
+      className={cn(
+        // pt-11: room for the canvas top bar, which stays over the Portal as its toolbar.
+        "absolute inset-0 z-50 flex bg-stone-100 pt-11",
+        // Closing: fade out (the canvas waits for this before its elements come in).
+        closing ? "pointer-events-none" : "animate-in fade-in duration-150",
+      )}
+      // Inline so the fade never depends on a utility class being generated.
+      style={closing ? { opacity: 0, transition: "opacity 300ms ease-out" } : undefined}
       onPointerDown={(e) => e.stopPropagation()}
     >
       {/* Preview column */}
@@ -162,7 +219,7 @@ export function PortalView({ onClose }: { onClose: () => void }) {
         {/* Browser bar */}
         <header className="relative grid h-11 shrink-0 grid-cols-[1fr_minmax(0,440px)_1fr] items-center gap-3 border-b border-stone-200 bg-stone-50 px-2">
           <div className="flex items-center gap-0.5">
-            <BarButton label="Back to canvas" onClick={onClose}>
+            <BarButton label="Back">
               <ArrowLeft className="size-4" strokeWidth={1.5} />
             </BarButton>
             <BarButton label="Forward">
@@ -185,7 +242,7 @@ export function PortalView({ onClose }: { onClose: () => void }) {
 
           <div className="flex items-center justify-end gap-1 text-stone-800">
             {capturing ? (
-              <span className="flex h-7 items-center gap-1.5 rounded-full bg-[#e3f1e5] pl-2.5 pr-1 text-px-13 font-medium text-[#1e7b36] animate-in fade-in zoom-in-95 duration-150">
+              <span className="flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-[#e3f1e5] pl-2.5 pr-1 text-px-13 font-medium text-[#1e7b36] animate-in fade-in zoom-in-95 duration-150">
                 <SquareDashedMousePointer className="size-3.5" strokeWidth={1.5} />
                 Area capture
                 <button
@@ -220,7 +277,7 @@ export function PortalView({ onClose }: { onClose: () => void }) {
                 phase === "start"
                   ? "none"
                   : phase === "loading"
-                    ? `width ${PORTAL_LOAD_MS}ms cubic-bezier(0.2, 0.7, 0.3, 1)`
+                    ? `width ${loadMs}ms cubic-bezier(0.2, 0.7, 0.3, 1)`
                     : "width 200ms ease-out, opacity 300ms ease-out 200ms",
             }}
           />
@@ -230,6 +287,7 @@ export function PortalView({ onClose }: { onClose: () => void }) {
         <div className="flex min-h-0 flex-1 flex-col px-3 pb-9">
           <div
             ref={previewRef}
+            data-portal-applied={applied.join(" ")}
             className="relative min-h-0 flex-1 overflow-hidden rounded-b-md border-x border-b border-stone-200 bg-white"
           >
             {/*
@@ -243,7 +301,9 @@ export function PortalView({ onClose }: { onClose: () => void }) {
                 capturing
                   ? (e) => {
                       const el = captureTarget(e.target)
-                      setHover(el ? boxOf(el) : null)
+                      const next = el ? boxOf(el) : null
+                      // Same element, same box: keep the current one (no re-render per pointer move).
+                      setHover((prev) => (prev && next && sameBox(prev, next) ? prev : next))
                     }
                   : undefined
               }
@@ -268,9 +328,22 @@ export function PortalView({ onClose }: { onClose: () => void }) {
             >
               {/* Size container: the device fits both its width and height (the whole app stays visible) */}
               <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center [container-type:size]">
-                <PlannerDevice key={`${loadId}-${loaded ? "live" : "loading"}`} loaded={loaded} />
+                <AirbnbDevice key={`${loadId}-${loaded ? "live" : "loading"}`} loaded={loaded} skipIntro={instant} />
               </div>
             </div>
+
+            {loaded && builtVariant && <BuiltVariantOverlay key={loadId} variant={builtVariant} previewRef={previewRef} />}
+
+            {loaded &&
+              [...new Set(builtComponents.map((c) => c.cardTitle))].map((title) => (
+                <BuiltCardComponents
+                  key={`${loadId}:${title}`}
+                  title={title}
+                  components={builtComponents.filter((c) => c.cardTitle === title)}
+                  functional={applied.includes("badge-check-in") || builtComponents.some((c) => c.cardTitle === title && c.functional)}
+                  previewRef={previewRef}
+                />
+              ))}
 
             {!loaded && (
               <div
@@ -311,40 +384,314 @@ export function PortalView({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      <PortalChat />
+      <PortalChat onApply={applyChange} />
     </div>
   )
-}
+})
 
 /** Absolute-position style for a capture Box. */
 function boxStyle(box: Box): React.CSSProperties {
   return { left: box.left, top: box.top, width: box.width, height: box.height, borderRadius: box.radius }
 }
 
-/**
- * Device height ÷ width: the screen (2048×2732) plus the 4.2cqw bezel on each side
- * → 0.084 + 0.916 × 2732/2048 ≈ 1.30593.
- */
-const DEVICE_ASPECT = 1.30593
+function sameBox(a: Box, b: Box) {
+  return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height && a.radius === b.radius
+}
+
+/** The live app plays its intro first; the built variant swaps in once it has settled (ms after load). */
+const REPLACE_AFTER_MS = 1700
 
 /**
- * The app at `/`: the iPad Calendar inside its device frame, as large as fits the preview
- * (100% of its height, or its width if that is narrower). While loading it renders the
+ * A built variant in the live app: it takes its source card's place in the desktop screen (found by
+ * its title). It renders inside the same container as the card's
+ * painted pieces, at the union of their layout boxes (offset*, so the intro's transforms don't
+ * skew it), and hides those pieces while it's there, so the app's card is swapped, not covered.
+ * It swaps in after the intro with a blue flash.
+ */
+function BuiltVariantOverlay({
+  variant,
+  previewRef,
+}: {
+  variant: VariantState
+  previewRef: React.RefObject<HTMLDivElement | null>
+}) {
+  const [place, setPlace] = useState<{ host: Element; left: number; top: number; width: number; height: number } | null>(null)
+  const [shown, setShown] = useState(false)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShown(true), REPLACE_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [])
+
+  // Find the source card's pieces, hide them, and track their box (every frame: resizes move it).
+  useEffect(() => {
+    if (!shown) return
+    let frame = 0
+    let hidden: HTMLElement[] = []
+    const unhide = () => {
+      hidden.forEach((el) => el.removeAttribute("data-built-swapped"))
+      hidden = []
+    }
+    const measure = () => {
+      const screen = previewRef.current?.querySelector("[data-portal-screen]")
+      const titleBlock = screen ? sourceTitleBlock(screen, variant.source.title) : undefined
+      const host = titleBlock?.parentElement
+      if (titleBlock && host) {
+        const order = titleBlock.dataset.order
+        const pieces = Array.from(
+          host.querySelectorAll<HTMLElement>(`:scope > [data-anim="block"][data-order="${order}"], :scope > [data-anim="fillet"][data-order="${order}"]`),
+        )
+        if (pieces.some((el) => !hidden.includes(el)) || hidden.length !== pieces.length) {
+          unhide()
+          pieces.forEach((el) => el.setAttribute("data-built-swapped", ""))
+          hidden = pieces
+        }
+        const blocks = pieces.filter((el) => el.dataset.anim === "block")
+        const left = Math.min(...blocks.map((el) => el.offsetLeft))
+        const top = Math.min(...blocks.map((el) => el.offsetTop))
+        const right = Math.max(...blocks.map((el) => el.offsetLeft + el.offsetWidth))
+        const bottom = Math.max(...blocks.map((el) => el.offsetTop + el.offsetHeight))
+        const next = { host, left, top, width: right - left, height: bottom - top }
+        setPlace((p) =>
+          p && p.host === host && p.left === next.left && p.top === next.top && p.width === next.width && p.height === next.height
+            ? p
+            : next,
+        )
+      }
+      frame = requestAnimationFrame(measure)
+    }
+    measure()
+    return () => {
+      cancelAnimationFrame(frame)
+      unhide()
+    }
+  }, [shown, previewRef, variant.source.title])
+
+  if (!shown || !place) return null
+  return createPortal(
+    <div
+      data-cursor-id="built-variant"
+      className="pointer-events-none absolute z-20 animate-in fade-in zoom-in-95 duration-500"
+      style={{ left: place.left, top: place.top, width: place.width, height: place.height }}
+    >
+      <FinishedEventCard variant={variant} />
+      <div
+        aria-hidden="true"
+        className="absolute -inset-[0.3cqw] rounded-[1.3cqw] border-[0.2cqw] animate-mi-capture-pulse"
+        style={{ borderColor: CAPTURE_BLUE, background: `${CAPTURE_BLUE}1f` }}
+      />
+    </div>,
+    place.host,
+  )
+}
+
+/**
+ * Library components built into a card of the live app (found by its title). They render inside
+ * the same container as the card's painted pieces, offset from the
+ * card's top-left by the spot they were placed at in their frame (canvas units ÷ 1cqw → cqw of the
+ * desktop screen, which is what the frame's artwork is authored in). They swap in after the intro
+ * with a blue flash. Once `functional` (the Portal Agent wired them up), a badge is a button that
+ * checks in to the stay: the card fades back and the badge flips to a check; tapping again undoes it.
+ */
+function BuiltCardComponents({
+  title,
+  components,
+  functional,
+  previewRef,
+}: {
+  title: string
+  components: FrameComponent[]
+  functional: boolean
+  previewRef: React.RefObject<HTMLDivElement | null>
+}) {
+  const [place, setPlace] = useState<{ host: Element; left: number; top: number; width: number; height: number } | null>(null)
+  const [shown, setShown] = useState(false)
+  const [done, setDone] = useState(false)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShown(true), REPLACE_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [])
+
+  // Track the card's box (every frame: resizes and the day's animations move it).
+  useEffect(() => {
+    if (!shown) return
+    let frame = 0
+    const measure = () => {
+      const screen = previewRef.current?.querySelector("[data-portal-screen]")
+      const titleBlock = screen ? sourceTitleBlock(screen, title) : undefined
+      const host = titleBlock?.parentElement
+      if (titleBlock && host) {
+        const blocks = Array.from(
+          host.querySelectorAll<HTMLElement>(`:scope > [data-anim="block"][data-order="${titleBlock.dataset.order}"]`),
+        )
+        const left = Math.min(...blocks.map((el) => el.offsetLeft))
+        const top = Math.min(...blocks.map((el) => el.offsetTop))
+        const right = Math.max(...blocks.map((el) => el.offsetLeft + el.offsetWidth))
+        const bottom = Math.max(...blocks.map((el) => el.offsetTop + el.offsetHeight))
+        const next = { host, left, top, width: right - left, height: bottom - top }
+        setPlace((p) =>
+          p && p.host === host && p.left === next.left && p.top === next.top && p.width === next.width && p.height === next.height
+            ? p
+            : next,
+        )
+      }
+      frame = requestAnimationFrame(measure)
+    }
+    measure()
+    return () => cancelAnimationFrame(frame)
+  }, [shown, previewRef, title])
+
+  if (!shown || !place) return null
+  return createPortal(
+    <>
+      {/* Checked in: the card fades back under a veil (the cards' own 1cqw radius) */}
+      <div
+        aria-hidden="true"
+        className={cn(
+          "pointer-events-none absolute z-20 rounded-[1cqw] bg-white/60 transition-opacity duration-300",
+          done ? "opacity-100" : "opacity-0",
+        )}
+        style={{ left: place.left, top: place.top, width: place.width, height: place.height }}
+      />
+      {components.map((c) => (
+        <BuiltBadge
+          key={c.id}
+          component={c}
+          title={title}
+          functional={functional}
+          done={done}
+          onToggle={() => setDone((d) => !d)}
+          card={place}
+        />
+      ))}
+    </>,
+    place.host,
+  )
+}
+
+/**
+ * One built badge on its card. Checking in swaps its label for a check and "Checked in", which is
+ * wider, so the badge is pinned by the card edge it sits nearer: placed in the top-right corner,
+ * it grows to the left and stays inside the card instead of running off its right edge. The pin
+ * is measured once (as it lands, in cqw of the screen), so it scales with the screen.
+ */
+function BuiltBadge({
+  component: c,
+  title,
+  functional,
+  done,
+  onToggle,
+  card,
+}: {
+  component: FrameComponent
+  title: string
+  functional: boolean
+  done: boolean
+  onToggle: () => void
+  /** The card's box in the host, px. */
+  card: { left: number; top: number; width: number }
+}) {
+  const ref = useRef<HTMLDivElement>(null)
+  /** The badge's resting width (cqw) and which side it's pinned by; null until measured. */
+  const [slot, setSlot] = useState<{ widthCqw: number; pinRight: boolean } | null>(null)
+
+  useLayoutEffect(() => {
+    if (slot || done) return
+    const el = ref.current
+    const screen = el?.closest<HTMLElement>("[data-portal-screen]")
+    if (!el || !screen || !el.offsetWidth || !screen.clientWidth) return
+    setSlot({
+      widthCqw: el.offsetWidth / (screen.clientWidth / 100),
+      pinRight: el.offsetLeft + el.offsetWidth / 2 > card.left + card.width / 2,
+    })
+  }, [slot, done, card.left, card.width])
+
+  return (
+    <div
+      ref={ref}
+      data-cursor-id="built-component"
+      className="pointer-events-none absolute z-20 animate-in fade-in zoom-in-90 duration-500"
+      style={{
+        left: `calc(${card.left}px + ${c.x / CQW}cqw)`,
+        top: `calc(${card.top}px + ${c.y / CQW}cqw)`,
+        width: slot ? `${slot.widthCqw}cqw` : undefined,
+      }}
+    >
+      {/* Pinned right: a wider badge overflows to the left (flex-end), into the card. */}
+      <div className={cn("flex", slot?.pinRight ? "justify-end" : "justify-start")}>
+        {functional ? (
+          <button
+            type="button"
+            aria-label={done ? `Undo check-in at ${title}` : `Check in at ${title}`}
+            aria-pressed={done}
+            onClick={onToggle}
+            className="pointer-events-auto block shrink-0 cursor-pointer transition-transform active:scale-95"
+          >
+            <FrameBadge instance={c} done={done} />
+          </button>
+        ) : (
+          <span className="block shrink-0">
+            <FrameBadge instance={c} />
+          </span>
+        )}
+      </div>
+      <span
+        aria-hidden="true"
+        className="absolute -inset-[0.3cqw] rounded-[0.6cqw] border-[0.2cqw] animate-mi-capture-pulse"
+        style={{ borderColor: CAPTURE_BLUE, background: `${CAPTURE_BLUE}1f` }}
+      />
+    </div>
+  )
+}
+
+/**
+ * The painted block carrying a card's title: the first visible match (a block inside a hidden
+ * `day-layer`, if the app stacks any, is skipped), else the first match.
+ */
+function sourceTitleBlock(screen: Element, title: string): HTMLElement | undefined {
+  const matches = Array.from(screen.querySelectorAll<HTMLElement>('[data-anim="block"]')).filter(
+    (el) => el.querySelector('[data-anim="title"] p')?.textContent?.trim() === title,
+  )
+  const visible = matches.find((el) => {
+    const layer = el.closest<HTMLElement>('[data-anim="day-layer"]')
+    if (!layer) return true
+    const style = getComputedStyle(layer)
+    return style.visibility !== "hidden" && Number(style.opacity) > 0
+  })
+  return visible ?? matches[0]
+}
+
+/**
+ * Window height ÷ width: the 3.2cqw title bar plus the 1440×900 viewport (900/1440 = 0.625)
+ * → 0.032 + 0.625 = 0.657.
+ */
+const WINDOW_ASPECT = 0.657
+
+/**
+ * The app at `/`: the Fairbnb desktop app in a desktop browser window, as large as fits the
+ * preview (100% of its width, or its height if that is shorter). While loading it renders the
  * finished screen instantly (sped-up intro) under the dark overlay; once loaded it remounts and
  * plays the intro at its normal pace.
  */
-function PlannerDevice({ loaded }: { loaded: boolean }) {
+function AirbnbDevice({ loaded, skipIntro = false }: { loaded: boolean; skipIntro?: boolean }) {
   return (
-    <div className="@container" style={{ width: `min(100cqw, calc(100cqh / ${DEVICE_ASPECT}))` }}>
-      <div className="relative rounded-[6.5cqw] bg-[#1c1c1e] p-[4.2cqw] shadow-[0_0_0_0.3cqw_#3a3a3c]">
-        {/* Camera */}
-        <span className="absolute left-1/2 top-[1.8cqw] size-[1cqw] -translate-x-1/2 rounded-full bg-[#2c2c2e]" />
-        {/* Side buttons */}
-        <span className="absolute -top-[0.4cqw] right-[10cqw] h-[0.4cqw] w-[6cqw] rounded-t-[0.3cqw] bg-[#3a3a3c]" />
-        <span className="absolute -right-[0.5cqw] top-[10cqw] h-[5cqw] w-[0.5cqw] rounded-r-[0.3cqw] bg-[#3a3a3c]" />
-        <span className="absolute -right-[0.5cqw] top-[16.5cqw] h-[5cqw] w-[0.5cqw] rounded-r-[0.3cqw] bg-[#3a3a3c]" />
-        <div data-portal-screen className="@container aspect-[2048/2732] overflow-hidden rounded-[2.2cqw] bg-white">
-          <PlannerScreen introSpeed={loaded ? 1 : 1000} />
+    <div className="@container" style={{ width: `min(100cqw, calc(100cqh / ${WINDOW_ASPECT}))` }}>
+      <div className="overflow-hidden rounded-[0.9cqw] bg-white shadow-[0_0_0_1px_rgba(17,17,16,0.14),0_2.4cqw_5cqw_-1.6cqw_rgba(17,17,16,0.35)]">
+        {/* Title bar: traffic lights and the address */}
+        <div className="relative flex h-[3.2cqw] items-center border-b border-black/[0.08] bg-[#f6f6f6] px-[1.2cqw]">
+          <span className="flex gap-[0.6cqw]" aria-hidden="true">
+            <span className="size-[0.95cqw] rounded-full bg-[#ff5f57] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]" />
+            <span className="size-[0.95cqw] rounded-full bg-[#febc2e] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]" />
+            <span className="size-[0.95cqw] rounded-full bg-[#28c840] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]" />
+          </span>
+          <span className="absolute left-1/2 flex h-[2cqw] w-[34cqw] -translate-x-1/2 items-center justify-center rounded-[0.6cqw] bg-black/[0.05] text-[0.95cqw] text-stone-500">
+            fairbnb.com
+          </span>
+        </div>
+        <div data-portal-screen className="@container aspect-[1440/900] overflow-hidden bg-white">
+          {/* skipIntro: the finished screen straight away (the intro played instantly) */}
+          <AirbnbScreen introSpeed={loaded && !skipIntro ? 1 : 1000} />
         </div>
       </div>
     </div>
@@ -354,12 +701,11 @@ function PlannerDevice({ loaded }: { loaded: boolean }) {
 /* ---------------------------------- Chat ---------------------------------- */
 
 const CHAT_FILES: { path: string; note: string }[] = [
-  { path: "src/app/page.tsx", note: "the route, which renders PlannerDevice." },
-  { path: "src/components/planner-device.tsx", note: "the device frame around the screen." },
-  { path: "src/components/planner-screen.tsx", note: "the main planner UI (about 670 lines)." },
-  { path: "src/components/rolling-readout.tsx", note: "the animated rolling number display." },
-  { path: "src/lib/planner-days.ts", note: "the day data and helpers." },
-  { path: "src/lib/use-planner-intro.ts", note: "the GSAP intro and day-change animations (about 920 lines)." },
+  { path: "src/app/page.tsx", note: "the route, which renders FairbnbDevice." },
+  { path: "src/components/fairbnb-device.tsx", note: "the browser window around the screen." },
+  { path: "src/components/fairbnb-screen.tsx", note: "the home page: header, categories, your trip and listings (about 470 lines)." },
+  { path: "src/lib/fairbnb-data.ts", note: "the trip, the listings and the screen's layout." },
+  { path: "src/lib/use-fairbnb-intro.ts", note: "the GSAP opening sequence (about 170 lines)." },
 ]
 
 /** Previous Build Agent chats (pseudo names), newest first; the first is the open one. */
@@ -372,16 +718,21 @@ const CHATS = [
   "Designing Share Button Functionality",
   "Making GitHub Button Interactive",
   "Opening Code Changes In Popover",
-  "Implementing iPad Calendar Codebase",
+  "Implementing Fairbnb Desktop Codebase",
   "Making Frames And Text Elements",
   "Setting Up Hero Canvas",
 ]
 
-/** Gray disc with the Build Agent star: the chat icon. */
-function ChatIcon() {
+/** Gray disc with the Build Agent star: the chat icon. While its agent works the star spins on lime. */
+function ChatIcon({ working = false }: { working?: boolean }) {
   return (
-    <span className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-stone-200 text-stone-500">
-      <AgentStar className="size-2.5" />
+    <span
+      className={cn(
+        "flex size-[18px] shrink-0 items-center justify-center rounded-full transition-colors",
+        working ? "bg-mi-lime text-stone-900" : "bg-stone-200 text-stone-500",
+      )}
+    >
+      <AgentStar className={cn("size-2.5", working && "animate-spin [animation-duration:1.6s]")} />
     </span>
   )
 }
@@ -396,6 +747,7 @@ function ChatSwitcher({
   onSelect,
   renaming,
   onRenameEnd,
+  working = false,
 }: {
   chats: string[]
   currentIndex: number
@@ -403,6 +755,8 @@ function ChatSwitcher({
   renaming: boolean
   /** Rename finished: the new name, or null when cancelled. */
   onRenameEnd: (name: string | null) => void
+  /** The open chat's agent is working: its icon spins and its title shimmers. */
+  working?: boolean
 }) {
   const current = chats[currentIndex]
   const [open, setOpen] = useState(false)
@@ -478,8 +832,17 @@ function ChatSwitcher({
           open && "bg-stone-700/5",
         )}
       >
-        <ChatIcon />
-        <span className="truncate">{current}</span>
+        <ChatIcon working={working} />
+        <span
+          key={current}
+          className={cn(
+            "truncate animate-in fade-in duration-300",
+            working &&
+              "bg-[linear-gradient(110deg,#57534e_40%,#d6d3d1_50%,#57534e_60%)] bg-[length:300%_100%] bg-clip-text text-transparent animate-mi-shine",
+          )}
+        >
+          {current}
+        </span>
         <ChevronDown className="size-3 shrink-0 text-stone-500" strokeWidth={1.5} />
       </button>
       )}
@@ -519,7 +882,7 @@ function ChatSwitcher({
                     }}
                     className="flex h-[34px] shrink-0 items-center gap-2.5 rounded-md px-2 text-left text-px-13 text-stone-900 hover:bg-stone-700/5"
                   >
-                    <ChatIcon />
+                    <ChatIcon working={working && i === currentIndex} />
                     <span className="min-w-0 flex-1 truncate">{chat}</span>
                     {i === currentIndex && <Check className="size-3.5 shrink-0 text-stone-500" strokeWidth={1.5} />}
                   </button>
@@ -545,49 +908,127 @@ function ChatSwitcher({
   )
 }
 
-/** Right-side Build Agent chat for the portal. */
-function PortalChat() {
+/** Right-side Build Agent chat for the portal. "New agent" opens a fresh chat; replies are scripted (PORTAL_TURNS). */
+const PortalChat = memo(function PortalChat({ onApply }: { onApply: (change: string) => void }) {
   const [prompt, setPrompt] = useState("")
-  const [sent, setSent] = useState<string[]>([])
-  /** Chat names (renamable) and which one is open. */
-  const [chats, setChats] = useState(CHATS)
+  /** Chat names (renamable) and which one is open. Seeded chats show the earlier conversation. */
+  const [chats, setChats] = useState<PortalChatEntry[]>(() => CHATS.map((name, id) => ({ id, name, seeded: true })))
   const [currentIndex, setCurrentIndex] = useState(0)
   const [renaming, setRenaming] = useState(false)
+  /** Messages sent / received this session, per chat id. */
+  const [messages, setMessages] = useState<Record<number, PortalMessage[]>>({})
+  /** The agent is thinking (before its reply starts streaming). */
+  const [thinking, setThinking] = useState(false)
+  /** Chat whose agent is working (thinking or streaming its reply), if any. */
+  const [busyChat, setBusyChat] = useState<number | null>(null)
+  const busy = busyChat !== null
+  const nextId = useRef(1)
+  const nextChatId = useRef(CHATS.length)
+  /** Indexes of the PORTAL_TURNS used so far (each plays once per session). */
+  const usedTurns = useRef(new Set<number>())
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([])
+  const listRef = useRef<HTMLDivElement>(null)
   const empty = prompt.trim() === ""
+  const current = chats[currentIndex]
+  const currentMessages = messages[current.id] ?? []
+
+  useEffect(() => () => timers.current.forEach(clearTimeout), [])
+
+  // Keep the newest message in view as replies stream in.
+  useEffect(() => {
+    const list = listRef.current
+    if (list) list.scrollTop = list.scrollHeight
+  }, [messages, thinking, currentIndex])
 
   function endRename(name: string | null) {
     setRenaming(false)
-    if (name) setChats((c) => c.map((chat, i) => (i === currentIndex ? name : chat)))
+    if (name) setChats((c) => c.map((chat, i) => (i === currentIndex ? { ...chat, name } : chat)))
+  }
+
+  function newAgent() {
+    const id = nextChatId.current++
+    setChats((c) => [{ id, name: "New agent", seeded: false }, ...c])
+    setCurrentIndex(0)
+  }
+
+  function addMessage(chatId: number, message: PortalMessage) {
+    setMessages((all) => ({ ...all, [chatId]: [...(all[chatId] ?? []), message] }))
+  }
+
+  function patchMessage(chatId: number, id: number, patch: Partial<PortalMessage>) {
+    setMessages((all) => ({ ...all, [chatId]: (all[chatId] ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)) }))
   }
 
   function send() {
     const text = prompt.trim()
-    if (text === "") return
-    setSent((s) => [...s, text])
+    if (text === "" || busy) return
+    const chatId = current.id
+    addMessage(chatId, { id: nextId.current++, role: "user", text })
     setPrompt("")
+
+    // Scripted reply: think, stream it in word by word, then apply its change to the preview. The
+    // turn written for exactly this message, else the next general one.
+    let index = PORTAL_TURNS.findIndex((t, i) => !usedTurns.current.has(i) && t.prompt === text)
+    if (index < 0) index = PORTAL_TURNS.findIndex((t, i) => !usedTurns.current.has(i) && t.prompt === undefined)
+    if (index >= 0) usedTurns.current.add(index)
+    const turn = index >= 0 ? PORTAL_TURNS[index] : PORTAL_FALLBACK
+    const replyId = nextId.current++
+    const words = wordsOf(turn.reply).length
+    const at = (ms: number, run: () => void) => timers.current.push(setTimeout(run, ms))
+    const think = turn.thinkMs ?? PORTAL_THINK_MS
+    setBusyChat(chatId)
+    setThinking(true)
+    at(think, () => {
+      setThinking(false)
+      addMessage(chatId, { id: replyId, role: "agent", text: turn.reply, shown: 0, turn })
+    })
+    for (let i = 1; i <= words; i++) at(think + i * PORTAL_WORD_MS, () => patchMessage(chatId, replyId, { shown: i }))
+    at(think + words * PORTAL_WORD_MS + 150, () => {
+      setBusyChat(null)
+      if (turn.applies) onApply(turn.applies)
+      if (turn.title) {
+        const title = turn.title
+        setChats((c) => c.map((chat) => (chat.id === chatId && chat.name === "New agent" ? { ...chat, name: title } : chat)))
+      }
+    })
   }
 
   return (
     <aside className="flex w-[360px] shrink-0 flex-col bg-white">
       <header className="relative flex h-10 shrink-0 items-center justify-between gap-2 pl-3 pr-2">
         <ChatSwitcher
-          chats={chats}
+          chats={chats.map((c) => c.name)}
           currentIndex={currentIndex}
           onSelect={setCurrentIndex}
           renaming={renaming}
           onRenameEnd={endRename}
+          working={busyChat === current.id}
         />
         <div className="flex shrink-0 items-center gap-0.5 text-stone-700">
-          <BarButton label="New agent">
+          <BarButton label="New agent" onClick={newAgent}>
             <Plus className="size-4" strokeWidth={1.5} />
           </BarButton>
           <MoreOptionsMenu onRename={() => setRenaming(true)} />
         </div>
       </header>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-4 pb-4 pt-2 text-px-13 leading-[18px] text-stone-800">
+      <div
+        ref={listRef}
+        data-cursor-id="portal-chat-messages"
+        className="flex min-h-0 flex-1 select-text flex-col gap-3 overflow-y-auto px-4 pb-4 pt-2 text-px-13 leading-[18px] text-stone-800"
+      >
+        {!current.seeded && currentMessages.length === 0 && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center animate-in fade-in duration-200">
+            <span className="flex size-8 items-center justify-center rounded-full bg-stone-100 text-stone-500">
+              <AgentStar className="size-4" />
+            </span>
+            <p className="max-w-[220px] text-stone-500">Ask for a change and watch it land in the live app.</p>
+          </div>
+        )}
+        {current.seeded && (
+          <>
         <p className="select-text">
-          The calendar you see at <Code>/</Code> is the day planner, and it&apos;s built from <strong>6 files</strong>:
+          The app you see at <Code>/</Code> is the Fairbnb home page, and it&apos;s built from <strong>5 files</strong>:
         </p>
         <ol className="flex select-text list-decimal flex-col gap-1.5 pl-5">
           {CHAT_FILES.map((file) => (
@@ -597,14 +1038,13 @@ function PortalChat() {
           ))}
         </ol>
         <p className="select-text">
-          Together they come to about 2,000 lines. It also uses the shared <Code>cn</Code> helper in{" "}
-          <Code>src/lib/utils.ts</Code>. <Code>src/app/tuesday/page.tsx</Code> is just a 9-line redirect, so I didn&apos;t
-          count it.
+          Together they come to about 800 lines. It also uses the shared <Code>cn</Code> helper in{" "}
+          <Code>src/lib/utils.ts</Code>, and the listing photos in <Code>public/fairbnb</Code>.
         </p>
         <MessageMeta />
 
         <UserBubble>
-          can you create a copy of the files in a folder title &quot;copy-project&quot; without the ipad outline? The rest
+          can you create a copy of the files in a folder title &quot;copy-project&quot; without the browser window? The rest
           should be included
         </UserBubble>
 
@@ -614,7 +1054,7 @@ function PortalChat() {
         </button>
 
         <p className="select-text">
-          I made a copy of the calendar in a new <Code>copy-project</Code> folder, without the iPad outline. Because
+          I made a copy of the app in a new <Code>copy-project</Code> folder, without the browser window. Because
           it&apos;s inside the app folder (<Code>src/app/copy-project/</Code>), it also works as its own page at{" "}
           <Code>/copy-project</Code>. I haven&apos;t opened that page, so how it looks is unchecked. The original at{" "}
           <Code>/</Code> is untouched.
@@ -622,12 +1062,12 @@ function PortalChat() {
         <p className="font-semibold text-stone-900">What&apos;s in the folder:</p>
         <ul className="flex select-text list-disc flex-col gap-1.5 pl-5">
           <li>
-            <strong>page.tsx</strong> replaces <Code>planner-device.tsx</Code>, which held the iPad outline. It shows
-            just the screen, centred on white, at the same proportions and height the screen had inside the iPad.
+            <strong>page.tsx</strong> replaces <Code>fairbnb-device.tsx</Code>, which held the browser window. It shows
+            just the screen, centred on white, at the same 1440×900 proportions it had inside the window.
           </li>
           <li>
-            <strong>planner-screen.tsx</strong>, <strong>rolling-readout.tsx</strong>, <strong>planner-days.ts</strong>,{" "}
-            <strong>use-planner-intro.ts</strong> and <strong>utils.ts</strong> are exact copies of the originals. The
+            <strong>fairbnb-screen.tsx</strong>, <strong>fairbnb-data.ts</strong>, <strong>use-fairbnb-intro.ts</strong>{" "}
+            and <strong>utils.ts</strong> are exact copies of the originals. The
             only change is that their imports point at each other inside the folder, so the copy doesn&apos;t depend on
             the original files.
           </li>
@@ -635,24 +1075,75 @@ function PortalChat() {
         <p className="font-semibold text-stone-900">Two things to know:</p>
         <ul className="flex select-text list-disc flex-col gap-1.5 pl-5">
           <li>
-            The status-bar image (<Code>/status.png</Code>) still comes from the shared <Code>public</Code> folder rather
-            than being duplicated.
+            The avatar and the photos in <Code>public/fairbnb</Code> still come from
+            the shared <Code>public</Code> folder rather than being duplicated.
           </li>
           <li>
-            I didn&apos;t copy the <Code>/tuesday</Code> redirect, since it isn&apos;t part of the calendar itself.
+            The photos load through <Code>next/image</Code>, so the copy gets the same resized versions as the original.
           </li>
         </ul>
         <p className="select-text">
           If you meant a standalone folder outside the app instead of a page inside it, I can move it.
         </p>
         <p className="text-px-11 font-medium tabular-nums">
-          <span className="text-green-700">+1995</span> <span className="text-red-600">−0</span>
+          <span className="text-green-700">+812</span> <span className="text-red-600">−0</span>
         </p>
         <MessageMeta />
+          </>
+        )}
 
-        {sent.map((text, i) => (
-          <UserBubble key={i}>{text}</UserBubble>
-        ))}
+        {currentMessages.map((m) =>
+          m.role === "user" ? (
+            <UserBubble key={m.id}>{m.text}</UserBubble>
+          ) : (
+            <div key={m.id} className="flex flex-col gap-2">
+              <p className="select-text">
+                {m.shown === undefined ? m.text : wordsOf(m.text).slice(0, m.shown).join("")}
+              </p>
+              {m.turn && (m.shown ?? 0) >= wordsOf(m.text).length && (
+                <div className="flex flex-col gap-2 animate-in fade-in duration-200">
+                  <span className="-ml-0.5 flex items-center gap-1 text-stone-600">
+                    <ChevronRight className="size-3.5" strokeWidth={1.5} />
+                    {m.turn.workedFor}
+                  </span>
+                  <p className="text-px-11 font-medium tabular-nums">
+                    <span className="text-green-700">+{m.turn.added}</span>{" "}
+                    <span className="text-red-600">−{m.turn.removed}</span>
+                  </p>
+                  {m.turn.tests && (
+                    <div
+                      data-cursor-id="portal-test-results"
+                      className="flex flex-col gap-1.5 rounded-lg border border-[#c6dfc9] bg-[#f3f8f3] px-2.5 py-2"
+                    >
+                      <p className="flex items-center gap-1.5 font-medium text-[#1e7b36]">
+                        <Check className="size-3.5" strokeWidth={2.25} />
+                        {m.turn.tests.passed} tests passed, 0 failed
+                      </p>
+                      <p className="font-mono text-[12px] text-stone-600">{m.turn.tests.file}</p>
+                      <ul className="flex flex-col gap-1">
+                        {m.turn.tests.names.map((name) => (
+                          <li key={name} className="flex items-start gap-1.5 text-px-12 text-stone-700">
+                            <Check className="mt-0.5 size-3 shrink-0 text-[#1e7b36]" strokeWidth={2.25} />
+                            {name}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  <MessageMeta when="Just now" />
+                </div>
+              )}
+            </div>
+          ),
+        )}
+        {thinking && (
+          <p
+            aria-live="polite"
+            className="self-start bg-[linear-gradient(110deg,#a8a29e_40%,#44403c_50%,#a8a29e_60%)] bg-[length:300%_100%] bg-clip-text font-medium text-transparent animate-mi-shine"
+          >
+            Working...
+          </p>
+        )}
       </div>
 
       {/* Composer */}
@@ -706,7 +1197,7 @@ function PortalChat() {
       </form>
     </aside>
   )
-}
+})
 
 function UserBubble({ children }: { children: React.ReactNode }) {
   return (
@@ -724,7 +1215,7 @@ function Code({ children }: { children: React.ReactNode }) {
  * Thumbs + timestamp under an agent reply. Like the Build Agent chat, a thumb toggles on click
  * (blue outline when given, with the row slightly faded) and giving one replaces the other.
  */
-function MessageMeta() {
+function MessageMeta({ when = "1 day ago" }: { when?: string }) {
   const [feedback, setFeedback] = useState<"up" | "down" | null>(null)
 
   function rate(value: "up" | "down") {
@@ -745,7 +1236,7 @@ function MessageMeta() {
           strokeWidth={1.75}
         />
       </BarButton>
-      <span className="ml-1 text-px-13 text-stone-500">1 day ago</span>
+      <span className="ml-1 text-px-13 text-stone-500">{when}</span>
     </div>
   )
 }
@@ -807,13 +1298,15 @@ function BarButton({
     const tip = tooltipRef.current
     if (!tip) return
     const rect = tip.getBoundingClientRect()
-    const left = rect.left - shift
-    const right = rect.right - shift
+    // `shift` is in layout px; the rects are screen px (the screen may be drawn scaled).
+    const k = screenScale(tip)
+    const left = rect.left - shift * k
+    const right = rect.right - shift * k
     const bounds = tooltipBounds(tip)
     const minLeft = bounds.left + TOOLTIP_EDGE_GAP
     const maxRight = bounds.right - TOOLTIP_EDGE_GAP
-    if (left < minLeft) setShift(minLeft - left)
-    else if (right > maxRight) setShift(maxRight - right)
+    if (left < minLeft) setShift((minLeft - left) / k)
+    else if (right > maxRight) setShift((maxRight - right) / k)
     else setShift(0)
   }
 
@@ -926,7 +1419,7 @@ const VIEWPORTS: Viewport[] = [
 
 /** Viewport picker: the trigger shows the chosen viewport's icon; click opens the list. */
 function ViewportSelect() {
-  const [selectedId, setSelectedId] = useState("full")
+  const [selectedId, setSelectedId] = useState("desktop")
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const TriggerIcon = VIEWPORTS.find((v) => v.id === selectedId)?.icon ?? Scaling

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react"
 import { cn } from "@/lib/utils"
-import { RadiusThumbs, type Corner } from "./planner-frame"
+import { RadiusThumbs, useCanvasEntrance, type CanvasEntrance, type Corner } from "./planner-frame"
 
 const SELECT_BLUE = "#2f6bf6"
 const LABEL_GREY = "#78716c"
@@ -58,6 +58,7 @@ export function DrawnFrame({
   onPointerDown,
   onResizeStart,
   onRadiusStart,
+  entrance,
 }: {
   el: FrameElement
   camera: Camera
@@ -66,11 +67,15 @@ export function DrawnFrame({
   onPointerDown: (e: React.PointerEvent) => void
   onResizeStart: (e: React.PointerEvent, corner: Corner) => void
   onRadiusStart: (e: React.PointerEvent, corner: Corner) => void
+  /** Glide in when the canvas is revealed (leaving the Portal). */
+  entrance?: CanvasEntrance | null
 }) {
+  const enter = useCanvasEntrance<HTMLDivElement>(entrance)
   return (
     <div
+      ref={enter.ref}
       className="absolute"
-      style={{ ...placement(el, camera), width: el.w * camera.zoom, height: el.h * camera.zoom }}
+      style={{ ...enter.style, ...placement(el, camera), width: el.w * camera.zoom, height: el.h * camera.zoom }}
       onPointerDown={(e) => {
         e.stopPropagation()
         onPointerDown(e)
@@ -123,6 +128,7 @@ export function CanvasText({
   onStartEditing,
   onCommit,
   onMeasure,
+  entrance,
 }: {
   el: TextElement
   camera: Camera
@@ -133,6 +139,8 @@ export function CanvasText({
   onCommit: (content: string) => void
   /** Reports the hugged content size, in canvas units. */
   onMeasure: (w: number, h: number) => void
+  /** Glide in when the canvas is revealed (leaving the Portal). */
+  entrance?: CanvasEntrance | null
 }) {
   const textRef = useRef<HTMLDivElement>(null)
   const onMeasureRef = useRef(onMeasure)
@@ -168,10 +176,12 @@ export function CanvasText({
     return () => cancelAnimationFrame(frame)
   }, [editing])
 
+  const enter = useCanvasEntrance<HTMLDivElement>(entrance)
   return (
     <div
+      ref={enter.ref}
       className="absolute"
-      style={{ ...placement(el, camera), width: el.w * camera.zoom, height: el.h * camera.zoom }}
+      style={{ ...enter.style, ...placement(el, camera), width: el.w * camera.zoom, height: el.h * camera.zoom }}
       onPointerDown={(e) => {
         e.stopPropagation()
         // While editing, let the press place the caret instead of moving the element.
