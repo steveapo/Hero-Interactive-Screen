@@ -80,6 +80,9 @@ const MEASURE_SETTLE_MS = 120
 const TOP_GROUP =
   "h-9 rounded-xl border border-stone-700/10 bg-[#f2f2f1] p-px shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]"
 
+/** The same groups over the Portal: flat (no border or shadow), a solid shade just darker than its stone-100 background. */
+const PORTAL_TOP_GROUP = "h-9 rounded-xl bg-[#ededeb] p-px"
+
 /**
  * Canvas entrance after leaving the Portal: elements start this fraction of their (screen-px)
  * distance from the Codebase frame further out, at least ENTER_MIN_TRAVEL px. Their delays sweep
@@ -1175,8 +1178,8 @@ export function HeroScreen({
             type="button"
             onClick={closePortal}
             className={cn(
-              "flex items-center gap-1.5 px-2.5 text-px-13 font-medium text-stone-900 hover:bg-[#e9e9e7]",
-              TOP_GROUP,
+              "flex items-center gap-2 px-3.5 text-px-13 font-medium text-stone-900 hover:bg-[#e6e6e4]",
+              PORTAL_TOP_GROUP,
             )}
           >
             <ArrowLeft className="size-3.5" strokeWidth={1.5} />
@@ -1195,7 +1198,7 @@ export function HeroScreen({
           </div>
         )}
 
-        <div className={cn("flex items-center gap-1 pr-1.5", TOP_GROUP)}>
+        <div className={cn("flex items-center gap-1 pr-1.5", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
           <button
             type="button"
             aria-label="Undo"
