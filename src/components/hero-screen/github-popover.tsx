@@ -25,10 +25,16 @@ export const GithubButton = memo(function GithubButton({
   pullRequest = PULL_REQUEST,
   onMerged,
   defaultOpen = false,
+  openOnCue = false,
 }: {
   connected: boolean
   /** Opens with its popover / dialog already showing. */
   defaultOpen?: boolean
+  /**
+   * Opens the popover when this turns true (e.g. at its step of a load-in intro), with a softer,
+   * slightly longer opening than a click's.
+   */
+  openOnCue?: boolean
   /** Prefilled repository name in the create dialog. */
   defaultRepoName: string
   /** Branch the project was imported from (connected state). */
@@ -49,6 +55,14 @@ export const GithubButton = memo(function GithubButton({
   const [prOpen, setPrOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   const prBranch = `${OWNER}/${repo}-${pullRequest.branchSuffix}`
+
+  /** The popover was opened by the cue (not a click): it uses the intro opening. */
+  const [cued, setCued] = useState(false)
+  useEffect(() => {
+    if (!openOnCue) return
+    setCued(true)
+    setOpen(true)
+  }, [openOnCue])
 
   // Close the sync popover on outside click or Escape (the dialog handles its own dismissal)
   useEffect(() => {
@@ -87,6 +101,7 @@ export const GithubButton = memo(function GithubButton({
 
       {open && connected && (
         <GithubSyncPopover
+          cued={cued}
           branch={branch}
           repo={`${OWNER}/${repo}`}
           prBranch={prBranch}
@@ -136,6 +151,7 @@ export const GithubButton = memo(function GithubButton({
 const SYNC_MS = 1800
 
 function GithubSyncPopover({
+  cued = false,
   branch,
   repo,
   prBranch,
@@ -144,6 +160,8 @@ function GithubSyncPopover({
   onSynced,
   onViewPr,
 }: {
+  /** Opened by the intro cue: scales up out of the GitHub button as it fades and drops in. */
+  cued?: boolean
   branch: string
   repo: string
   prBranch: string
@@ -171,7 +189,12 @@ function GithubSyncPopover({
     <div
       role="dialog"
       aria-label="Github Sync"
-      className="absolute right-0 top-full z-50 mt-1.5 flex w-[300px] flex-col rounded-xl border border-stone-700/10 bg-[#f3f3f1] p-3 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in slide-in-from-top-1 duration-150"
+      className={cn(
+        "absolute right-0 top-full z-50 mt-1.5 flex w-[300px] flex-col rounded-xl border border-stone-700/10 bg-[#f3f3f1] p-3 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in",
+        cued
+          ? "origin-top-right zoom-in-90 slide-in-from-top-2 duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]"
+          : "slide-in-from-top-1 duration-150",
+      )}
     >
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-px-13 font-medium text-stone-900">Github Sync</h2>

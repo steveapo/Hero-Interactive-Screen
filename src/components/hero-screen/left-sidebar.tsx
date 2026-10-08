@@ -20,9 +20,14 @@ const PANEL_BG = "bg-[#f2f2f1]"
 export const LeftSidebar = memo(function LeftSidebar({
   ref,
   onLibraryDragStart,
+  className,
+  style,
 }: {
   ref?: React.Ref<HTMLElement>
   onLibraryDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
+  /** Extra classes / style on the sidebar (e.g. a load-in entrance). */
+  className?: string
+  style?: React.CSSProperties
 }) {
   const [panel, setPanel] = useState<RailPanel | null>(null)
   const open = panel === "layers" || panel === "components"
@@ -30,10 +35,12 @@ export const LeftSidebar = memo(function LeftSidebar({
   return (
     <aside
       ref={ref}
+      style={style}
       className={cn(
         "absolute left-1 top-[46px] z-30 flex overflow-hidden rounded-xl border border-stone-700/10 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]",
         PANEL_BG,
         open && "bottom-1",
+        className,
       )}
     >
       {/* Rail */}

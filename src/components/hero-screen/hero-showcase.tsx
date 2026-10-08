@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { CodeChangesPanel } from "./code-changes-popover"
 import { trackDrag } from "./drag"
-import { HeroScreen } from "./hero-screen"
+import { HeroScreen, type LoadIntro } from "./hero-screen"
 import { SafariChrome } from "./safari-chrome"
 
 type WindowId = "main" | "secondary"
@@ -14,14 +14,30 @@ type IntroPhase = "waiting" | "play"
 
 /** Share of the Desktop Area that must be on screen before the load-in plays. */
 const INTRO_VISIBLE_THRESHOLD = 0.35
+
 /**
- * The Code Changes window opens this long after the canvas entrance starts (ms), as its last
- * elements are still gliding in, so the two read as one sequence.
+ * The load-in, in ms from when it starts. Each step begins as the one before it is settling, so
+ * the sequence reads as one continuous build-up:
+ *   1. the empty Desktop Area, on its own for a beat
+ *   2. the empty Canvas window opens (scales up from 85%, fades in, rises 20px)
+ *   3. the bars and tools come in, one after another
+ *   4. the Codebase frame fades in; its live app's own opening plays on through the next step
+ *   5. the GitHub Sync popover opens
+ *   6. the canvas elements glide in around the Codebase frame
+ *   7. the Code Changes window opens (as the Canvas window did) and its diff streams in row by row
  */
-const SECONDARY_OPEN_DELAY_MS = 1500
-const SECONDARY_OPEN_MS = 700
-/** Its diff rows start coming in once the window is mostly open (ms after the load-in starts). */
-const SECONDARY_LINES_DELAY_MS = SECONDARY_OPEN_DELAY_MS + 450
+const INTRO = {
+  canvasWindowAt: 400,
+  chromeAt: 950,
+  codebaseAt: 1700,
+  githubAt: 2500,
+  elementsAt: 3000,
+  codeWindowAt: 4300,
+}
+/** How long a window takes to open (ms). */
+const WINDOW_OPEN_MS = 700
+/** The diff rows start coming in once the Code Changes window is mostly open. */
+const CODE_LINES_AT = INTRO.codeWindowAt + 450
 
 /** A window on the Desktop Area: rounded, with a shadow; positioned by its `placement` classes. */
 const DESKTOP_WINDOW =
@@ -35,9 +51,7 @@ const DESKTOP_WINDOW =
  * Pressing anywhere in a window focuses it and brings it to the front (the other one goes behind,
  * its traffic lights turning grey); dragging a window's title bar moves it around the desktop.
  *
- * Load-in, once the Desktop Area scrolls into view: the canvas elements glide in around the
- * Codebase frame (the canvas entrance), then the Code Changes window springs open and its diff
- * streams in row by row.
+ * Load-in, once the Desktop Area scrolls into view: see INTRO.
  */
 export function HeroShowcase({ className }: { className?: string }) {
   /** Front to back: the first is the focused window. */
@@ -61,6 +75,18 @@ export function HeroShowcase({ className }: { className?: string }) {
     return () => observer.disconnect()
   }, [])
 
+  /** The canvas's part of the load-in (bars, Codebase, GitHub popover, elements). */
+  const canvasIntro = useMemo<LoadIntro>(
+    () => ({
+      phase: intro,
+      chromeAt: INTRO.chromeAt,
+      codebaseAt: INTRO.codebaseAt,
+      githubAt: INTRO.githubAt,
+      elementsAt: INTRO.elementsAt,
+    }),
+    [intro],
+  )
+
   return (
     <div
       ref={desktopRef}
@@ -77,6 +103,8 @@ export function HeroShowcase({ className }: { className?: string }) {
         active={stack[0] === "main"}
         z={stack.length - stack.indexOf("main")}
         onFocus={() => focus("main")}
+        opening={intro}
+        openDelay={INTRO.canvasWindowAt}
       >
         <div className="flex min-h-0 flex-1 flex-col bg-mi-canvas">
           <HeroScreen
@@ -86,7 +114,7 @@ export function HeroShowcase({ className }: { className?: string }) {
             portalEnabled={false}
             toolsEnabled={false}
             scrollPans={false}
-            loadEntrance={intro}
+            loadIntro={canvasIntro}
           />
         </div>
       </DesktopWindow>
@@ -99,11 +127,12 @@ export function HeroShowcase({ className }: { className?: string }) {
         z={stack.length - stack.indexOf("secondary")}
         onFocus={() => focus("secondary")}
         opening={intro}
+        openDelay={INTRO.codeWindowAt}
       >
         <CodeChangesPanel
           className="min-h-0 flex-1"
           sidebarClassName="max-w-[32%]"
-          revealDelay={intro === "play" ? SECONDARY_LINES_DELAY_MS : undefined}
+          revealDelay={intro === "play" ? CODE_LINES_AT : undefined}
         />
       </DesktopWindow>
     </div>
@@ -122,6 +151,7 @@ function DesktopWindow({
   z,
   onFocus,
   opening,
+  openDelay = 0,
   children,
 }: {
   title: string
@@ -131,8 +161,10 @@ function DesktopWindow({
   /** Stacking order: higher is in front. */
   z: number
   onFocus: () => void
-  /** Opening animation: hidden while "waiting"; "play" springs it open. Omitted: simply there. */
+  /** Opening animation: hidden while "waiting"; "play" opens it after `openDelay`. Omitted: simply there. */
   opening?: IntroPhase
+  /** How long after "play" the window opens (ms). */
+  openDelay?: number
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -153,13 +185,15 @@ function DesktopWindow({
         { visibility: "visible", opacity: 1, scale: "1", translate: "0 0" },
       ],
       {
-        duration: SECONDARY_OPEN_MS,
-        delay: SECONDARY_OPEN_DELAY_MS,
+        duration: WINDOW_OPEN_MS,
+        delay: openDelay,
         easing: "cubic-bezier(0.22, 1, 0.36, 1)",
         fill: "backwards",
       },
     )
     return () => animation.cancel()
+    // The delay is fixed per window; the animation only (re)starts with the phase.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opening])
 
   function startMove(e: React.PointerEvent<HTMLDivElement>) {

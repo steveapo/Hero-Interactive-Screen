@@ -29,7 +29,14 @@ export function CodebaseFrame({
   zoom,
   offsetX,
   offsetY,
+  appear,
 }: {
+  /**
+   * Load-in: "hidden" keeps the frame invisible and its live app unmounted; "in" fades the frame
+   * in and mounts the app, so the app's own opening animation plays from that moment.
+   * Omitted: the frame is simply there.
+   */
+  appear?: "hidden" | "in"
   selected: boolean
   onSelect: () => void
   /** Double-click: open the frame in the Portal View. */
@@ -50,12 +57,17 @@ export function CodebaseFrame({
   return (
     <div
       data-cursor-id="codebase-frame"
-      className="absolute -translate-x-1/2 -translate-y-1/2"
+      className={
+        appear === "in"
+          ? "absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in duration-700 motion-reduce:animate-none"
+          : "absolute -translate-x-1/2 -translate-y-1/2"
+      }
       style={{
         left: `calc(50% + ${offsetX}px)`,
         top: `calc(50% + ${offsetY}px)`,
         width: CODEBASE_WIDTH * zoom,
         height: CODEBASE_HEIGHT * zoom,
+        visibility: appear === "hidden" ? "hidden" : undefined,
       }}
       onPointerDown={(e) => {
         e.stopPropagation()
@@ -98,7 +110,7 @@ export function CodebaseFrame({
           className="@container size-full overflow-hidden bg-white"
           style={covered ? { contentVisibility: "hidden" } : undefined}
         >
-          <AirbnbScreen introSpeed={CODEBASE_INTRO_SPEED} />
+          {appear !== "hidden" && <AirbnbScreen introSpeed={CODEBASE_INTRO_SPEED} />}
         </div>
       </div>
 

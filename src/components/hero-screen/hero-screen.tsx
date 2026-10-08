@@ -177,6 +177,46 @@ type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number 
  */
 export type HeroStart = "portal" | "canvas" | "designed" | "built"
 
+/**
+ * Load-in intro for a screen that opens on the canvas. While `phase` is "waiting" the screen is
+ * an empty canvas; once it's "play", each part comes in at its time (ms after that):
+ * `chromeAt` the bars and tools (top bar groups, tool bar, layers / components sidebar, zoom),
+ * `codebaseAt` the Codebase frame fades in (its live app's own opening plays from then),
+ * `githubAt` the GitHub Sync popover opens, `elementsAt` the canvas elements glide in around the
+ * Codebase frame (the canvas entrance).
+ */
+export type LoadIntro = {
+  phase: "waiting" | "play"
+  chromeAt: number
+  codebaseAt: number
+  githubAt: number
+  elementsAt: number
+}
+
+type IntroStep = "chrome" | "codebase" | "github" | "elements"
+
+/** Bars and tools come in one after another, this far apart (ms). */
+const CHROME_STAGGER_MS = 90
+
+/**
+ * A bar / tool's load-in: hidden until the chrome step, then it fades and slides in from `from`,
+ * `order` places into the stagger. Without an intro it's left alone.
+ */
+function chromeIntro(
+  hasIntro: boolean,
+  chromeIn: boolean,
+  order: number,
+  from: "top" | "left" | "bottom",
+): { className?: string; style?: React.CSSProperties } {
+  if (!hasIntro) return {}
+  if (!chromeIn) return { style: { visibility: "hidden" } }
+  const slide = from === "top" ? "slide-in-from-top-2" : from === "left" ? "slide-in-from-left-2" : "slide-in-from-bottom-2"
+  return {
+    className: `animate-in fade-in ${slide} duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none`,
+    style: { animationDelay: `${order * CHROME_STAGGER_MS}ms`, animationFillMode: "both" },
+  }
+}
+
 /** Badge size in the trip card frame, in canvas units (a large "Check in", see library-components). */
 const DESIGNED_BADGE_SIZE = { w: 8 * (CODEBASE_WIDTH / 100), h: 2.55 * (CODEBASE_WIDTH / 100) }
 
@@ -208,16 +248,11 @@ export function HeroScreen({
   portalEnabled = true,
   toolsEnabled = true,
   scrollPans = true,
-  loadEntrance,
+  loadIntro,
 }: {
   className?: string
-  /**
-   * Load-in entrance for a screen that opens on the canvas: "waiting" keeps everything but the
-   * Codebase frame hidden; switching to "play" brings the elements in with the same entrance as
-   * leaving the Portal (each glides in from its side of the Codebase frame, sweeping clockwise).
-   * Omitted: the elements are simply there.
-   */
-  loadEntrance?: "waiting" | "play"
+  /** Load-in intro (see LoadIntro). Omitted: everything is simply there. */
+  loadIntro?: LoadIntro
   /**
    * Plain scroll / trackpad swipes over the canvas pan it. Off for the homepage hero: the canvas
    * doesn't scroll and the page scrolls through it (pinch or ⌘/Ctrl + scroll still zoom; dragging
@@ -305,11 +340,45 @@ export function HeroScreen({
   const [portalClosing, setPortalClosing] = useState(false)
   /** Bumped once the Portal has closed: the canvas elements replay their entrance (see `entranceFor`). */
   const [revealId, setRevealId] = useState(0)
-  // Load-in entrance: once told to play, reveal the canvas (the first reveal plays the entrance).
-  // Layout effect, so the frame that switches to "play" never paints the elements in place first.
+  /** Load-in steps reached so far (see LoadIntro); read on each step's own timer. */
+  const [introSteps, setIntroSteps] = useState<IntroStep[]>([])
+  const introPhase = loadIntro?.phase
+  const introRef = useRef(loadIntro)
+  useEffect(() => {
+    introRef.current = loadIntro
+  })
+  useEffect(() => {
+    const intro = introRef.current
+    if (introPhase !== "play" || !intro) return
+    const steps: [IntroStep, number][] = [
+      ["chrome", intro.chromeAt],
+      ["codebase", intro.codebaseAt],
+      ["github", intro.githubAt],
+      ["elements", intro.elementsAt],
+    ]
+    const timers = steps.map(([step, at]) =>
+      setTimeout(() => setIntroSteps((reached) => (reached.includes(step) ? reached : [...reached, step])), at),
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [introPhase])
+  const chromeIn = introSteps.includes("chrome")
+  const codebaseIn = introSteps.includes("codebase")
+  const githubIn = introSteps.includes("github")
+  // The canvas elements' step reveals the canvas (the first reveal plays the entrance). Layout
+  // effect, so the frame that reaches it never paints the elements in place first.
+  const elementsIn = introSteps.includes("elements")
   useLayoutEffect(() => {
-    if (loadEntrance === "play") setRevealId((id) => (id === 0 ? 1 : id))
-  }, [loadEntrance])
+    if (elementsIn) setRevealId((id) => (id === 0 ? 1 : id))
+  }, [elementsIn])
+  const hasIntro = loadIntro !== undefined
+  // Bars and tools, in the order they come in: the canvas title, the tool bar and the sidebar, the
+  // actions (with the avatar), then the zoom readout.
+  const titleIntro = chromeIntro(hasIntro, chromeIn, 0, "top")
+  const toolbarIntro = chromeIntro(hasIntro, chromeIn, 1, "top")
+  const actionsIntro = chromeIntro(hasIntro, chromeIn, 2, "top")
+  const zoomIntro = chromeIntro(hasIntro, chromeIn, 3, "bottom")
+  /** The sidebar's intro props, memoized: it's a memo component and the canvas re-renders every camera frame. */
+  const sidebarIntro = useMemo(() => chromeIntro(hasIntro, chromeIn, 1, "left"), [hasIntro, chromeIn])
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // Sequence: fade the Portal out first, then unmount it and start the canvas entrance. Only the
   // first close plays the entrance; after that the elements are simply there when the Portal goes.
@@ -893,7 +962,7 @@ export function HeroScreen({
     // Before the first reveal (the screen opens in the Portal, or waits for its load-in entrance):
     // only the Codebase frame is on the canvas. After it, the elements stay loaded under the
     // Portal, so closing it again shows them in place instead of bringing them in again.
-    if (revealId === 0) return portalOpen || loadEntrance ? "hidden" : null
+    if (revealId === 0) return portalOpen || hasIntro ? "hidden" : null
     const z = camera.zoom
     const dx = (rect.x - codebaseRect.x) * z
     const dy = (rect.y - codebaseRect.y) * z
@@ -1050,6 +1119,7 @@ export function HeroScreen({
           zoom={camera.zoom}
           offsetX={camera.x + codebaseRect.x * camera.zoom}
           offsetY={camera.y + codebaseRect.y * camera.zoom}
+          appear={hasIntro ? (codebaseIn ? "in" : "hidden") : undefined}
         />
         {AIRBNB_ELEMENTS.map((el) => (
           <DesignFrame
@@ -1245,7 +1315,10 @@ export function HeroScreen({
             Back to Canvas
           </button>
         ) : (
-          <div className={cn("flex items-center gap-1.5 pr-1", TOP_GROUP)}>
+          <div
+            className={cn("flex items-center gap-1.5 pr-1", TOP_GROUP, titleIntro.className)}
+            style={titleIntro.style}
+          >
             <button
               type="button"
               aria-label="Home"
@@ -1257,7 +1330,7 @@ export function HeroScreen({
           </div>
         )}
 
-        <div className="flex items-center">
+        <div className={cn("flex items-center", actionsIntro.className)} style={actionsIntro.style}>
         <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
           <button
             type="button"
@@ -1305,7 +1378,8 @@ export function HeroScreen({
               opens linked to its repo, with the sync popover open) */}
           <GithubButton
             connected={githubSyncOpen}
-            defaultOpen={githubSyncOpen}
+            defaultOpen={githubSyncOpen && !hasIntro}
+            openOnCue={githubSyncOpen && githubIn}
             defaultRepoName={githubSyncOpen ? "hero-fairbnb" : "Hero-Interactive-Screen"}
             changes={githubChanges}
             pullRequest={pullRequest}
@@ -1331,7 +1405,13 @@ export function HeroScreen({
       {changesOpen && <CodeChangesPopover onClose={closeChanges} extra={sessionChanges} />}
 
       {/* Tool bar */}
-      <div className="absolute left-1/2 top-2.5 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md">
+      <div
+        className={cn(
+          "absolute left-1/2 top-2.5 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md",
+          toolbarIntro.className,
+        )}
+        style={toolbarIntro.style}
+      >
         {TOOLS.map(({ id, label, shortcut, icon: Icon }) => (
           <button
             key={id}
@@ -1359,7 +1439,12 @@ export function HeroScreen({
         ))}
       </div>
 
-      <LeftSidebar ref={sidebarRef} onLibraryDragStart={onLibraryDragStart} />
+      <LeftSidebar
+        ref={sidebarRef}
+        onLibraryDragStart={onLibraryDragStart}
+        className={sidebarIntro.className}
+        style={sidebarIntro.style}
+      />
 
       {libraryDrag && <ComponentDragGhost x={libraryDrag.x} y={libraryDrag.y} zoom={camera.zoom} />}
 
@@ -1417,7 +1502,11 @@ export function HeroScreen({
       )}
 
       {/* Zoom */}
-      <div className="absolute bottom-3 right-3 z-20 rounded-md border border-stone-700/10 bg-white/90 px-1.5 py-0.5 text-px-10 font-medium tabular-nums text-stone-700 shadow-[0_1px_2px_rgba(17,17,16,0.06)]">
+      {/* Not through cn(): tailwind-merge would drop the custom `text-px-10` size for `text-stone-700`. */}
+      <div
+        className={`absolute bottom-3 right-3 z-20 rounded-md border border-stone-700/10 bg-white/90 px-1.5 py-0.5 text-px-10 font-medium tabular-nums text-stone-700 shadow-[0_1px_2px_rgba(17,17,16,0.06)] ${zoomIntro.className ?? ""}`}
+        style={zoomIntro.style}
+      >
         {/* Relative to the fit, so it reads the same at any screen size (30% on opening). */}
         {Math.round((camera.zoom / fit) * 100)}%
       </div>
