@@ -1750,7 +1750,8 @@ function CanvasTitle() {
             menuOpen && "bg-stone-700/5",
           )}
         >
-          <Ellipsis className="size-4" />
+          {/* 1.7 on lucide's 24-unit grid: the same ~1.14px stroke as the other bar icons */}
+          <Ellipsis className="size-4" strokeWidth={1.7} />
         </button>
 
         {menuOpen && (
@@ -1833,7 +1834,7 @@ function HomeIcon() {
 
 function SelectIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12.7532 4.66913L1.829 1.1069C1.62722 1.0411 1.40557 1.09419 1.2555 1.24426C1.09984 1.39992 1.049 1.63194 1.12531 1.83843L5.16555 12.7708C5.21637 12.9083 5.34745 12.9996 5.49404 12.9996C5.64654 12.9996 5.78151 12.9009 5.82775 12.7556L7.3584 7.94503C7.44821 7.66276 7.65854 7.43484 7.93269 7.32268L12.7777 5.34062C12.9122 5.2856 13.0001 5.1547 13.0001 5.00938C13.0001 4.85447 12.9004 4.71715 12.7532 4.66913Z" />
     </svg>
   )

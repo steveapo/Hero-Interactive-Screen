@@ -197,9 +197,15 @@ const RAIL: { id: RailPanel; label: string; icon: RailIcon }[] = [
   { id: "help", label: "Help", icon: HelpIcon },
 ]
 
-/** Outline icon; slightly heavier stroke when its panel is open. */
+/**
+ * Rail icons share one rendered stroke weight with the toolbar icons: ~1.14px at 16px (1 unit on
+ * the 14-unit custom icons, 1.7 on lucide's 24-unit grid), ~1.33px when the panel is open.
+ */
+const LUCIDE_STROKE = { rest: 1.7, active: 2 }
+const CUSTOM_STROKE = { rest: 1, active: 7 / 6 }
+
 function LayersIcon({ active }: { active: boolean }) {
-  return <Layers className="size-4" strokeWidth={active ? 1.5 : 1.25} />
+  return <Layers className="size-4" strokeWidth={active ? LUCIDE_STROKE.active : LUCIDE_STROKE.rest} />
 }
 
 function GridIcon({ active }: { active: boolean }) {
@@ -210,20 +216,20 @@ function GridIcon({ active }: { active: boolean }) {
       viewBox="0 0 14 14"
       fill="none"
       stroke="currentColor"
-      strokeWidth={active ? 1.25 : 1}
+      strokeWidth={active ? CUSTOM_STROKE.active : CUSTOM_STROKE.rest}
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <rect x="1" y="1" width="5" height="5" rx="1" />
-      <rect x="8" y="1" width="5" height="5" rx="1" />
-      <rect x="1" y="8" width="5" height="5" rx="1" />
-      <rect x="8" y="8" width="5" height="5" rx="1" />
+      <rect x="1.5" y="1.5" width="4.5" height="4.5" rx="1" />
+      <rect x="8" y="1.5" width="4.5" height="4.5" rx="1" />
+      <rect x="1.5" y="8" width="4.5" height="4.5" rx="1" />
+      <rect x="8" y="8" width="4.5" height="4.5" rx="1" />
     </svg>
   )
 }
 
 function HelpIcon({ active }: { active: boolean }) {
-  return <MessageCircleQuestionMark className="size-4" strokeWidth={active ? 1.5 : 1.25} />
+  return <MessageCircleQuestionMark className="size-4" strokeWidth={active ? LUCIDE_STROKE.active : LUCIDE_STROKE.rest} />
 }
 
 function CodebaseIcon() {
