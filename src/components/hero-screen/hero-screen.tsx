@@ -1378,8 +1378,8 @@ export function HeroScreen({
         )}
 
         <div className={cn("flex items-center gap-1", actionsIntro.className)} style={actionsIntro.style}>
-        {/* History: Undo / Redo in a panel of their own, left of the actions panel */}
-        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
+        {/* History: Undo / Redo in a panel of their own, left of the actions panel (tighter 4px padding) */}
+        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP, "p-1")}>
           <button
             type="button"
             aria-label="Undo"
@@ -1397,8 +1397,8 @@ export function HeroScreen({
             <Tooltip label="Redo" />
           </button>
         </div>
-        {/* Actions: code diff, preview, GitHub, Share and the profile */}
-        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
+        {/* Actions: code diff, preview, GitHub, Share and the profile (tighter 4px padding) */}
+        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP, "p-1")}>
           <button
             type="button"
             aria-label="View code changes"
