@@ -74,9 +74,14 @@ export function CodebaseFrame({
   return (
     <div
       data-cursor-id="codebase-frame"
+      // The fade-in's length is set on the animation alone. Tailwind's `duration-700` would also set
+      // `transition-duration`, and with the default `transition-property: all` every change of
+      // left / top / size then eased over 700ms: the frame trailed the canvas while panning, slid
+      // back after release, and lagged behind the pointer when dragged. Like the design frames, it
+      // must follow the camera and the pointer immediately.
       className={
         appear === "in"
-          ? "absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in duration-700 motion-reduce:animate-none"
+          ? "absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in [--tw-animation-duration:700ms] motion-reduce:animate-none"
           : "absolute -translate-x-1/2 -translate-y-1/2"
       }
       style={{
@@ -85,6 +90,7 @@ export function CodebaseFrame({
         width: CODEBASE_WIDTH * zoom,
         height: CODEBASE_HEIGHT * zoom,
         visibility: appear === "hidden" ? "hidden" : undefined,
+        transition: "none",
       }}
       onPointerDown={(e) => {
         e.stopPropagation()
