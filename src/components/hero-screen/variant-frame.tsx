@@ -201,7 +201,7 @@ export function VariantFrame({
     >
       <span
         className="absolute -top-7 left-0 flex h-6 items-center overflow-hidden whitespace-nowrap font-medium"
-        style={{ fontSize: 13, color: LABEL_GREY, maxWidth: Math.max(width, 40) }}
+        style={{ fontSize: 10, color: LABEL_GREY, maxWidth: Math.max(width, 40) }}
       >
         <span className="truncate">{variant.name}</span>
       </span>

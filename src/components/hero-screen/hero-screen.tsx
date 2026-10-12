@@ -71,17 +71,17 @@ function elementRect(el: CanvasElement): CanvasRect {
 
 /** Screen-px gap between the Build Agent input and the frame / side panels / screen edges. */
 const COMPOSER_GAP = 12
-/** Top bar height: the input never slides under it. */
-const TOP_BAR_HEIGHT = 44
+/** Top bar height (8px margin + 46px groups): the input never slides under it. */
+const TOP_BAR_HEIGHT = 54
 /** Measured sizes (for the Build Agent chat's placement) update once a resize has settled (ms). */
 const MEASURE_SETTLE_MS = 120
-/** A top-bar group's panel: the side panels' background, border and shadow, in a 36px pill that
- * fits the 32px buttons (1px border + 1px padding). */
+/** A top-bar group's panel: the side panels' background, border and shadow, around the 32px
+ * buttons with the toolbar's 6px padding (46px tall with the 1px border). */
 const TOP_GROUP =
-  "h-9 rounded-xl border border-stone-700/10 bg-[#f2f2f1] p-px shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]"
+  "rounded-xl border border-stone-700/10 bg-[#f2f2f1] p-1.5 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]"
 
-/** The same groups over the Portal: flat (no border or shadow), a solid shade just darker than its stone-100 background. */
-const PORTAL_TOP_GROUP = "h-9 rounded-xl bg-[#ededeb] p-px"
+/** The same groups over the Portal: flat (no shadow, transparent border so it keeps the same height), a solid shade just darker than its stone-100 background. */
+const PORTAL_TOP_GROUP = "rounded-xl border border-transparent bg-[#ededeb] p-1.5"
 
 /**
  * Canvas entrance after leaving the Portal: elements start this fraction of their (screen-px)
@@ -1344,7 +1344,7 @@ export function HeroScreen({
           While the Portal is open it stays on top of it, with "Back to Canvas" on the left. */}
       <header
         className={cn(
-          "pointer-events-none absolute inset-x-0 top-0 flex h-11 items-center justify-between pl-1 pr-1.5 *:pointer-events-auto",
+          "pointer-events-none absolute inset-x-2 top-2 flex items-center justify-between *:pointer-events-auto",
           portalOpen && !portalClosing ? "z-[60]" : "z-40",
         )}
       >
@@ -1355,14 +1355,14 @@ export function HeroScreen({
             onClick={closePortal}
             // Not through cn(): tailwind-merge reads the custom `text-px-11` size as a text colour and
             // drops it in favour of `text-stone-900`.
-            className={`flex items-center gap-2 px-3.5 text-px-11 font-medium text-stone-900 hover:bg-[#e6e6e4] ${PORTAL_TOP_GROUP}`}
+            className={`flex h-[46px] items-center gap-2 px-3.5 text-px-11 font-medium text-stone-900 hover:bg-[#e6e6e4] ${PORTAL_TOP_GROUP}`}
           >
             <ArrowLeft className="size-3" strokeWidth={1.5} />
             Back to Canvas
           </button>
         ) : (
           <div
-            className={cn("flex items-center gap-1.5 pr-1", TOP_GROUP, titleIntro.className)}
+            className={cn("flex items-center gap-1.5", TOP_GROUP, titleIntro.className)}
             style={titleIntro.style}
           >
             <button
@@ -1453,7 +1453,7 @@ export function HeroScreen({
       {/* Tool bar */}
       <div
         className={cn(
-          "absolute left-1/2 top-2.5 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md",
+          "absolute left-1/2 top-2 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1.5 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md",
           toolbarIntro.className,
         )}
         style={toolbarIntro.style}
@@ -1801,7 +1801,7 @@ function Tooltip({ label }: { label: string }) {
 
 function UndoIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 2 1.5 4.5 4 7" />
       <path d="M1.5 4.5h7a3.5 3.5 0 0 1 0 7H5" />
     </svg>
@@ -1810,7 +1810,7 @@ function UndoIcon() {
 
 function RedoIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M10 2l2.5 2.5L10 7" />
       <path d="M12.5 4.5h-7a3.5 3.5 0 0 0 0 7H9" />
     </svg>
@@ -1819,7 +1819,7 @@ function RedoIcon() {
 
 function HomeIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1.19629 7.89293L6.99986 2.08936L12.8034 7.89293" />
       <path d="M2.98193 6.10742V11.911H11.0176V6.10742" />
     </svg>
@@ -1865,7 +1865,7 @@ function TerminalIcon() {
 
 function PlayCircleIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true">
       <circle cx="7" cy="7" r="6.5" fill="currentColor" />
       <path d="M5.6 4.4v5.2L9.6 7z" fill="white" />
     </svg>

@@ -37,14 +37,14 @@ export const LeftSidebar = memo(function LeftSidebar({
       ref={ref}
       style={style}
       className={cn(
-        "absolute left-1 top-[46px] z-30 flex overflow-hidden rounded-xl border border-stone-700/10 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]",
+        "absolute left-2 top-[62px] z-30 flex overflow-hidden rounded-xl border border-stone-700/10 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]",
         PANEL_BG,
-        open && "bottom-1",
+        open && "bottom-2",
         className,
       )}
     >
       {/* Rail */}
-      <nav className={cn("flex flex-col items-center gap-1 p-1", open && "border-r border-stone-700/10")}>
+      <nav className={cn("flex flex-col items-center gap-0.5 p-1.5", open && "border-r border-stone-700/10")}>
         {RAIL.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -54,7 +54,7 @@ export const LeftSidebar = memo(function LeftSidebar({
             aria-pressed={panel === id}
             onClick={() => setPanel((current) => (current === id ? null : id))}
             className={cn(
-              "flex size-8 items-center justify-center rounded-[6px] text-stone-700 transition-colors",
+              "flex size-8 items-center justify-center rounded-lg text-stone-700 transition-colors",
               panel === id ? "bg-mi-selected text-stone-900" : "hover:bg-stone-700/5",
             )}
           >
@@ -205,8 +205,8 @@ function LayersIcon({ active }: { active: boolean }) {
 function GridIcon({ active }: { active: boolean }) {
   return (
     <svg
-      width="15"
-      height="15"
+      width="16"
+      height="16"
       viewBox="0 0 14 14"
       fill="none"
       stroke="currentColor"

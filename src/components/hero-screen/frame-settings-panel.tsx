@@ -109,7 +109,7 @@ export function SettingsPanelShell({
   return (
     <aside
       ref={ref}
-      className="absolute right-1.5 top-[46px] z-30 flex max-h-[calc(100%-56px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-stone-700/10 bg-[#f5f5f4] pb-6 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)] animate-in fade-in slide-in-from-right-1 duration-150"
+      className="absolute right-2 top-[62px] z-30 flex max-h-[calc(100%-70px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-stone-700/10 bg-[#f5f5f4] pb-6 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)] animate-in fade-in slide-in-from-right-1 duration-150"
     >
       {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-stone-700/10 px-3 py-2.5">

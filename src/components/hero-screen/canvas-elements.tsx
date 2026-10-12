@@ -83,7 +83,7 @@ export function DrawnFrame({
     >
       <span
         className="absolute -top-7 left-0 flex h-6 items-center whitespace-nowrap font-medium transition-colors"
-        style={{ fontSize: 13, color: selected ? SELECT_BLUE : LABEL_GREY }}
+        style={{ fontSize: 10, color: selected ? SELECT_BLUE : LABEL_GREY }}
       >
         {el.name}
       </span>

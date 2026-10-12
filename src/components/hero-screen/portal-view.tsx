@@ -205,8 +205,8 @@ export const PortalView = memo(function PortalView({
   return (
     <div
       className={cn(
-        // pt-11: room for the canvas top bar, which stays over the Portal as its toolbar.
-        "absolute inset-0 z-50 flex bg-stone-100 pt-11",
+        // pt-[62px]: room for the canvas top bar (8px margin + 46px groups + 8px gap), which stays over the Portal as its toolbar.
+        "absolute inset-0 z-50 flex bg-stone-100 pt-[62px]",
         // Closing: fade out (the canvas waits for this before its elements come in).
         closing ? "pointer-events-none" : "animate-in fade-in duration-150",
       )}

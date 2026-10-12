@@ -80,7 +80,7 @@ export function CodebaseFrame({
       <div className="absolute inset-x-0 -top-7 flex h-6 items-center justify-between">
         <span
           className="flex items-center gap-1.5 font-medium transition-colors"
-          style={{ fontSize: 13, color: selected ? CODEBASE_GREEN : LABEL_GREY }}
+          style={{ fontSize: 10, color: selected ? CODEBASE_GREEN : LABEL_GREY }}
         >
           <CodebaseIcon />
           Codebase
@@ -102,15 +102,23 @@ export function CodebaseFrame({
       </div>
 
       {/*
-        The desktop viewport: the live, functional Fairbnb app. It is authored in cqw units, so
-        the screen is a size container and the app scales with zoom.
+        The desktop viewport: the live, functional Fairbnb app. Like the design frames, it is laid
+        out once at its natural 1440×900 canvas size (a size container, as the app is authored in
+        cqw) and scaled with zoom by a transform. Its layout never changes with zoom or pan, so the
+        app stays fixed inside the frame while the canvas is dragged around, instead of re-flowing
+        and snapping to new pixel positions.
       */}
-      <div className="size-full cursor-default overflow-hidden rounded-md bg-white shadow-[0_0_0_1px_rgba(17,17,16,0.12),0_12px_32px_-12px_rgba(17,17,16,0.3)]">
+      <div className="relative size-full cursor-default overflow-hidden rounded-md bg-white shadow-[0_0_0_1px_rgba(17,17,16,0.12),0_12px_32px_-12px_rgba(17,17,16,0.3)]">
         <div
-          className="@container size-full overflow-hidden bg-white"
-          style={covered ? { contentVisibility: "hidden" } : undefined}
+          className="absolute left-0 top-0 origin-top-left"
+          style={{ width: CODEBASE_WIDTH, height: CODEBASE_HEIGHT, transform: `scale(${zoom})` }}
         >
-          {appear !== "hidden" && <AirbnbScreen introSpeed={CODEBASE_INTRO_SPEED} />}
+          <div
+            className="@container size-full overflow-hidden bg-white"
+            style={covered ? { contentVisibility: "hidden" } : undefined}
+          >
+            {appear !== "hidden" && <AirbnbScreen introSpeed={CODEBASE_INTRO_SPEED} />}
+          </div>
         </div>
       </div>
 
@@ -153,7 +161,7 @@ function FrameAction({ label, children }: { label: string; children: React.React
 
 function CodebaseIcon() {
   return (
-    <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12.08 1H1.92C1.41 1 1 1.41 1 1.92v10.15c0 .51.41.92.92.92h10.15c.51 0 .92-.41.92-.92V1.92C13 1.41 12.59 1 12.08 1Z" />
       <path d="M1 3.5h12" />
       <path d="m4.13 6.75 1.5 1.5-1.5 1.5" />
