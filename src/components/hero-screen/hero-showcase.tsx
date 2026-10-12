@@ -62,16 +62,11 @@ const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_
 /**
  * A window on the Desktop Area: rounded, with a shadow; positioned by its `placement` classes.
  * No CSS border here: a border on the clipping box thins out and turns jagged at the corners where
- * the content is clipped. The outline is drawn on top instead (see WINDOW_OUTLINE).
+ * the content is clipped. The outline is the first shadow instead: a solid 1px #c9c7c3 ring just
+ * outside the clipped edge, so it never blends with the content or the wallpaper.
  */
 const DESKTOP_WINDOW =
-  "absolute flex flex-col overflow-hidden rounded-xl shadow-[0_24px_60px_-20px_rgba(17,17,16,0.35),0_2px_6px_rgba(17,17,16,0.08)]"
-
-/**
- * The window's outline: one solid grey 1px ring over the window (above all its content), following
- * the window's own rounded edge, so it keeps the same width and a smooth curve all the way round.
- */
-const WINDOW_OUTLINE = "pointer-events-none absolute inset-0 z-[100] rounded-[inherit] border border-[#c9c7c3]"
+  "absolute flex flex-col overflow-hidden rounded-xl shadow-[0_0_0_1px_#c9c7c3,0_24px_60px_-20px_rgba(17,17,16,0.35),0_2px_6px_rgba(17,17,16,0.08)]"
 
 /**
  * The homepage hero's showcase: a "Desktop Area" holding two windows.
@@ -279,7 +274,6 @@ function DesktopWindow({
       >
         {children}
       </SafariChrome>
-      <span aria-hidden="true" className={WINDOW_OUTLINE} />
     </div>
   )
 }
