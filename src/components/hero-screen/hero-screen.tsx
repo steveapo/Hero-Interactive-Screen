@@ -1377,14 +1377,14 @@ export function HeroScreen({
           </div>
         )}
 
-        <div className={cn("flex items-center", actionsIntro.className)} style={actionsIntro.style}>
+        <div className={cn("flex items-center gap-1", actionsIntro.className)} style={actionsIntro.style}>
+        {/* History: Undo / Redo in a panel of their own, left of the actions panel */}
         <div
           className={cn(
             "relative flex items-center gap-1",
             portalOpen && !portalClosing ? PORTAL_TOP_GROUP : cn(TOP_GROUP, "border-transparent"),
           )}
         >
-          {/* Border: a white highlight, brightest along the top, fading out down the sides */}
           {!(portalOpen && !portalClosing) && <FadingWhiteBorder />}
           <button
             type="button"
@@ -1397,11 +1397,21 @@ export function HeroScreen({
           <button
             type="button"
             aria-label="Redo"
-            className="group relative mr-2 flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+            className="group relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
           >
             <RedoIcon />
             <Tooltip label="Redo" />
           </button>
+        </div>
+        {/* Actions: code diff, preview, GitHub, Share and the profile */}
+        <div
+          className={cn(
+            "relative flex items-center gap-1",
+            portalOpen && !portalClosing ? PORTAL_TOP_GROUP : cn(TOP_GROUP, "border-transparent"),
+          )}
+        >
+          {/* Border: a white highlight, brightest along the top, fading out down the sides */}
+          {!(portalOpen && !portalClosing) && <FadingWhiteBorder />}
           <button
             type="button"
             aria-label="View code changes"
