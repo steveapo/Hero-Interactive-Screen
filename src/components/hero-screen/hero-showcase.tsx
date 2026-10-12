@@ -50,9 +50,19 @@ const ELEMENTS_TIME_SCALE = 0.8
 /** The diff rows start coming in once the Code Changes window is mostly open (at its slower pace). */
 const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_TIME_SCALE
 
-/** A window on the Desktop Area: rounded, with a shadow; positioned by its `placement` classes. */
+/**
+ * A window on the Desktop Area: rounded, with a shadow; positioned by its `placement` classes.
+ * No CSS border here: a border on the clipping box thins out and turns jagged at the corners where
+ * the content is clipped. The outline is drawn on top instead (see WINDOW_OUTLINE).
+ */
 const DESKTOP_WINDOW =
-  "absolute flex flex-col overflow-hidden rounded-xl border border-black/10 shadow-[0_24px_60px_-20px_rgba(17,17,16,0.35),0_2px_6px_rgba(17,17,16,0.08)]"
+  "absolute flex flex-col overflow-hidden rounded-xl shadow-[0_24px_60px_-20px_rgba(17,17,16,0.35),0_2px_6px_rgba(17,17,16,0.08)]"
+
+/**
+ * The window's outline: one solid grey 1px ring over the window (above all its content), following
+ * the window's own rounded edge, so it keeps the same width and a smooth curve all the way round.
+ */
+const WINDOW_OUTLINE = "pointer-events-none absolute inset-0 z-[100] rounded-[inherit] border border-[#c9c7c3]"
 
 /**
  * The homepage hero's showcase: a "Desktop Area" holding two windows.
@@ -248,9 +258,17 @@ function DesktopWindow({
       }}
       className={cn(DESKTOP_WINDOW, placement)}
     >
-      <SafariChrome compact title={title} active={active} onBarPointerDown={startMove}>
+      <SafariChrome
+        compact
+        title={title}
+        active={active}
+        onBarPointerDown={startMove}
+        // Rounded like the window, so the content's own edge follows the same curve as the clip.
+        className="rounded-[inherit]"
+      >
         {children}
       </SafariChrome>
+      <span aria-hidden="true" className={WINDOW_OUTLINE} />
     </div>
   )
 }
