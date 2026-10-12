@@ -86,8 +86,7 @@ export function SiteHero({ children }: { children: ReactNode }) {
         </div>
 
         {/* Product window: the live canvas build. Grows past the column as the page scrolls. */}
-        {/* Border: grey at 20% opacity. */}
-        <ScrollGrowWindow className="mt-[clamp(2.5rem,5vw,4rem)] rounded-[clamp(0.625rem,0.8vw,0.75rem)] border border-stone-500/20 bg-mi-canvas shadow-[0_30px_80px_-30px_rgba(40,50,20,0.35)]">
+        <ScrollGrowWindow className="mt-[clamp(2.5rem,5vw,4rem)] rounded-[clamp(0.625rem,0.8vw,0.75rem)] bg-mi-canvas shadow-[0_30px_80px_-30px_rgba(40,50,20,0.35)]">
           {children}
         </ScrollGrowWindow>
       </div>
