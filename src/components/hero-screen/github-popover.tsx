@@ -94,9 +94,10 @@ export const GithubButton = memo(function GithubButton({
       >
         {/* Same 16px as every other top-bar / toolbar / sidebar icon */}
         <GithubIcon size={16} />
-        {/* Synced: green dot */}
+        {/* Synced: green dot on the icon's bottom-right corner (the 16px icon spans 8–24px of the
+            32px button), ringed in the panel colour so it reads as a badge */}
         {synced && (
-          <span className="absolute right-[3px] top-1/2 size-[5px] -translate-y-1/2 rounded-full bg-green-500 animate-in zoom-in-0 duration-200" />
+          <span className="absolute bottom-[6px] right-[6px] size-[6px] rounded-full bg-green-500 ring-[1.5px] ring-[#f2f2f1] animate-in zoom-in-0 duration-200" />
         )}
       </button>
 

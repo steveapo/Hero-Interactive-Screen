@@ -75,10 +75,9 @@ const COMPOSER_GAP = 12
 const TOP_BAR_HEIGHT = 46
 /** Measured sizes (for the Build Agent chat's placement) update once a resize has settled (ms). */
 const MEASURE_SETTLE_MS = 120
-/** A top-bar group's panel: the side panels' background, border and shadow, around the 32px
- * buttons with the toolbars' 4px padding (42px tall with the 1px border). */
-const TOP_GROUP =
-  "rounded-xl border border-stone-700/10 bg-[#f2f2f1] p-1 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]"
+/** A top-bar group's panel: flat, no visible border or shadow (the 1px border is transparent so the
+ * size holds), around the 32px buttons with the toolbars' 4px padding (42px tall). */
+const TOP_GROUP = "rounded-xl border border-transparent bg-[#f2f2f1] p-1"
 
 /** The same groups over the Portal: flat (no shadow, transparent border so it keeps the same height), a solid shade just darker than its stone-100 background. */
 const PORTAL_TOP_GROUP = "rounded-xl border border-transparent bg-[#ededeb] p-1"
@@ -1458,7 +1457,7 @@ export function HeroScreen({
       {/* Tool bar */}
       <div
         className={cn(
-          "absolute left-1/2 top-1 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md",
+          "absolute left-1/2 top-1 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-transparent bg-white/90 p-1 backdrop-blur-md",
           toolbarIntro.className,
         )}
         style={toolbarIntro.style}
@@ -1556,7 +1555,7 @@ export function HeroScreen({
       {/* Zoom */}
       {/* Not through cn(): tailwind-merge would drop the custom `text-px-10` size for `text-stone-700`. */}
       <div
-        className={`absolute bottom-3 right-3 z-20 rounded-md border border-stone-700/10 bg-white/90 px-1.5 py-0.5 text-px-10 font-medium tabular-nums text-stone-700 shadow-[0_1px_2px_rgba(17,17,16,0.06)] ${zoomIntro.className ?? ""}`}
+        className={`absolute bottom-3 right-3 z-20 rounded-md border border-transparent bg-white/90 px-1.5 py-0.5 text-px-10 font-medium tabular-nums text-stone-700 ${zoomIntro.className ?? ""}`}
         style={zoomIntro.style}
       >
         {/* Relative to the fit, so it reads the same at any screen size (30% on opening). */}

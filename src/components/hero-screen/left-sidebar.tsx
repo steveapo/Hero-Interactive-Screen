@@ -37,7 +37,7 @@ export const LeftSidebar = memo(function LeftSidebar({
       ref={ref}
       style={style}
       className={cn(
-        "absolute left-1 top-[50px] z-30 flex overflow-hidden rounded-xl border border-stone-700/10 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]",
+        "absolute left-1 top-[50px] z-30 flex overflow-hidden rounded-xl border border-transparent",
         PANEL_BG,
         open && "bottom-1",
         className,
