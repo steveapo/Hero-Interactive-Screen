@@ -312,9 +312,16 @@ export function DesignFrame({
 
       {selected && (
         <>
+          {/* A frame with its own border (an inset hairline, or the artwork's own border on a bare
+              frame) gets its selection drawn over that border, following its corners, so there's
+              one line instead of the hairline plus the selection just outside it. Others are
+              outlined just outside their edge. */}
           <div
-            className="pointer-events-none absolute -inset-px"
-            style={{ border: `1px solid ${SELECT_BLUE}` }}
+            className={cn("pointer-events-none absolute", border ? "inset-0" : "-inset-px")}
+            style={{
+              border: `1px solid ${SELECT_BLUE}`,
+              borderRadius: border && radius ? radius * zoom : undefined,
+            }}
           />
           <span
             className="absolute left-1/2 top-full mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-[2px] px-1 py-px font-mono font-semibold tabular-nums text-white"

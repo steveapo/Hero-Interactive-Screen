@@ -159,8 +159,10 @@ export function CodebaseFrame({
 
       {selected && (
         <>
+          {/* Drawn exactly over the frame's 1px grey ring (outside its rounded-md, 6px, corners), with
+              the ring's outer 7px radius, so the grey never peeks out at the corners. */}
           <div
-            className="pointer-events-none absolute -inset-px"
+            className="pointer-events-none absolute -inset-px rounded-[7px]"
             style={{ border: `1px solid ${CODEBASE_GREEN}` }}
           />
           <span
