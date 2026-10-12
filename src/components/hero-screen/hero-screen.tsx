@@ -1379,13 +1379,7 @@ export function HeroScreen({
 
         <div className={cn("flex items-center gap-1", actionsIntro.className)} style={actionsIntro.style}>
         {/* History: Undo / Redo in a panel of their own, left of the actions panel */}
-        <div
-          className={cn(
-            "relative flex items-center gap-1",
-            portalOpen && !portalClosing ? PORTAL_TOP_GROUP : cn(TOP_GROUP, "border-transparent"),
-          )}
-        >
-          {!(portalOpen && !portalClosing) && <FadingWhiteBorder />}
+        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
           <button
             type="button"
             aria-label="Undo"
@@ -1404,14 +1398,7 @@ export function HeroScreen({
           </button>
         </div>
         {/* Actions: code diff, preview, GitHub, Share and the profile */}
-        <div
-          className={cn(
-            "relative flex items-center gap-1",
-            portalOpen && !portalClosing ? PORTAL_TOP_GROUP : cn(TOP_GROUP, "border-transparent"),
-          )}
-        >
-          {/* Border: a white highlight, brightest along the top, fading out down the sides */}
-          {!(portalOpen && !portalClosing) && <FadingWhiteBorder />}
+        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
           <button
             type="button"
             aria-label="View code changes"
@@ -1804,26 +1791,6 @@ const TOOLS: { id: Tool; label: string; shortcut: string; icon: () => React.JSX.
   { id: "text", label: "Text", shortcut: "T", icon: TextIcon },
   { id: "code", label: "Portal", shortcut: "P", icon: TerminalIcon },
 ]
-
-/**
- * A 1px border over its (relative, rounded) parent that is white along the top and fades to
- * transparent down the sides. The mask keeps only the 1px ring of the gradient (content box cut out).
- */
-function FadingWhiteBorder() {
-  return (
-    <span
-      aria-hidden="true"
-      className="pointer-events-none absolute -inset-px rounded-[inherit] p-px"
-      style={{
-        background: "linear-gradient(to bottom, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.5) 45%, rgba(255,255,255,0) 100%)",
-        WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
-        WebkitMaskComposite: "xor",
-        mask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
-        maskComposite: "exclude",
-      }}
-    />
-  )
-}
 
 /** Hover/focus label shown below a top-bar control. Parent needs `group relative`. */
 function Tooltip({ label }: { label: string }) {
