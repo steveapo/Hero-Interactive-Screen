@@ -71,17 +71,17 @@ function elementRect(el: CanvasElement): CanvasRect {
 
 /** Screen-px gap between the Build Agent input and the frame / side panels / screen edges. */
 const COMPOSER_GAP = 12
-/** Top bar height (4px margin + 46px groups): the input never slides under it. */
-const TOP_BAR_HEIGHT = 50
+/** Top bar height (4px margin + 42px groups): the input never slides under it. */
+const TOP_BAR_HEIGHT = 46
 /** Measured sizes (for the Build Agent chat's placement) update once a resize has settled (ms). */
 const MEASURE_SETTLE_MS = 120
 /** A top-bar group's panel: the side panels' background, border and shadow, around the 32px
- * buttons with the toolbar's 6px padding (46px tall with the 1px border). */
+ * buttons with the toolbars' 4px padding (42px tall with the 1px border). */
 const TOP_GROUP =
-  "rounded-xl border border-stone-700/10 bg-[#f2f2f1] p-1.5 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]"
+  "rounded-xl border border-stone-700/10 bg-[#f2f2f1] p-1 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]"
 
 /** The same groups over the Portal: flat (no shadow, transparent border so it keeps the same height), a solid shade just darker than its stone-100 background. */
-const PORTAL_TOP_GROUP = "rounded-xl border border-transparent bg-[#ededeb] p-1.5"
+const PORTAL_TOP_GROUP = "rounded-xl border border-transparent bg-[#ededeb] p-1"
 
 /**
  * Canvas entrance after leaving the Portal: elements start this fraction of their (screen-px)
@@ -1356,7 +1356,7 @@ export function HeroScreen({
             onClick={closePortal}
             // Not through cn(): tailwind-merge reads the custom `text-px-11` size as a text colour and
             // drops it in favour of `text-stone-900`.
-            className={`flex h-[46px] items-center gap-2 px-3.5 text-px-11 font-medium text-stone-900 hover:bg-[#e6e6e4] ${PORTAL_TOP_GROUP}`}
+            className={`flex h-[42px] items-center gap-2 px-3.5 text-px-11 font-medium text-stone-900 hover:bg-[#e6e6e4] ${PORTAL_TOP_GROUP}`}
           >
             <ArrowLeft className="size-3" strokeWidth={1.5} />
             Back to Canvas
@@ -1378,8 +1378,8 @@ export function HeroScreen({
         )}
 
         <div className={cn("flex items-center gap-1", actionsIntro.className)} style={actionsIntro.style}>
-        {/* History: Undo / Redo in a panel of their own, left of the actions panel (tighter 4px padding) */}
-        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP, "p-1")}>
+        {/* History: Undo / Redo in a panel of their own, left of the actions panel */}
+        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
           <button
             type="button"
             aria-label="Undo"
@@ -1397,8 +1397,8 @@ export function HeroScreen({
             <Tooltip label="Redo" />
           </button>
         </div>
-        {/* Actions: code diff, preview, GitHub, Share and the profile (tighter 4px padding) */}
-        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP, "p-1")}>
+        {/* Actions: code diff, preview, GitHub, Share and the profile */}
+        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
           <button
             type="button"
             aria-label="View code changes"
@@ -1458,7 +1458,7 @@ export function HeroScreen({
       {/* Tool bar */}
       <div
         className={cn(
-          "absolute left-1/2 top-1 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1.5 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md",
+          "absolute left-1/2 top-1 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md",
           toolbarIntro.className,
         )}
         style={toolbarIntro.style}
