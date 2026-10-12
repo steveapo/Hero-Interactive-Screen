@@ -18,8 +18,17 @@ export function setScreenScale(host: Element, scale: number) {
   scales.set(host, scale)
 }
 
-/** The on-screen scale of `el`'s layout px: < 1 while its host draws it smaller, else 1. */
+/**
+ * The on-screen scale of `el`'s layout px: < 1 while a host draws it smaller, else 1. Hosts can
+ * nest (the hero window's growth scale around the Canvas window's density scale): their scales
+ * multiply.
+ */
 export function screenScale(el: Element | null | undefined): number {
-  const host = el?.closest(`[${SCREEN_SCALE_ATTR}]`)
-  return (host && scales.get(host)) || 1
+  let k = 1
+  let host = el?.closest(`[${SCREEN_SCALE_ATTR}]`) ?? null
+  while (host) {
+    k *= scales.get(host) || 1
+    host = host.parentElement?.closest(`[${SCREEN_SCALE_ATTR}]`) ?? null
+  }
+  return k
 }

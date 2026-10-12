@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
 import { CodeChangesPanel } from "./code-changes-popover"
 import { trackDrag } from "./drag"
@@ -14,6 +15,14 @@ type IntroPhase = "waiting" | "play"
 
 /** Share of the Desktop Area that must be on screen before the load-in plays. */
 const INTRO_VISIBLE_THRESHOLD = 0.35
+
+/**
+ * The Canvas window shows the product as on a larger screen: its contents are laid out this much
+ * bigger and drawn back down to fit. The canvas keeps its composition (it scales with its width);
+ * the bars, panels and labels come out proportionally as slim as in the real product, instead of
+ * a desktop-sized UI crammed into a ~1000px window.
+ */
+const CANVAS_DENSITY = 0.85
 
 /**
  * The load-in, in ms from when it starts. Each step begins as the one before it is settling, so
@@ -130,15 +139,17 @@ export function HeroShowcase({ className }: { className?: string }) {
         openDelay={INTRO.canvasWindowAt}
       >
         <div className="flex min-h-0 flex-1 flex-col bg-mi-canvas">
-          <HeroScreen
-            className="h-auto min-h-0 flex-1"
-            start="built"
-            githubSyncOpen
-            portalEnabled={false}
-            toolsEnabled={false}
-            scrollPans={false}
-            loadIntro={canvasIntro}
-          />
+          <DensityScale scale={CANVAS_DENSITY}>
+            <HeroScreen
+              className="h-auto min-h-0 flex-1"
+              start="built"
+              githubSyncOpen
+              portalEnabled={false}
+              toolsEnabled={false}
+              scrollPans={false}
+              loadIntro={canvasIntro}
+            />
+          </DensityScale>
         </div>
       </DesktopWindow>
 
@@ -269,6 +280,35 @@ function DesktopWindow({
         {children}
       </SafariChrome>
       <span aria-hidden="true" className={WINDOW_OUTLINE} />
+    </div>
+  )
+}
+
+/**
+ * Draws its contents at `scale`: they're laid out 1 / scale as large as the space they fill (pure
+ * CSS percentages, so it follows every resize) and scaled back down to it. The scale is registered
+ * as a screen-scale host (see lib/screen-scale), so the canvas's pointer math (dragging, marquee,
+ * zoom, drops) stays exact; it multiplies with the hero window's own growth scale around it.
+ */
+function DensityScale({ scale, children }: { scale: number; children: ReactNode }) {
+  const contentRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    if (contentRef.current) setScreenScale(contentRef.current, scale)
+  }, [scale])
+  return (
+    <div className="relative min-h-0 flex-1 overflow-hidden">
+      <div
+        ref={contentRef}
+        {...{ [SCREEN_SCALE_ATTR]: "" }}
+        className="absolute left-0 top-0 flex origin-top-left flex-col"
+        style={{
+          width: `${100 / scale}%`,
+          height: `${100 / scale}%`,
+          transform: `scale(${scale})`,
+        }}
+      >
+        {children}
+      </div>
     </div>
   )
 }
