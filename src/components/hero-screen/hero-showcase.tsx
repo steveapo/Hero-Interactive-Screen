@@ -104,7 +104,8 @@ export function HeroShowcase({ className }: { className?: string }) {
       ref={desktopRef}
       data-desktop-area
       className={cn(
-        "relative flex min-h-0 w-full flex-1 overflow-hidden bg-[radial-gradient(ellipse_at_30%_20%,#e4e9d4_0%,#d6d3cd_55%,#c9c5bf_100%)]",
+        // Desktop wallpaper: covers the whole Desktop Area, centred (the old gradient's middle tone shows while it loads).
+        "relative flex min-h-0 w-full flex-1 overflow-hidden bg-[#d6d3cd] bg-[url(/hero/desktop-bg.avif)] bg-cover bg-center bg-no-repeat",
         className,
       )}
     >
