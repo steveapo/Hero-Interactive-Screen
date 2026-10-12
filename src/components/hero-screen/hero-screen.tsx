@@ -71,8 +71,8 @@ function elementRect(el: CanvasElement): CanvasRect {
 
 /** Screen-px gap between the Build Agent input and the frame / side panels / screen edges. */
 const COMPOSER_GAP = 12
-/** Top bar height (8px margin + 46px groups): the input never slides under it. */
-const TOP_BAR_HEIGHT = 54
+/** Top bar height (4px margin + 46px groups): the input never slides under it. */
+const TOP_BAR_HEIGHT = 50
 /** Measured sizes (for the Build Agent chat's placement) update once a resize has settled (ms). */
 const MEASURE_SETTLE_MS = 120
 /** A top-bar group's panel: the side panels' background, border and shadow, around the 32px
@@ -1291,11 +1291,12 @@ export function HeroScreen({
         )}
       </div>
 
-      {/* Edge fade: frames dissolve into the canvas colour at the viewport's borders. Above the
-          canvas content (frames go up to z-12), below the sidebar, panels and top bar. */}
+      {/* Edge fade: frames dissolve into the canvas colour over the last 40px at each of the
+          viewport's borders. Above the canvas content (frames go up to z-12), below the sidebar,
+          panels and top bar. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 z-[15] shadow-[inset_0_0_8px_3px_var(--color-mi-canvas)]"
+        className="pointer-events-none absolute inset-0 z-[15] bg-[linear-gradient(to_right,var(--color-mi-canvas),transparent_40px),linear-gradient(to_left,var(--color-mi-canvas),transparent_40px),linear-gradient(to_bottom,var(--color-mi-canvas),transparent_40px),linear-gradient(to_top,var(--color-mi-canvas),transparent_40px)]"
       />
 
       {marquee && (
@@ -1344,7 +1345,7 @@ export function HeroScreen({
           While the Portal is open it stays on top of it, with "Back to Canvas" on the left. */}
       <header
         className={cn(
-          "pointer-events-none absolute inset-x-2 top-2 flex items-center justify-between *:pointer-events-auto",
+          "pointer-events-none absolute inset-x-1 top-1 flex items-center justify-between *:pointer-events-auto",
           portalOpen && !portalClosing ? "z-[60]" : "z-40",
         )}
       >
@@ -1460,7 +1461,7 @@ export function HeroScreen({
       {/* Tool bar */}
       <div
         className={cn(
-          "absolute left-1/2 top-2 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1.5 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md",
+          "absolute left-1/2 top-1 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1.5 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md",
           toolbarIntro.className,
         )}
         style={toolbarIntro.style}
