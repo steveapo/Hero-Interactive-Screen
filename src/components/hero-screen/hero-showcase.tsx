@@ -105,7 +105,7 @@ export function HeroShowcase({ className }: { className?: string }) {
       data-desktop-area
       className={cn(
         // Desktop wallpaper (bg.png from the canvas): covers the whole Desktop Area, centred; its dark tone shows while it loads.
-        "relative flex min-h-0 w-full flex-1 overflow-hidden bg-[#22211b] bg-[url(/hero/bg.png)] bg-cover bg-center bg-no-repeat",
+        "relative flex min-h-0 w-full flex-1 overflow-hidden bg-[#12120e] bg-[url(/hero/bg.png)] bg-cover bg-center bg-no-repeat",
         className,
       )}
     >
