@@ -71,16 +71,16 @@ function elementRect(el: CanvasElement): CanvasRect {
 
 /** Screen-px gap between the Build Agent input and the frame / side panels / screen edges. */
 const COMPOSER_GAP = 12
-/** Top bar height (4px margin + 42px groups): the input never slides under it. */
-const TOP_BAR_HEIGHT = 46
+/** Top bar height (4px margin + 38px groups): the input never slides under it. */
+const TOP_BAR_HEIGHT = 42
 /** Measured sizes (for the Build Agent chat's placement) update once a resize has settled (ms). */
 const MEASURE_SETTLE_MS = 120
 /** A top-bar group's panel: flat, no visible border or shadow (the 1px border is transparent so the
- * size holds), around the 32px buttons with the toolbars' 4px padding (42px tall). */
-const TOP_GROUP = "rounded-xl border border-transparent bg-[#f2f2f1] p-1"
+ * size holds), around the 32px buttons with the floating bars' 2px padding (38px tall). */
+const TOP_GROUP = "rounded-xl border border-transparent bg-[#f2f2f1] p-0.5"
 
 /** The same groups over the Portal: flat (no shadow, transparent border so it keeps the same height), a solid shade just darker than its stone-100 background. */
-const PORTAL_TOP_GROUP = "rounded-xl border border-transparent bg-[#ededeb] p-1"
+const PORTAL_TOP_GROUP = "rounded-xl border border-transparent bg-[#ededeb] p-0.5"
 
 /**
  * Canvas entrance after leaving the Portal: elements start this fraction of their (screen-px)
@@ -1457,7 +1457,7 @@ export function HeroScreen({
       {/* Tool bar */}
       <div
         className={cn(
-          "absolute left-1/2 top-1 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-transparent bg-white/90 p-1 backdrop-blur-md",
+          "absolute left-1/2 top-1 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-transparent bg-white/90 p-0.5 backdrop-blur-md",
           toolbarIntro.className,
         )}
         style={toolbarIntro.style}

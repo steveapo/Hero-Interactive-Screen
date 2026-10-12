@@ -37,14 +37,14 @@ export const LeftSidebar = memo(function LeftSidebar({
       ref={ref}
       style={style}
       className={cn(
-        "absolute left-1 top-[50px] z-30 flex overflow-hidden rounded-xl border border-transparent",
+        "absolute left-1 top-[46px] z-30 flex overflow-hidden rounded-xl border border-transparent",
         PANEL_BG,
         open && "bottom-1",
         className,
       )}
     >
       {/* Rail */}
-      <nav className={cn("flex flex-col items-center gap-0.5 p-1", open && "border-r border-stone-700/10")}>
+      <nav className={cn("flex flex-col items-center gap-0.5 p-0.5", open && "border-r border-stone-700/10")}>
         {RAIL.map(({ id, label, icon: Icon }) => (
           <button
             key={id}

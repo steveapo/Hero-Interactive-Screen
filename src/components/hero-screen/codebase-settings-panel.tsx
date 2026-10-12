@@ -22,7 +22,7 @@ export function CodebaseSettingsPanel({ onOpenBuildMode }: { onOpenBuildMode?: (
   }
 
   return (
-    <aside className="absolute right-1 top-[50px] z-30 flex w-[326px] flex-col rounded-xl border border-transparent bg-[#f2f2f1] p-2.5 pb-3 animate-in fade-in slide-in-from-right-1 duration-150">
+    <aside className="absolute right-1 top-[46px] z-30 flex w-[326px] flex-col rounded-xl border border-transparent bg-[#f2f2f1] p-2.5 pb-3 animate-in fade-in slide-in-from-right-1 duration-150">
       <h2 className="flex items-center gap-2 pt-1 text-[13px] font-semibold leading-4 text-stone-900">
         <CodebaseIcon />
         Codebase
