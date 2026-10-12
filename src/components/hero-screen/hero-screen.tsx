@@ -1437,13 +1437,13 @@ export function HeroScreen({
             changes={shareChanges}
           />
         </div>
-          {/* The profile avatar sits outside the actions group: the panel ends at Share. */}
-          <span className="ml-1.5 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-stone-200">
-            <img
-              src="/avatars/modeinspect-avatar.png"
-              alt="Your profile"
-              className="size-[80%] object-contain"
-            />
+          {/* The profile avatar sits outside the actions group: the panel ends at Share. A single initial on a plain background. */}
+          <span
+            role="img"
+            aria-label="Your profile"
+            className="ml-1.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-stone-200 text-px-11 font-semibold leading-none text-stone-700"
+          >
+            M
           </span>
         </div>
       </header>
