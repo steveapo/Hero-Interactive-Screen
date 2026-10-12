@@ -1377,7 +1377,14 @@ export function HeroScreen({
         )}
 
         <div className={cn("flex items-center", actionsIntro.className)} style={actionsIntro.style}>
-        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
+        <div
+          className={cn(
+            "relative flex items-center gap-1",
+            portalOpen && !portalClosing ? PORTAL_TOP_GROUP : cn(TOP_GROUP, "border-transparent"),
+          )}
+        >
+          {/* Border: a white highlight, brightest along the top, fading out down the sides */}
+          {!(portalOpen && !portalClosing) && <FadingWhiteBorder />}
           <button
             type="button"
             aria-label="Undo"
@@ -1436,15 +1443,15 @@ export function HeroScreen({
             previewUrl="https://hero-interactive-screen.modeinspect.app"
             changes={shareChanges}
           />
-        </div>
-          {/* The profile avatar sits outside the actions group: the panel ends at Share. A single initial on a plain background. */}
+          {/* The profile avatar closes the actions panel: a single initial on a plain background. */}
           <span
             role="img"
             aria-label="Your profile"
-            className="ml-1.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-stone-200 text-px-11 font-semibold leading-none text-stone-700"
+            className="ml-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-stone-300/70 text-px-13 font-semibold leading-none text-stone-700"
           >
             M
           </span>
+        </div>
         </div>
       </header>
 
@@ -1786,6 +1793,26 @@ const TOOLS: { id: Tool; label: string; shortcut: string; icon: () => React.JSX.
   { id: "text", label: "Text", shortcut: "T", icon: TextIcon },
   { id: "code", label: "Portal", shortcut: "P", icon: TerminalIcon },
 ]
+
+/**
+ * A 1px border over its (relative, rounded) parent that is white along the top and fades to
+ * transparent down the sides. The mask keeps only the 1px ring of the gradient (content box cut out).
+ */
+function FadingWhiteBorder() {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute -inset-px rounded-[inherit] p-px"
+      style={{
+        background: "linear-gradient(to bottom, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.5) 45%, rgba(255,255,255,0) 100%)",
+        WebkitMask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+        WebkitMaskComposite: "xor",
+        mask: "linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0)",
+        maskComposite: "exclude",
+      }}
+    />
+  )
+}
 
 /** Hover/focus label shown below a top-bar control. Parent needs `group relative`. */
 function Tooltip({ label }: { label: string }) {
