@@ -212,7 +212,7 @@ export function DesignFrame({
       ref={enter.ref}
       data-cursor-id={`frame-${id}`}
       className={cn(
-        "absolute -translate-x-1/2 -translate-y-1/2",
+        "group/frame absolute -translate-x-1/2 -translate-y-1/2",
         // Selected (or an agent's badge on it): above the other canvas elements, so its Build
         // Agent button and "Agent" label, which reach outside the frame, are never covered.
         // (Still below the Build Agent chat and the panels.)
@@ -308,6 +308,23 @@ export function DesignFrame({
             className="animate-mi-march"
           />
         </svg>
+      )}
+
+      {/* Hover (not selected): a solid 2px blue outline, on the frame's own border when it has one,
+          otherwise just outside its edge. Bare frames only take the pointer on their painted
+          shape, which still puts this wrapper in :hover. */}
+      {!selected && (
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute hidden group-hover/frame:block",
+            border ? "inset-0" : "-inset-0.5",
+          )}
+          style={{
+            border: `2px solid ${SELECT_BLUE}`,
+            borderRadius: radius ? radius * zoom + (border ? 0 : 2) : undefined,
+          }}
+        />
       )}
 
       {selected && (

@@ -81,8 +81,8 @@ export function CodebaseFrame({
       // must follow the camera and the pointer immediately.
       className={
         appear === "in"
-          ? "absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in [--tw-animation-duration:700ms] motion-reduce:animate-none"
-          : "absolute -translate-x-1/2 -translate-y-1/2"
+          ? "group/codebase absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in [--tw-animation-duration:700ms] motion-reduce:animate-none"
+          : "group/codebase absolute -translate-x-1/2 -translate-y-1/2"
       }
       style={{
         left: `calc(50% + ${offsetX}px)`,
@@ -156,6 +156,16 @@ export function CodebaseFrame({
           </div>
         )}
       </div>
+
+      {/* Hover (not selected): a solid 2px green outline just outside the frame, covering its grey
+          ring, with corners following the frame's 6px radius. */}
+      {!selected && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -inset-0.5 hidden rounded-[8px] group-hover/codebase:block"
+          style={{ border: `2px solid ${CODEBASE_GREEN}` }}
+        />
+      )}
 
       {selected && (
         <>
