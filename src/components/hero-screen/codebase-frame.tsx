@@ -1,5 +1,6 @@
 "use client"
 
+import { useCallback, useState } from "react"
 import { Play, ScanLine, SquareDashedMousePointer } from "lucide-react"
 import { AirbnbScreen } from "@/app/copy-project/airbnb-screen"
 
@@ -8,6 +9,13 @@ export const CANVAS_ZOOM = 0.3
 
 /** The Codebase frame's opening animation plays at this rate (1 = the app's own pace). */
 const CODEBASE_INTRO_SPEED = 0.6
+
+/**
+ * Static 1440×900 screenshot of the settled Fairbnb app (the /copy-project page): what the frame
+ * shows on the canvas. One image moves with the canvas as cheaply as any design frame, where the
+ * live app's hundreds of elements had to be repainted on every pan / drag frame.
+ */
+const CODEBASE_THUMBNAIL = "/codebase-thumbnail.png"
 
 /**
  * Canvas-unit size of the Codebase frame: the desktop preview resolution (1440×900).
@@ -32,9 +40,9 @@ export function CodebaseFrame({
   appear,
 }: {
   /**
-   * Load-in: "hidden" keeps the frame invisible and its live app unmounted; "in" fades the frame
-   * in and mounts the app, so the app's own opening animation plays from that moment.
-   * Omitted: the frame is simply there.
+   * Load-in: "hidden" keeps the frame invisible; "in" fades the frame in and plays the live app's
+   * opening animation inside it, after which the frame settles on the static thumbnail.
+   * Omitted: the frame simply shows the thumbnail.
    */
   appear?: "hidden" | "in"
   selected: boolean
@@ -42,8 +50,8 @@ export function CodebaseFrame({
   /** Double-click: open the frame in the Portal View. */
   onOpen: () => void
   /**
-   * The Portal covers the whole screen: the live app isn't laid out or painted (it keeps its
-   * state and its intro's timeline), so it costs nothing while the hero window resizes under it.
+   * The Portal covers the whole screen: the live app (while its opening still plays) isn't laid
+   * out or painted, so it costs nothing while the hero window resizes under it.
    */
   covered?: boolean
   /** Pointer pressed on the frame: the canvas may start dragging it. */
@@ -54,6 +62,15 @@ export function CodebaseFrame({
   offsetX: number
   offsetY: number
 }) {
+  /** The live app's opening animation has finished: from then on only the thumbnail is shown. */
+  const [introDone, setIntroDone] = useState(false)
+  // Stable, so the memoized live app doesn't re-render with every camera frame.
+  const finishIntro = useCallback(() => setIntroDone(true), [])
+  /** The thumbnail file is missing: keep the live app in place of it. */
+  const [thumbnailMissing, setThumbnailMissing] = useState(false)
+  /** The live app is mounted only for the load-in's opening animation (or if there's no thumbnail). */
+  const showLiveApp = (appear === "in" && !introDone) || (appear !== "hidden" && thumbnailMissing)
+
   return (
     <div
       data-cursor-id="codebase-frame"
@@ -102,24 +119,36 @@ export function CodebaseFrame({
       </div>
 
       {/*
-        The desktop viewport: the live, functional Fairbnb app. Like the design frames, it is laid
-        out once at its natural 1440×900 canvas size (a size container, as the app is authored in
-        cqw) and scaled with zoom by a transform. Its layout never changes with zoom or pan, so the
-        app stays fixed inside the frame while the canvas is dragged around, instead of re-flowing
-        and snapping to new pixel positions.
+        The frame, built like the design frames: one box sized by zoom. On the canvas it shows the
+        app's static thumbnail. During the load-in the live app plays its opening animation over
+        the thumbnail (which is already loaded underneath, so the hand-off doesn't flash), laid
+        out at its natural 1440×900 size and scaled with zoom; once it has settled it unmounts.
       */}
       <div className="relative size-full cursor-default overflow-hidden rounded-md bg-white shadow-[0_0_0_1px_rgba(17,17,16,0.12),0_12px_32px_-12px_rgba(17,17,16,0.3)]">
-        <div
-          className="absolute left-0 top-0 origin-top-left"
-          style={{ width: CODEBASE_WIDTH, height: CODEBASE_HEIGHT, transform: `scale(${zoom})` }}
-        >
+        {appear !== "hidden" && !thumbnailMissing && (
+          // eslint-disable-next-line @next/next/no-img-element -- a fixed-size canvas thumbnail, scaled by the frame
+          <img
+            src={CODEBASE_THUMBNAIL}
+            alt="Fairbnb app"
+            draggable={false}
+            decoding="async"
+            onError={() => setThumbnailMissing(true)}
+            className="pointer-events-none absolute inset-0 size-full select-none object-cover object-left-top"
+          />
+        )}
+        {showLiveApp && (
           <div
-            className="@container size-full overflow-hidden bg-white"
-            style={covered ? { contentVisibility: "hidden" } : undefined}
+            className="pointer-events-none absolute left-0 top-0 origin-top-left"
+            style={{ width: CODEBASE_WIDTH, height: CODEBASE_HEIGHT, transform: `scale(${zoom})` }}
           >
-            {appear !== "hidden" && <AirbnbScreen introSpeed={CODEBASE_INTRO_SPEED} />}
+            <div
+              className="@container size-full overflow-hidden bg-white"
+              style={covered ? { contentVisibility: "hidden" } : undefined}
+            >
+              <AirbnbScreen introSpeed={CODEBASE_INTRO_SPEED} onIntroDone={finishIntro} />
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {selected && (

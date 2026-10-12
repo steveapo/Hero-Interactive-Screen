@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 import gsap from "gsap";
 
 /**
@@ -41,7 +41,12 @@ const q = (name: string) => `[data-anim='${name}']`;
 const byCard = (step: number) => (_index: number, target: Element) =>
   Number(target.closest<HTMLElement>("[data-order]")?.dataset.order ?? 0) * step;
 
-export function useAirbnbIntro(root: RefObject<HTMLDivElement | null>, speed = 1) {
+/** `onDone` fires once the whole sequence has played (right away with reduced motion). */
+export function useAirbnbIntro(root: RefObject<HTMLDivElement | null>, speed = 1, onDone?: () => void) {
+  // Kept in a ref: a new callback each render must not restart the sequence.
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
+
   useIsomorphicLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
@@ -57,12 +62,13 @@ export function useAirbnbIntro(root: RefObject<HTMLDivElement | null>, speed = 1
         const { reduced } = context.conditions as { motion: boolean; reduced: boolean };
         if (reduced) {
           gsap.set(element, { opacity: 1 });
+          onDoneRef.current?.();
           return;
         }
 
         /** 1cqw of the screen, in px: offsets scale with the screen like everything else. */
         const cq = element.clientWidth / 100;
-        const tl = gsap.timeline({ defaults: { ease: EASE.rise } });
+        const tl = gsap.timeline({ defaults: { ease: EASE.rise }, onComplete: () => onDoneRef.current?.() });
         tl.timeScale(speed);
 
         // 1 — the window lights up

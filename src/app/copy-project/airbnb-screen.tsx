@@ -537,15 +537,18 @@ export function MapButton() {
 // changes with its own state (and `introSpeed`), so those renders skip it.
 export const AirbnbScreen = memo(function AirbnbScreen({
   introSpeed = 1,
+  onIntroDone,
 }: {
   /** Playback rate of the opening animation: 0.5 = half speed. */
   introSpeed?: number;
+  /** Called once the opening animation has finished. */
+  onIntroDone?: () => void;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [category, setCategory] = useState(0);
   const [saved, setSaved] = useState<string[]>([]);
 
-  useAirbnbIntro(root, introSpeed);
+  useAirbnbIntro(root, introSpeed, onIntroDone);
 
   const toggleSave = (id: string) =>
     setSaved((list) => (list.includes(id) ? list.filter((s) => s !== id) : [...list, id]));
