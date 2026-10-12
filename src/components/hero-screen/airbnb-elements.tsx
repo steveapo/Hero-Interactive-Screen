@@ -189,8 +189,6 @@ function listingElement(listing: Listing): AppElement {
     radius: LAYOUT.radius * CQW,
     border: null,
     bare: true,
-    // the listings sit close together, so their (long) names only show on selection
-    labelOnSelect: true,
     position: "relative",
     layout: "column",
     colors: palette(INK, MUTED, WHITE, RAUSCH),

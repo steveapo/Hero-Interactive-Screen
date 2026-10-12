@@ -20,11 +20,14 @@ const PANEL_BG = "bg-[#f2f2f1]"
 export const LeftSidebar = memo(function LeftSidebar({
   ref,
   onLibraryDragStart,
+  names,
   className,
   style,
 }: {
   ref?: React.Ref<HTMLElement>
   onLibraryDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
+  /** Current frame names by element id (renamed on the canvas); falls back to each element's own name. */
+  names?: Record<string, string>
   /** Extra classes / style on the sidebar (e.g. a load-in entrance). */
   className?: string
   style?: React.CSSProperties
@@ -63,7 +66,7 @@ export const LeftSidebar = memo(function LeftSidebar({
         ))}
       </nav>
 
-      {panel === "layers" && <LayersPanel />}
+      {panel === "layers" && <LayersPanel names={names} />}
       {panel === "components" && <ComponentsPanel onDragStart={onLibraryDragStart} />}
     </aside>
   )
@@ -71,7 +74,7 @@ export const LeftSidebar = memo(function LeftSidebar({
 
 /* --------------------------------- Layers --------------------------------- */
 
-function LayersPanel() {
+function LayersPanel({ names }: { names?: Record<string, string> }) {
   return (
     <div className="flex w-[280px] flex-col">
       <section className="flex h-[30%] shrink-0 flex-col px-1.5 pt-2.5">
@@ -113,7 +116,7 @@ function LayersPanel() {
             className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md pl-4 pr-2 text-left text-px-12 text-stone-900 hover:bg-stone-700/5"
           >
             <FrameGlyph />
-            <span className="truncate">{el.name}</span>
+            <span className="truncate">{names?.[el.id] ?? el.name}</span>
           </button>
         ))}
       </section>

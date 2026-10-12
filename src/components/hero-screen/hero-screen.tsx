@@ -436,6 +436,10 @@ export function HeroScreen({
   const [elementFills, setElementFills] = useState<Record<string, string | null>>(() =>
     Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.fill])),
   )
+  /** Name per Fairbnb element frame; renamed by double-clicking its title on the canvas. */
+  const [elementNames, setElementNames] = useState<Record<string, string>>(() =>
+    Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.name])),
+  )
   const canvasRef = useRef<HTMLDivElement>(null)
   /**
    * The canvas's width over REFERENCE_CANVAS_WIDTH (see Bounds). Measured before the first paint
@@ -1169,7 +1173,8 @@ export function HeroScreen({
             // Remount on each reveal so the entrance animation replays.
             key={`${el.id}-${revealId}`}
             id={el.id}
-            label={el.name}
+            label={elementNames[el.id]}
+            onRename={(name) => setElementNames((current) => ({ ...current, [el.id]: name }))}
             rect={elementRects[el.id]}
             naturalSize={el.rect}
             fill={elementFills[el.id]}
@@ -1492,6 +1497,7 @@ export function HeroScreen({
       <LeftSidebar
         ref={sidebarRef}
         onLibraryDragStart={onLibraryDragStart}
+        names={elementNames}
         className={sidebarIntro.className}
         style={sidebarIntro.style}
       />

@@ -1,6 +1,6 @@
 "use client"
 
-import { useLayoutEffect, useRef } from "react"
+import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { CODEBASE_WIDTH } from "./codebase-frame"
 import type { CanvasRect } from "./drag"
@@ -148,6 +148,7 @@ export function DesignFrame({
   bare = false,
   repaint = null,
   labelOnSelect = false,
+  onRename,
   children,
   selected,
   onSelect,
@@ -181,6 +182,8 @@ export function DesignFrame({
   repaint?: string | null
   /** Only show the name above the frame while it is selected. */
   labelOnSelect?: boolean
+  /** Double-clicking the title turns it into an input; Enter / blur commits the new name, Escape cancels. */
+  onRename?: (name: string) => void
   children: React.ReactNode
   selected: boolean
   /** Pointer pressed on the frame (Shift adds it to / removes it from the selection). */
@@ -207,6 +210,22 @@ export function DesignFrame({
   entrance?: CanvasEntrance | null
 }) {
   const enter = useCanvasEntrance<HTMLDivElement>(entrance)
+  /** The title being edited (null: not renaming). */
+  const [draft, setDraft] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const renaming = draft !== null
+
+  // Focus and select the name when renaming starts
+  useEffect(() => {
+    if (renaming) inputRef.current?.select()
+  }, [renaming])
+
+  function commitRename() {
+    const next = draft?.trim()
+    if (next && next !== label) onRename?.(next)
+    setDraft(null)
+  }
+
   return (
     <div
       ref={enter.ref}
@@ -234,14 +253,39 @@ export function DesignFrame({
         onMoveStart(e)
       }}
     >
-      {/* Label row */}
-      {(!labelOnSelect || selected) && (
-        <span
-          className="absolute -top-7 left-0 flex h-6 items-center whitespace-nowrap font-medium transition-colors"
-          style={{ fontSize: 10, color: selected ? SELECT_BLUE : LABEL_GREY }}
-        >
-          {label}
-        </span>
+      {/* Label row: the frame's title, truncated to the frame's width. Double-click it to rename. */}
+      {renaming ? (
+        <input
+          ref={inputRef}
+          aria-label="Frame name"
+          value={draft}
+          size={Math.max(draft.length, 1)}
+          onChange={(e) => setDraft(e.target.value)}
+          onBlur={commitRename}
+          // Typing and clicking in the field stay in the field: no frame drag, no canvas shortcuts.
+          onPointerDown={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            e.stopPropagation()
+            if (e.key === "Enter") commitRename()
+            if (e.key === "Escape") setDraft(null)
+          }}
+          className="pointer-events-auto absolute -top-7 left-0 h-6 select-text rounded-[4px] bg-white px-1 font-medium text-stone-900 shadow-[0_0_0_1px_rgba(47,107,246,0.6)] outline-none"
+          style={{ fontSize: 10 }}
+        />
+      ) : (
+        (!labelOnSelect || selected) && (
+          <span
+            onDoubleClick={onRename ? () => setDraft(label) : undefined}
+            className={cn(
+              "absolute -top-7 left-0 block h-6 max-w-full truncate whitespace-nowrap font-medium leading-6 transition-colors",
+              // bare frames don't take the pointer themselves; their title still does
+              onRename && "pointer-events-auto cursor-default select-none",
+            )}
+            style={{ fontSize: 10, color: selected ? SELECT_BLUE : LABEL_GREY }}
+          >
+            {label}
+          </span>
+        )
       )}
 
       {/* Frame: fill, radius and border as listed in the settings panel (bare: the artwork paints its own shape) */}
