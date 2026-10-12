@@ -82,27 +82,30 @@ export const GithubButton = memo(function GithubButton({
   }, [open, connected])
 
   return (
-    <div ref={rootRef} className="relative flex items-center gap-1.5">
+    <div ref={rootRef} className="relative flex items-center">
       <button
         type="button"
-        aria-label="GitHub"
+        aria-label={synced ? "GitHub (synced)" : "GitHub"}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
         // No background at rest or while open: like the other top-bar buttons, it only tints on hover.
-        className="relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+        // Once synced it widens to hold the green dot, so the hover tint covers icon and dot together.
+        className={cn(
+          "relative flex h-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5",
+          synced ? "gap-1 pl-2 pr-1.5" : "w-8",
+        )}
       >
         {/* Same 16px as every other top-bar / toolbar / sidebar icon */}
         <GithubIcon size={16} />
+        {/* Synced: a green status dot right beside the icon */}
+        {synced && (
+          <span
+            aria-hidden="true"
+            className="size-1.5 shrink-0 rounded-full bg-green-500 animate-in zoom-in-0 duration-200"
+          />
+        )}
       </button>
-      {/* Synced: a green status dot just right of the button, with a small gap */}
-      {synced && (
-        <span
-          role="img"
-          aria-label="Synced"
-          className="size-1.5 shrink-0 rounded-full bg-green-500 animate-in zoom-in-0 duration-200"
-        />
-      )}
 
       {open && connected && (
         <GithubSyncPopover
