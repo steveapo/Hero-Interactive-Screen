@@ -81,10 +81,16 @@ const DESKTOP_WINDOW =
 export function HeroShowcase({
   className,
   showCodeWindow = true,
+  showGithubPopover = true,
+  portalEnabled = false,
 }: {
   className?: string
   /** Whether the secondary Code Changes window is on the desktop. Without it, only the canvas window shows (focused). */
   showCodeWindow?: boolean
+  /** Whether the canvas opens linked to its repo with the GitHub Sync popover open (see HeroScreen's githubSyncOpen). */
+  showGithubPopover?: boolean
+  /** Whether the Codebase frame opens in the Portal (double-click it, or "Open Build Mode"). See HeroScreen's portalEnabled. */
+  portalEnabled?: boolean
 }) {
   /** Front to back: the first is the focused window. */
   const [stack, setStack] = useState<WindowId[]>(showCodeWindow ? ["secondary", "main"] : ["main"])
@@ -145,8 +151,8 @@ export function HeroShowcase({
             <HeroScreen
               className="h-auto min-h-0 flex-1"
               start="built"
-              githubSyncOpen
-              portalEnabled={false}
+              githubSyncOpen={showGithubPopover}
+              portalEnabled={portalEnabled}
               toolsEnabled={false}
               scrollPans={false}
               loadIntro={canvasIntro}

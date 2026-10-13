@@ -6,9 +6,10 @@ export default function Home() {
   return (
     <main className="flex w-full flex-1 flex-col">
       <SiteHero>
-        {/* The Desktop Area with the canvas window only (no Code Changes window; see hero-showcase.tsx).
-            The two-window version plays at /showcase; the four-clip demo at /demo. */}
-        <HeroShowcase showCodeWindow={false} />
+        {/* The Desktop Area with the canvas window only (no Code Changes window, no GitHub Sync popover;
+            the Codebase frame opens in the Portal; see hero-showcase.tsx). The two-window version plays
+            at /showcase; the four-clip demo at /demo. */}
+        <HeroShowcase showCodeWindow={false} showGithubPopover={false} portalEnabled />
       </SiteHero>
       <FeatureSection />
     </main>
