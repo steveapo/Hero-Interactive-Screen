@@ -259,8 +259,8 @@ export function HeroScreen({
 }: {
   className?: string
   /**
-   * In the Portal's agent chat, the visitor's first keystroke has the composer write the next
-   * scripted prompt itself and send it, so it gets its proper scripted reply (see PortalChat).
+   * In the Portal's agent chat, the visitor's keystrokes write the next scripted prompt a few words
+   * at a time; once it's complete they send it and get its proper scripted reply (see PortalChat).
    */
   portalAutoPrompt?: boolean
   /**
