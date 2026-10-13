@@ -43,6 +43,8 @@ const PORTAL_THINK_MS = 1300
 const PORTAL_WORD_MS = 40
 /** Auto prompt (PortalChat's `autoPrompt`): how many words of the scripted prompt each keystroke writes. */
 const AUTO_PROMPT_WORDS_PER_KEY = 2
+/** Auto prompt typing animation: one character every this many ms. */
+const AUTO_PROMPT_CHAR_MS = 30
 
 /** Where `text` is after `count` more words from `from` (each word with the space before it). */
 function advanceWords(text: string, from: number, count: number) {
@@ -938,6 +940,13 @@ const PortalChat = memo(function PortalChat({
   autoPrompt?: boolean
 }) {
   const [prompt, setPrompt] = useState("")
+  /**
+   * autoPrompt: the scripted prompt being written and how far the keystrokes so far reach into it.
+   * The composer types toward `end` one character at a time (AUTO_PROMPT_CHAR_MS).
+   */
+  const [autoGoal, setAutoGoal] = useState<{ text: string; end: number } | null>(null)
+  /** The composer is still typing queued words in: sending waits until they've landed. */
+  const autoTypingIn = autoGoal !== null && prompt.length < autoGoal.end
   /** Chat names (renamable) and which one is open. Seeded chats show the earlier conversation. */
   const [chats, setChats] = useState<PortalChatEntry[]>(() => CHATS.map((name, id) => ({ id, name, seeded: true })))
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -960,6 +969,13 @@ const PortalChat = memo(function PortalChat({
   const currentMessages = messages[current.id] ?? []
 
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
+
+  // autoPrompt typing animation: one more character of the scripted prompt per tick, up to the goal.
+  useEffect(() => {
+    if (!autoGoal || prompt.length >= autoGoal.end || !autoGoal.text.startsWith(prompt)) return
+    const timer = setTimeout(() => setPrompt(autoGoal.text.slice(0, prompt.length + 1)), AUTO_PROMPT_CHAR_MS)
+    return () => clearTimeout(timer)
+  }, [autoGoal, prompt])
 
   // Keep the newest message in view as replies stream in.
   useEffect(() => {
@@ -994,17 +1010,20 @@ const PortalChat = memo(function PortalChat({
   function autoPromptKeystroke() {
     const scripted = PORTAL_TURNS.find((t, i) => t.prompt !== undefined && !usedTurns.current.has(i))?.prompt
     if (!scripted || !scripted.startsWith(prompt)) return false
+    // Words already queued by earlier keystrokes (still typing in) count: this one adds the next ones.
+    const from = autoGoal && autoGoal.text === scripted ? Math.max(autoGoal.end, prompt.length) : prompt.length
     // Complete: nothing more to write; the visitor sends it.
-    if (prompt !== scripted) setPrompt(scripted.slice(0, advanceWords(scripted, prompt.length, AUTO_PROMPT_WORDS_PER_KEY)))
+    if (from < scripted.length) setAutoGoal({ text: scripted, end: advanceWords(scripted, from, AUTO_PROMPT_WORDS_PER_KEY) })
     return true
   }
 
   function send() {
     const text = prompt.trim()
-    if (text === "" || busy) return
+    if (text === "" || busy || autoTypingIn) return
     const chatId = current.id
     addMessage(chatId, { id: nextId.current++, role: "user", text })
     setPrompt("")
+    setAutoGoal(null)
 
     // Scripted reply: think, stream it in word by word, then apply its change to the preview. The
     // turn written for exactly this message, else the next general one.
@@ -1199,6 +1218,8 @@ const PortalChat = memo(function PortalChat({
           onChange={(e) => {
             // autoPrompt: typing (anything that adds) writes the scripted prompt; deleting works as usual.
             if (autoPrompt && e.target.value.length > prompt.length && autoPromptKeystroke()) return
+            // Deleting (or free typing) stops any typing-in; later keystrokes carry on from what's left.
+            setAutoGoal(null)
             setPrompt(e.target.value)
           }}
           onKeyDown={(e) => {
@@ -1227,7 +1248,7 @@ const PortalChat = memo(function PortalChat({
             </BarButton>
             <button
               type="submit"
-              disabled={empty}
+              disabled={empty || autoTypingIn}
               aria-label="Send"
               className={cn(
                 "flex size-7 items-center justify-center rounded-full transition-colors",
