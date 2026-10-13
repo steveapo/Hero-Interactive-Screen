@@ -78,9 +78,16 @@ const DESKTOP_WINDOW =
  *
  * Load-in, once the Desktop Area scrolls into view: see INTRO.
  */
-export function HeroShowcase({ className }: { className?: string }) {
+export function HeroShowcase({
+  className,
+  showCodeWindow = true,
+}: {
+  className?: string
+  /** Whether the secondary Code Changes window is on the desktop. Without it, only the canvas window shows (focused). */
+  showCodeWindow?: boolean
+}) {
   /** Front to back: the first is the focused window. */
-  const [stack, setStack] = useState<WindowId[]>(["secondary", "main"])
+  const [stack, setStack] = useState<WindowId[]>(showCodeWindow ? ["secondary", "main"] : ["main"])
   const focus = (id: WindowId) => setStack((s) => (s[0] === id ? s : [id, ...s.filter((w) => w !== id)]))
 
   const desktopRef = useRef<HTMLDivElement>(null)
@@ -148,26 +155,28 @@ export function HeroShowcase({ className }: { className?: string }) {
         </div>
       </DesktopWindow>
 
-      <DesktopWindow
-        title="Code Changes"
-        // Overlaps the canvas's lower right, only just past its edge, so the pair stays centred.
-        placement="bottom-[5%] right-[6%] h-[50%] w-[38%]"
-        active={stack[0] === "secondary"}
-        z={stack.length - stack.indexOf("secondary")}
-        onFocus={() => focus("secondary")}
-        opening={intro}
-        openDelay={INTRO.codeWindowAt}
-        openDuration={CODE_WINDOW_OPEN_MS}
-      >
-        <CodeChangesPanel
-          // Zoomed out (CSS zoom re-lays it out smaller, so more of the tree and diff fits; the
-          // window's title bar keeps its size).
-          className="min-h-0 flex-1 [zoom:0.85]"
-          sidebarClassName="max-w-[32%]"
-          revealDelay={intro === "play" ? CODE_LINES_AT : undefined}
-          revealTimeScale={CODE_WINDOW_TIME_SCALE}
-        />
-      </DesktopWindow>
+      {showCodeWindow && (
+        <DesktopWindow
+          title="Code Changes"
+          // Overlaps the canvas's lower right, only just past its edge, so the pair stays centred.
+          placement="bottom-[5%] right-[6%] h-[50%] w-[38%]"
+          active={stack[0] === "secondary"}
+          z={stack.length - stack.indexOf("secondary")}
+          onFocus={() => focus("secondary")}
+          opening={intro}
+          openDelay={INTRO.codeWindowAt}
+          openDuration={CODE_WINDOW_OPEN_MS}
+        >
+          <CodeChangesPanel
+            // Zoomed out (CSS zoom re-lays it out smaller, so more of the tree and diff fits; the
+            // window's title bar keeps its size).
+            className="min-h-0 flex-1 [zoom:0.85]"
+            sidebarClassName="max-w-[32%]"
+            revealDelay={intro === "play" ? CODE_LINES_AT : undefined}
+            revealTimeScale={CODE_WINDOW_TIME_SCALE}
+          />
+        </DesktopWindow>
+      )}
     </div>
   )
 }
