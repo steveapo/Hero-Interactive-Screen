@@ -255,8 +255,14 @@ export function HeroScreen({
   portalLoadMs,
   maxZoom = MAX_ZOOM,
   canvasEntrance = true,
+  portalAutoPrompt = false,
 }: {
   className?: string
+  /**
+   * In the Portal's agent chat, the visitor's first keystroke has the composer write the next
+   * scripted prompt itself and send it, so it gets its proper scripted reply (see PortalChat).
+   */
+  portalAutoPrompt?: boolean
   /**
    * Leaving the Portal the first time, the canvas elements glide in around the Codebase frame.
    * Off: they're already on the canvas, in place.
@@ -1575,6 +1581,7 @@ export function HeroScreen({
           builtVariant={agents.builtVariant}
           builtComponents={agents.builtComponents}
           loadMs={portalLoadMs}
+          autoPrompt={portalAutoPrompt}
         />
       )}
 

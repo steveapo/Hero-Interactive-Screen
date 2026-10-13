@@ -41,6 +41,9 @@ import { FinishedEventCard } from "./variant-frame"
 /** Portal Agent: thinking time before a reply, and one streamed word (ms). */
 const PORTAL_THINK_MS = 1300
 const PORTAL_WORD_MS = 40
+/** Auto prompt (PortalChat's `autoPrompt`): one typed character, and the pause before it sends (ms). */
+const AUTO_PROMPT_CHAR_MS = 28
+const AUTO_PROMPT_SEND_MS = 450
 
 type PortalChatEntry = { id: number; name: string; seeded: boolean }
 type PortalMessage = { id: number; role: "user" | "agent"; text: string; shown?: number; turn?: PortalTurn }
@@ -90,9 +93,12 @@ export const PortalView = memo(function PortalView({
   builtVariant = null,
   builtComponents = [],
   loadMs = PORTAL_LOAD_MS,
+  autoPrompt = false,
 }: {
   onClose: () => void
   closing?: boolean
+  /** Typing in the agent chat writes the next scripted prompt and sends it (see PortalChat). */
+  autoPrompt?: boolean
   /** A variant the Build Agent built into the codebase: it replaces its source card in the live app. */
   builtVariant?: VariantState | null
   /** Library components the Build Agent built into the codebase: they show on their cards in the live app. */
@@ -384,7 +390,7 @@ export const PortalView = memo(function PortalView({
         </div>
       </div>
 
-      <PortalChat onApply={applyChange} />
+      <PortalChat onApply={applyChange} autoPrompt={autoPrompt} />
     </div>
   )
 })
@@ -908,9 +914,22 @@ function ChatSwitcher({
   )
 }
 
-/** Right-side Build Agent chat for the portal. "New agent" opens a fresh chat; replies are scripted (PORTAL_TURNS). */
-const PortalChat = memo(function PortalChat({ onApply }: { onApply: (change: string) => void }) {
+/**
+ * Right-side Build Agent chat for the portal. "New agent" opens a fresh chat; replies are scripted (PORTAL_TURNS).
+ * With `autoPrompt`, the first keystroke into an empty composer has it write the next scripted prompt
+ * itself (typed out character by character, the visitor's keys ignored meanwhile) and send it, so it
+ * gets that prompt's reply and change. Once every scripted prompt is used, typing works as usual.
+ */
+const PortalChat = memo(function PortalChat({
+  onApply,
+  autoPrompt = false,
+}: {
+  onApply: (change: string) => void
+  autoPrompt?: boolean
+}) {
   const [prompt, setPrompt] = useState("")
+  /** The composer is writing a scripted prompt by itself (autoPrompt). */
+  const [autoTyping, setAutoTyping] = useState(false)
   /** Chat names (renamable) and which one is open. Seeded chats show the earlier conversation. */
   const [chats, setChats] = useState<PortalChatEntry[]>(() => CHATS.map((name, id) => ({ id, name, seeded: true })))
   const [currentIndex, setCurrentIndex] = useState(0)
@@ -959,8 +978,29 @@ const PortalChat = memo(function PortalChat({ onApply }: { onApply: (change: str
     setMessages((all) => ({ ...all, [chatId]: (all[chatId] ?? []).map((m) => (m.id === id ? { ...m, ...patch } : m)) }))
   }
 
-  function send() {
-    const text = prompt.trim()
+  function schedule(ms: number, run: () => void) {
+    timers.current.push(setTimeout(run, ms))
+  }
+
+  /**
+   * autoPrompt: types the next unused scripted prompt into the composer, then sends it. Returns
+   * false when there's none left (the keystroke then goes in as usual).
+   */
+  function startAutoPrompt() {
+    const scripted = PORTAL_TURNS.find((t, i) => t.prompt !== undefined && !usedTurns.current.has(i))?.prompt
+    if (!scripted) return false
+    setAutoTyping(true)
+    setPrompt("")
+    for (let i = 1; i <= scripted.length; i++) schedule(i * AUTO_PROMPT_CHAR_MS, () => setPrompt(scripted.slice(0, i)))
+    schedule(scripted.length * AUTO_PROMPT_CHAR_MS + AUTO_PROMPT_SEND_MS, () => {
+      setAutoTyping(false)
+      send(scripted)
+    })
+    return true
+  }
+
+  function send(message?: string) {
+    const text = (message ?? prompt).trim()
     if (text === "" || busy) return
     const chatId = current.id
     addMessage(chatId, { id: nextId.current++, role: "user", text })
@@ -1150,17 +1190,22 @@ const PortalChat = memo(function PortalChat({ onApply }: { onApply: (change: str
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          send()
+          if (!autoTyping) send()
         }}
         className="mx-1.5 mb-1.5 flex flex-col rounded-xl border border-stone-200 bg-white px-2.5 pb-2 pt-2.5 shadow-[0_1px_2px_rgba(17,17,16,0.04)]"
       >
         <textarea
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={(e) => {
+            if (autoTyping) return
+            // autoPrompt: the first keystroke into an empty composer writes the next scripted prompt.
+            if (autoPrompt && !busy && prompt === "" && e.target.value !== "" && startAutoPrompt()) return
+            setPrompt(e.target.value)
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault()
-              send()
+              if (!autoTyping) send()
             }
           }}
           rows={2}
@@ -1183,7 +1228,7 @@ const PortalChat = memo(function PortalChat({ onApply }: { onApply: (change: str
             </BarButton>
             <button
               type="submit"
-              disabled={empty}
+              disabled={empty || autoTyping}
               aria-label="Send"
               className={cn(
                 "flex size-7 items-center justify-center rounded-full transition-colors",

@@ -153,6 +153,8 @@ export function HeroShowcase({
               start="built"
               githubSyncOpen={showGithubPopover}
               portalEnabled={portalEnabled}
+              // Visitors typing in the Portal's agent chat get a proper scripted prompt and reply.
+              portalAutoPrompt={portalEnabled}
               toolsEnabled={false}
               scrollPans={false}
               loadIntro={canvasIntro}
