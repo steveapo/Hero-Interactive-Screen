@@ -6,13 +6,16 @@ import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cur
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
 import { captureInBuildMode, CODEBASE, TRIP_CARD } from "./hero-demo"
-import { agentDone, COMPOSER, ensureSent, panToShow, scene, typePrompt } from "./hero-demo-v1"
+import { agentDone, COMPOSER, ensureSent, panToShow, PORTAL_FIELD, scene, textOf, typePrompt } from "./hero-demo-v1"
 import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
 
 /*
  * The feature cards' clips. One panel = one idea, each its own scenario: a clip plays once when it
  * scrolls into view, stops on its key moment and stays there as a still (the screen is then the
  * visitor's to play with; see ScriptedStage's `holdLastFrame`).
+ *  0. "overview"      Everything in one place: from the canvas, the Codebase frame opens in Build
+ *                     Mode and the Portal Agent changes the live app → the canvas, the running
+ *                     codebase and a coding agent together, the change live.
  *  1. "capture"       Live product on canvas: capture the trip card from the live app → the
  *                     snapshot on the canvas, selected and editable.
  *  2. "visual-edits"  Controls, not prompts: drag the Check-in Banner's corner-radius thumb on the
@@ -34,6 +37,51 @@ const CODE_CHANGES_DIALOG = '[role="dialog"][aria-label="Code changes"]'
 const SHARE_BUTTON = '[data-cursor-id="share"]'
 const SHARE_DIALOG = '[role="dialog"][aria-label="Preview URL"]'
 const BUILD_PROMPT = "Build this frame into the codebase"
+
+/* Everything in one place: Build Mode and the Portal Agent. */
+const OPEN_BUILD_MODE = '[data-cursor-id="open-build-mode"]'
+const PORTAL_SCREEN = "[data-portal-screen]"
+const PORTAL_MESSAGES = '[data-cursor-id="portal-chat-messages"]'
+const LIVE_SEARCH_BUTTON = `${PORTAL_SCREEN} [data-anim="search-button"]`
+/** Scripted in agent-script.ts (PORTAL_TURNS): the live app's search button starts pulsing. */
+const PULSE_PROMPT = "Make the search button pulse so it's easy to spot"
+const PULSE_DONE = "Worked for 12 seconds"
+
+/** The Portal chat's send button. */
+const portalSend = (api: ScriptApi) => () =>
+  api.stage.querySelector(PORTAL_FIELD)?.closest("form")?.querySelector('button[type="submit"]')
+
+/**
+ * 0. Everything in one place; key moment: in Build Mode, the live app running from the code with
+ * the Portal Agent's change in it (the search button pulsing), its reply beside it, and the
+ * canvas's own top bar over both.
+ */
+const overviewScript: DemoScript = async (api) => {
+  await scene(api, "the canvas", async () => {
+    // The canvas: the Codebase frame among the design frames.
+    await panToShow(api, [CODEBASE], { fx: 0.45, fy: 0.5 })
+    await api.wait(400)
+  })
+  await scene(api, "the codebase", async () => {
+    await api.click(CODEBASE, { fx: 0.5, fy: 0.35 })
+    await api.wait(350)
+    await api.click(OPEN_BUILD_MODE)
+    await api.find(PORTAL_SCREEN)
+    await api.wait(700)
+  })
+  await scene(api, "the agent", async () => {
+    await api.click('button[aria-label="New agent"]')
+    await api.wait(300)
+    await api.click(PORTAL_FIELD)
+    await api.type(PULSE_PROMPT, { into: PORTAL_FIELD })
+    await api.wait(250)
+    await api.click(portalSend(api))
+    await api.until(() => textOf(api, PORTAL_MESSAGES).includes(PULSE_DONE), 15000)
+    await api.wait(300)
+    // Point at the change, live in the app.
+    await api.moveTo(LIVE_SEARCH_BUTTON, { fx: 0.5, fy: 1, dy: 26, duration: 800 })
+  })
+}
 
 /** Share of the canvas (its larger dimension) the captured card fills once zoomed in. */
 const FILL_SHARE = 0.45
@@ -239,9 +287,11 @@ const testScript: DemoScript = async (api) => {
   })
 }
 
-export type FeatureClipId = "capture" | "visual-edits" | "test" | "build" | "share"
+export type FeatureClipId = "overview" | "capture" | "visual-edits" | "test" | "build" | "share"
 
 const CLIPS: Record<FeatureClipId, { script: DemoScript; start: HeroStart }> = {
+  // Opens on the canvas, around the Codebase frame.
+  overview: { script: overviewScript, start: "canvas" },
   capture: { script: captureScript, start: "portal" },
   "visual-edits": { script: visualEditsScript, start: "canvas" },
   // Opens in Build Mode, on the live app.
