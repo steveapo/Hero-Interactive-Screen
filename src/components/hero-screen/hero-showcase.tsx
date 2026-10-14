@@ -83,8 +83,11 @@ export function HeroShowcase({
   showCodeWindow = true,
   showGithubPopover = true,
   portalEnabled = false,
+  githubPrSheet = true,
 }: {
   className?: string
+  /** The GitHub popover's "View on Github" opens the pull request sheet. Off: a plain link to GitHub. */
+  githubPrSheet?: boolean
   /** Whether the secondary Code Changes window is on the desktop. Without it, only the canvas window shows (focused). */
   showCodeWindow?: boolean
   /** Whether the canvas opens linked to its repo with the GitHub Sync popover open (see HeroScreen's githubSyncOpen). */
@@ -155,6 +158,7 @@ export function HeroShowcase({
               portalEnabled={portalEnabled}
               // Visitors typing in the Portal's agent chat get a proper scripted prompt and reply.
               portalAutoPrompt={portalEnabled}
+              githubPrSheet={githubPrSheet}
               toolsEnabled={false}
               scrollPans={false}
               loadIntro={canvasIntro}

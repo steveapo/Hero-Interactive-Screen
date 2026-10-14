@@ -256,8 +256,11 @@ export function HeroScreen({
   maxZoom = MAX_ZOOM,
   canvasEntrance = true,
   portalAutoPrompt = false,
+  githubPrSheet = true,
 }: {
   className?: string
+  /** The GitHub popover's "View on Github" opens the pull request sheet. Off: a plain link to GitHub. */
+  githubPrSheet?: boolean
   /**
    * In the Portal's agent chat, the visitor's keystrokes write the next scripted prompt a few words
    * at a time; once it's complete they send it and get its proper scripted reply (see PortalChat).
@@ -1445,6 +1448,7 @@ export function HeroScreen({
             changes={githubChanges}
             pullRequest={pullRequest}
             onMerged={closeCanvas}
+            prSheet={githubPrSheet}
           />
           {/* Any drawn element or moved/resized frame since the last publish makes the preview outdated */}
           <ShareButton

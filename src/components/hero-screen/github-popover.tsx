@@ -26,8 +26,14 @@ export const GithubButton = memo(function GithubButton({
   onMerged,
   defaultOpen = false,
   openOnCue = false,
+  prSheet = true,
 }: {
   connected: boolean
+  /**
+   * "View on Github" opens the pull request sheet (where it can be merged). Off: it's a plain link
+   * to GitHub in a new tab, and no sheet opens.
+   */
+  prSheet?: boolean
   /** Opens with its popover / dialog already showing. */
   defaultOpen?: boolean
   /**
@@ -116,10 +122,14 @@ export const GithubButton = memo(function GithubButton({
           synced={synced}
           pullRequest={pullRequest}
           onSynced={() => setSynced(true)}
-          onViewPr={() => {
-            setOpen(false)
-            setPrOpen(true)
-          }}
+          onViewPr={
+            prSheet
+              ? () => {
+                  setOpen(false)
+                  setPrOpen(true)
+                }
+              : undefined
+          }
         />
       )}
       {open && !connected && (
@@ -176,7 +186,8 @@ function GithubSyncPopover({
   synced: boolean
   pullRequest: PullRequest
   onSynced: () => void
-  onViewPr: () => void
+  /** "View on Github" opens the pull request sheet. Omitted: the button is a link to GitHub (new tab). */
+  onViewPr?: () => void
 }) {
   const [syncing, setSyncing] = useState(false)
   const onSyncedRef = useRef(onSynced)
@@ -231,13 +242,24 @@ function GithubSyncPopover({
             </p>
             <p className="line-clamp-2 text-px-12 text-stone-500">{pullRequest.description}</p>
           </div>
-          <button
-            type="button"
-            onClick={onViewPr}
-            className="mt-2 flex h-8 w-full items-center justify-center rounded-lg bg-stone-700/5 text-px-13 font-medium text-stone-900 hover:bg-stone-700/10"
-          >
-            View on Github
-          </button>
+          {onViewPr ? (
+            <button
+              type="button"
+              onClick={onViewPr}
+              className="mt-2 flex h-8 w-full items-center justify-center rounded-lg bg-stone-700/5 text-px-13 font-medium text-stone-900 hover:bg-stone-700/10"
+            >
+              View on Github
+            </button>
+          ) : (
+            <a
+              href="https://github.com"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-2 flex h-8 w-full items-center justify-center rounded-lg bg-stone-700/5 text-px-13 font-medium text-stone-900 hover:bg-stone-700/10"
+            >
+              View on Github
+            </a>
+          )}
         </div>
       ) : (
         <>
