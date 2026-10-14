@@ -25,9 +25,11 @@ import {
   Tablet,
   ThumbsDown,
   ThumbsUp,
+  TvMinimal,
   X,
   type LucideIcon,
 } from "lucide-react"
+import { AirbnbCompactScreen } from "@/app/copy-project/airbnb-compact-screen"
 import { AirbnbScreen } from "@/app/copy-project/airbnb-screen"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
@@ -135,6 +137,14 @@ export const PortalView = memo(function PortalView({
   )
   const previewRef = useRef<HTMLDivElement>(null)
   const nextPulseId = useRef(1)
+  /** The viewport the live app is previewed at (the toolbar's Viewport menu). */
+  const [viewport, setViewport] = useState<ViewportId>("desktop")
+  /** The viewport was switched: the desktop app comes back finished, without replaying its intro. */
+  const [viewportSwitched, setViewportSwitched] = useState(false)
+  const changeViewport = useCallback((id: ViewportId) => {
+    setViewport(id)
+    setViewportSwitched(true)
+  }, [])
 
   useEffect(() => {
     if (instant) return
@@ -280,7 +290,7 @@ export const PortalView = memo(function PortalView({
               <ScanLine className="size-4" strokeWidth={1.25} />
             </BarButton>
             <span aria-hidden="true" className="mx-1.5 h-4 w-px bg-stone-300" />
-            <ViewportSelect />
+            <ViewportSelect value={viewport} onChange={changeViewport} />
           </div>
 
           {/* Page-load progress */}
@@ -345,7 +355,13 @@ export const PortalView = memo(function PortalView({
             >
               {/* Size container: the device fits both its width and height (the whole app stays visible) */}
               <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center [container-type:size]">
-                <AirbnbDevice key={`${loadId}-${loaded ? "live" : "loading"}`} loaded={loaded} skipIntro={instant} />
+                <AirbnbDevice
+                  key={`${loadId}-${loaded ? "live" : "loading"}`}
+                  loaded={loaded}
+                  skipIntro={instant || viewportSwitched}
+                  viewport={viewport}
+                  switched={viewportSwitched}
+                />
               </div>
             </div>
 
@@ -684,19 +700,99 @@ function sourceTitleBlock(screen: Element, title: string): HTMLElement | undefin
  * → 0.032 + 0.625 = 0.657.
  */
 const WINDOW_ASPECT = 0.657
+/** Height of the browser window's title bar, as a share of the window's width. */
+const TITLE_BAR = 0.032
+
+/** Desktop viewports: the screen's height ÷ width in the browser window (null: fill the stage). */
+const DESKTOP_SCREENS: Partial<Record<ViewportId, { aspect: number | null; width: number }>> = {
+  full: { aspect: null, width: 1440 },
+  laptop: { aspect: 800 / 1280, width: 1280 },
+  desktop: { aspect: 900 / 1440, width: 1440 },
+  large: { aspect: 1080 / 1920, width: 1920 },
+}
+
+/** Handheld viewports: the screen's size (px) and the device bezel around it (px, same scale). */
+const HANDHELD_SCREENS: Partial<Record<ViewportId, { size: "mobile" | "tablet"; w: number; h: number; bezel: number; radius: number }>> = {
+  mobile: { size: "mobile", w: 390, h: 844, bezel: 14, radius: 54 },
+  tablet: { size: "tablet", w: 768, h: 1024, bezel: 22, radius: 34 },
+}
 
 /**
- * The app at `/`: the Fairbnb desktop app in a desktop browser window, as large as fits the
- * preview (100% of its width, or its height if that is shorter). While loading it renders the
- * finished screen instantly (sped-up intro) under the dark overlay; once loaded it remounts and
- * plays the intro at its normal pace.
+ * The app at `/`, at the chosen viewport, as large as fits the preview (100% of its width, or its
+ * height if that is shorter):
+ * - Desktop viewports: the Fairbnb desktop app in a desktop browser window of that viewport's
+ *   shape. "Full width" fills the preview; "Large desktop" centres the app's 1440px layout.
+ * - Mobile / Tablet: the app's own mobile / tablet layout (AirbnbCompactScreen) in a device.
+ * While loading it renders the finished screen instantly (sped-up intro) under the dark overlay;
+ * once loaded it remounts and plays the intro at its normal pace. Switching viewport swaps the
+ * device in with a short fade.
  */
-function AirbnbDevice({ loaded, skipIntro = false }: { loaded: boolean; skipIntro?: boolean }) {
+function AirbnbDevice({
+  loaded,
+  skipIntro = false,
+  viewport = "desktop",
+  switched = false,
+}: {
+  loaded: boolean
+  skipIntro?: boolean
+  viewport?: ViewportId
+  /** The viewport was switched: the device swaps in with a short fade. */
+  switched?: boolean
+}) {
+  const handheld = HANDHELD_SCREENS[viewport]
+  if (handheld) {
+    const outerW = handheld.w + 2 * handheld.bezel
+    const outerH = handheld.h + 2 * handheld.bezel
+    // In cqw of the device (its own width = 100cqw).
+    const pct = (px: number) => `${(px / outerW) * 100}cqw`
+    return (
+      <div
+        key={viewport}
+        className="@container animate-in fade-in zoom-in-95 duration-300"
+        style={{ width: `min(100cqw, calc(100cqh * ${outerW / outerH}))` }}
+      >
+        <div
+          className="bg-[#1d1d1b] shadow-[0_0_0_1px_rgba(17,17,16,0.3),0_2.4cqw_5cqw_-1.6cqw_rgba(17,17,16,0.35)]"
+          style={{ padding: pct(handheld.bezel), borderRadius: pct(handheld.radius + handheld.bezel) }}
+        >
+          <div
+            data-portal-screen
+            data-viewport={viewport}
+            className="@container overflow-hidden bg-white"
+            style={{ aspectRatio: `${handheld.w} / ${handheld.h}`, borderRadius: pct(handheld.radius) }}
+          >
+            <AirbnbCompactScreen size={handheld.size} />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const desktop = DESKTOP_SCREENS[viewport] ?? DESKTOP_SCREENS.desktop!
+  const fill = desktop.aspect === null
+  /** Share of the screen's width the app's 1440px layout takes (narrower on a wider screen). */
+  const appShare = Math.min(1, 1440 / desktop.width)
   return (
-    <div className="@container" style={{ width: `min(100cqw, calc(100cqh / ${WINDOW_ASPECT}))` }}>
-      <div className="overflow-hidden rounded-[0.9cqw] bg-white shadow-[0_0_0_1px_rgba(17,17,16,0.14),0_2.4cqw_5cqw_-1.6cqw_rgba(17,17,16,0.35)]">
+    <div
+      key={viewport}
+      className={cn("@container", switched && "animate-in fade-in zoom-in-95 duration-300", fill && "flex h-full flex-col")}
+      style={{
+        width: fill
+          ? "100cqw"
+          : viewport === "desktop"
+            ? `min(100cqw, calc(100cqh / ${WINDOW_ASPECT}))`
+            : `min(100cqw, calc(100cqh / ${TITLE_BAR + desktop.aspect!}))`,
+        height: fill ? "100cqh" : undefined,
+      }}
+    >
+      <div
+        className={cn(
+          "overflow-hidden rounded-[0.9cqw] bg-white shadow-[0_0_0_1px_rgba(17,17,16,0.14),0_2.4cqw_5cqw_-1.6cqw_rgba(17,17,16,0.35)]",
+          fill && "flex min-h-0 flex-1 flex-col",
+        )}
+      >
         {/* Title bar: traffic lights and the address */}
-        <div className="relative flex h-[3.2cqw] items-center border-b border-black/[0.08] bg-[#f6f6f6] px-[1.2cqw]">
+        <div className="relative flex h-[3.2cqw] shrink-0 items-center border-b border-black/[0.08] bg-[#f6f6f6] px-[1.2cqw]">
           <span className="flex gap-[0.6cqw]" aria-hidden="true">
             <span className="size-[0.95cqw] rounded-full bg-[#ff5f57] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]" />
             <span className="size-[0.95cqw] rounded-full bg-[#febc2e] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]" />
@@ -706,9 +802,21 @@ function AirbnbDevice({ loaded, skipIntro = false }: { loaded: boolean; skipIntr
             fairbnb.com
           </span>
         </div>
-        <div data-portal-screen className="@container aspect-[1440/900] overflow-hidden bg-white">
-          {/* skipIntro: the finished screen straight away (the intro played instantly) */}
-          <AirbnbScreen introSpeed={loaded && !skipIntro ? 1 : 1000} />
+        <div
+          data-portal-screen
+          data-viewport={viewport}
+          className={cn("@container overflow-hidden bg-white", viewport === "desktop" && "aspect-[1440/900]", fill && "min-h-0 flex-1")}
+          style={!fill && viewport !== "desktop" ? { aspectRatio: `1 / ${desktop.aspect}` } : undefined}
+        >
+          {appShare < 1 ? (
+            // A wider screen than the app's layout: the layout keeps its width, centred.
+            <div className="@container mx-auto h-full" style={{ width: `${appShare * 100}%` }}>
+              <AirbnbScreen introSpeed={loaded && !skipIntro ? 1 : 1000} />
+            </div>
+          ) : (
+            /* skipIntro: the finished screen straight away (the intro played instantly) */
+            <AirbnbScreen introSpeed={loaded && !skipIntro ? 1 : 1000} />
+          )}
         </div>
       </div>
     </div>
@@ -1472,7 +1580,10 @@ function MoreOptionsMenu({ onRename }: { onRename: () => void }) {
 
 /* -------------------------------- Viewport -------------------------------- */
 
-type Viewport = { id: string; name: string; detail: string; icon: LucideIcon }
+type Viewport = { id: ViewportId; name: string; detail: string; icon: LucideIcon }
+
+/** The viewports the live app can be previewed at (see AirbnbDevice). */
+export type ViewportId = "full" | "mobile" | "tablet" | "laptop" | "desktop" | "large"
 
 const VIEWPORTS: Viewport[] = [
   { id: "full", name: "Full width", detail: "Fill the stage", icon: Scaling },
@@ -1480,11 +1591,12 @@ const VIEWPORTS: Viewport[] = [
   { id: "tablet", name: "Tablet", detail: "768 × 1024", icon: Tablet },
   { id: "laptop", name: "Laptop", detail: "1280 × 800", icon: Laptop },
   { id: "desktop", name: "Desktop", detail: "1440 × 900", icon: Monitor },
+  { id: "large", name: "Large desktop", detail: "1920 × 1080", icon: TvMinimal },
 ]
 
 /** Viewport picker: the trigger shows the chosen viewport's icon; click opens the list. */
-function ViewportSelect() {
-  const [selectedId, setSelectedId] = useState("desktop")
+function ViewportSelect({ value, onChange }: { value: ViewportId; onChange: (id: ViewportId) => void }) {
+  const selectedId = value
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
   const TriggerIcon = VIEWPORTS.find((v) => v.id === selectedId)?.icon ?? Scaling
@@ -1538,8 +1650,9 @@ function ViewportSelect() {
             <li key={id} role="option" aria-selected={id === selectedId}>
               <button
                 type="button"
+                data-cursor-id={`viewport-${id}`}
                 onClick={() => {
-                  setSelectedId(id)
+                  onChange(id)
                   setOpen(false)
                 }}
                 className={cn(

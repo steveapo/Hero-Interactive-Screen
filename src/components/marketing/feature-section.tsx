@@ -140,7 +140,7 @@ export function ShareSection() {
             <FeatureCopy title="Test the real thing">
               Click through real components and live data, across every breakpoint. Not a simulation.
             </FeatureCopy>
-            <EmptyMockup />
+            <ClipMockup clip="test" />
           </div>
 
           <div className={cn(FEATURE_CARD, "lg:grid-cols-[2fr_1fr]")}>
@@ -153,11 +153,6 @@ export function ShareSection() {
       </div>
     </section>
   )
-}
-
-/** Placeholder mockup: an empty frame with the hero screen's background. */
-function EmptyMockup() {
-  return <div aria-hidden="true" className={cn(MOCKUP_FRAME, "aspect-[12/7] w-full")} />
 }
 
 /** Light card surface shared by the proof section's cards (same look as the feature cards). */

@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { LISTINGS } from "@/app/copy-project/airbnb-data"
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
@@ -16,6 +17,8 @@ import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
  *                     snapshot on the canvas, selected and editable.
  *  2. "visual-edits"  Controls, not prompts: drag the Check-in Banner's corner-radius thumb on the
  *                     canvas → rounded corners, the panel's Corner radius following along.
+ *  3. "test"          Test the real thing: click through the live app in Build Mode while the
+ *                     Viewport menu takes it from desktop to tablet to mobile → the phone layout.
  *  4. "build"         Canvas to code: send the trip card (with its designed badge) to the Build
  *                     Agent chat → the scoped diff it built, in Code changes.
  *  5. "share"         Collaborate and ship: with the change live in the Codebase frame, open Share
@@ -188,11 +191,61 @@ const shareScript: DemoScript = async (api) => {
   })
 }
 
-export type FeatureClipId = "capture" | "visual-edits" | "build" | "share"
+const VIEWPORT_MENU = 'button[aria-label="Viewport"]'
+const viewportOption = (id: string) => `[data-cursor-id="viewport-${id}"]`
+/** The live app's screen at a viewport (see AirbnbDevice in portal-view). */
+const screenAt = (viewport: string) => `[data-portal-screen][data-viewport="${viewport}"]`
+
+/** A button in the live app at `viewport` whose text is `label`. */
+const appButton = (api: ScriptApi, viewport: string, label: string) => () =>
+  Array.from(api.stage.querySelectorAll(`${screenAt(viewport)} button`)).find((el) => el.textContent?.trim() === label)
+
+/** Switch the Portal's preview to `viewport` through its Viewport menu. */
+async function switchViewport(api: ScriptApi, viewport: string) {
+  await api.click(VIEWPORT_MENU)
+  await api.find(viewportOption(viewport))
+  await api.wait(450)
+  await api.click(viewportOption(viewport))
+  await api.find(screenAt(viewport))
+  await api.wait(700)
+}
+
+/**
+ * 3. Test the real thing; key moment: the live app on a phone, a stay just saved to the wishlist.
+ * In Build Mode the app is clicked through on desktop, then the Viewport menu takes it to tablet
+ * and mobile, where it reflows to each breakpoint's own layout and stays live.
+ */
+const testScript: DemoScript = async (api) => {
+  await scene(api, "desktop", async () => {
+    await api.find(screenAt("desktop"))
+    await api.wait(500)
+    // Real components: pick a category in the live app.
+    await api.click(appButton(api, "desktop", "Cabins"))
+    await api.wait(700)
+  })
+  await scene(api, "tablet", async () => {
+    await switchViewport(api, "tablet")
+    await api.click(appButton(api, "tablet", "Arctic"))
+    await api.wait(800)
+  })
+  await scene(api, "mobile", async () => {
+    await switchViewport(api, "mobile")
+    await api.click(appButton(api, "mobile", "Beachfront"))
+    await api.wait(500)
+    // Save the first stay: its heart fills with the brand plum.
+    await api.click(`${screenAt("mobile")} [data-wishlist-heart="${LISTINGS[0].id}"]`)
+    await api.wait(400)
+    await api.moveTo(`${screenAt("mobile")} [data-wishlist-heart="${LISTINGS[0].id}"]`, { fx: -1.5, fy: 2.5, duration: 500 })
+  })
+}
+
+export type FeatureClipId = "capture" | "visual-edits" | "test" | "build" | "share"
 
 const CLIPS: Record<FeatureClipId, { script: DemoScript; start: HeroStart }> = {
   capture: { script: captureScript, start: "portal" },
   "visual-edits": { script: visualEditsScript, start: "canvas" },
+  // Opens in Build Mode, on the live app.
+  test: { script: testScript, start: "portal" },
   // The trip card carries the designed "Check in" badge: that's what gets built.
   build: { script: buildScript, start: "designed" },
   // Built into the code, so there's a real change to share.
