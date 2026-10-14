@@ -30,8 +30,8 @@ export const GithubButton = memo(function GithubButton({
 }: {
   connected: boolean
   /**
-   * "View on Github" opens the pull request sheet (where it can be merged). Off: it's a plain link
-   * to GitHub in a new tab, and no sheet opens.
+   * "View on Github" opens the pull request sheet (where it can be merged). Off: the button does
+   * nothing but show a "Github Opened in a new Window" hint, and no sheet opens.
    */
   prSheet?: boolean
   /** Opens with its popover / dialog already showing. */
@@ -167,6 +167,8 @@ export const GithubButton = memo(function GithubButton({
 
 /** Pretend sync: pushing the branch and opening the pull request. */
 const SYNC_MS = 1800
+/** How long the "Github Opened in a new Window" hint shows (ms). */
+const GITHUB_HINT_MS = 2500
 
 function GithubSyncPopover({
   cued = false,
@@ -186,10 +188,17 @@ function GithubSyncPopover({
   synced: boolean
   pullRequest: PullRequest
   onSynced: () => void
-  /** "View on Github" opens the pull request sheet. Omitted: the button is a link to GitHub (new tab). */
+  /** "View on Github" opens the pull request sheet. Omitted: the button does nothing but show a hint. */
   onViewPr?: () => void
 }) {
   const [syncing, setSyncing] = useState(false)
+  /** The "Github Opened in a new Window" hint under "View on Github" (shown when it has no onViewPr). */
+  const [githubHint, setGithubHint] = useState(false)
+  useEffect(() => {
+    if (!githubHint) return
+    const timer = setTimeout(() => setGithubHint(false), GITHUB_HINT_MS)
+    return () => clearTimeout(timer)
+  }, [githubHint])
   const onSyncedRef = useRef(onSynced)
   useEffect(() => {
     onSyncedRef.current = onSynced
@@ -242,23 +251,17 @@ function GithubSyncPopover({
             </p>
             <p className="line-clamp-2 text-px-12 text-stone-500">{pullRequest.description}</p>
           </div>
-          {onViewPr ? (
-            <button
-              type="button"
-              onClick={onViewPr}
-              className="mt-2 flex h-8 w-full items-center justify-center rounded-lg bg-stone-700/5 text-px-13 font-medium text-stone-900 hover:bg-stone-700/10"
-            >
-              View on Github
-            </button>
-          ) : (
-            <a
-              href="https://github.com"
-              target="_blank"
-              rel="noreferrer"
-              className="mt-2 flex h-8 w-full items-center justify-center rounded-lg bg-stone-700/5 text-px-13 font-medium text-stone-900 hover:bg-stone-700/10"
-            >
-              View on Github
-            </a>
+          <button
+            type="button"
+            onClick={onViewPr ?? (() => setGithubHint(true))}
+            className="mt-2 flex h-8 w-full items-center justify-center rounded-lg bg-stone-700/5 text-px-13 font-medium text-stone-900 hover:bg-stone-700/10"
+          >
+            View on Github
+          </button>
+          {githubHint && (
+            <p role="status" className="mt-1.5 text-center text-px-12 text-stone-500 animate-in fade-in duration-200">
+              Github Opened in a new Window
+            </p>
           )}
         </div>
       ) : (

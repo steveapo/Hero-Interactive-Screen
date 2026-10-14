@@ -86,7 +86,7 @@ export function HeroShowcase({
   githubPrSheet = true,
 }: {
   className?: string
-  /** The GitHub popover's "View on Github" opens the pull request sheet. Off: a plain link to GitHub. */
+  /** The GitHub popover's "View on Github" opens the pull request sheet. Off: it does nothing but show a hint. */
   githubPrSheet?: boolean
   /** Whether the secondary Code Changes window is on the desktop. Without it, only the canvas window shows (focused). */
   showCodeWindow?: boolean

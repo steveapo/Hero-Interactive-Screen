@@ -259,7 +259,7 @@ export function HeroScreen({
   githubPrSheet = true,
 }: {
   className?: string
-  /** The GitHub popover's "View on Github" opens the pull request sheet. Off: a plain link to GitHub. */
+  /** The GitHub popover's "View on Github" opens the pull request sheet. Off: it does nothing but show a hint. */
   githubPrSheet?: boolean
   /**
    * In the Portal's agent chat, the visitor's keystrokes write the next scripted prompt a few words
