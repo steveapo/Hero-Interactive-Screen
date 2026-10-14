@@ -114,6 +114,7 @@ export function RadiusThumbs({
         <span
           key={`radius${sx}${sy}`}
           aria-hidden="true"
+          data-cursor-id={`radius-${sy < 0 ? "top" : "bottom"}-${sx < 0 ? "left" : "right"}`}
           className="pointer-events-auto absolute z-10 flex size-3.5 -translate-x-1/2 -translate-y-1/2 cursor-default items-center justify-center"
           style={{
             left: sx < 0 ? offset : `calc(100% - ${offset}px)`,

@@ -4,24 +4,30 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
-import { captureInBuildMode, focusTripCard, TRIP_CARD } from "./hero-demo"
-import { agentDone, COMPOSER, ensureSent, openChat, panToShow, revealInList, scene, typePrompt } from "./hero-demo-v1"
+import { captureInBuildMode, CODEBASE, focusTripCard, TRIP_CARD } from "./hero-demo"
+import { agentDone, COMPOSER, ensureSent, panToShow, scene, typePrompt } from "./hero-demo-v1"
 import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
 
 /*
- * The feature cards' clips. One panel = one idea: each clip plays once when it scrolls into view,
- * stops on its key moment and stays there as a still (the screen is then the visitor's to play
- * with; see ScriptedStage's `holdLastFrame`).
- *  1. "capture"       Capture the trip card from the live app → it lands on the canvas, selected.
- *  2. "visual-edits"  Select the captured card and recolour it through the settings panel's Fill.
- *  4. "build"         Send the selected frame to the Build Agent chat → its summary of the build.
- *  5. "share"         Open Share and create the preview link → "Published just now".
+ * The feature cards' clips. One panel = one idea, each its own scenario: a clip plays once when it
+ * scrolls into view, stops on its key moment and stays there as a still (the screen is then the
+ * visitor's to play with; see ScriptedStage's `holdLastFrame`).
+ *  1. "capture"       Live product on canvas: capture the trip card from the live app → the
+ *                     snapshot on the canvas, selected and editable.
+ *  2. "visual-edits"  Controls, not prompts: drag the Check-in Banner's corner-radius thumb on the
+ *                     canvas → rounded corners, the panel's Corner radius following along.
+ *  4. "build"         Canvas to code: send the trip card (with its designed badge) to the Build
+ *                     Agent chat → the scoped diff it built, in Code changes.
+ *  5. "share"         Collaborate and ship: with the change live in the Codebase frame, open Share
+ *                     and create the preview link → the Preview URL window, published.
  */
 
 const BACK_TO_CANVAS = 'button[aria-label="Back to canvas"]'
-/** The selected frame's Fill hex in the settings panel, and the colour typed into it (a light grey). */
-const FILL_HEX = 'input[aria-label="Fill hex"]'
-const NEW_FILL = "#ededed"
+const CHECK_IN_BANNER = '[data-cursor-id="frame-check-in-tile"]'
+const RADIUS_THUMB = `${CHECK_IN_BANNER} [data-cursor-id="radius-top-left"]`
+const CORNER_RADIUS_FIELD = '[aria-label="Corner radius"]'
+const CODE_CHANGES_BUTTON = 'button[aria-label="View code changes"]'
+const CODE_CHANGES_DIALOG = '[role="dialog"][aria-label="Code changes"]'
 const SHARE_BUTTON = '[data-cursor-id="share"]'
 const SHARE_DIALOG = '[role="dialog"][aria-label="Preview URL"]'
 const BUILD_PROMPT = "Build this frame into the codebase"
@@ -37,33 +43,28 @@ const CANVAS = "[data-hero-canvas]"
 const FOCUS_FX = 0.4
 
 /**
- * Real canvas zoom, as a visitor would: with the card centred, the cursor rests on it and
- * ⌘-scrolls by exactly the amount that scales the card from its current share of the canvas to
- * FILL_AIM (zoom × exp(−deltaY × WHEEL_ZOOM_SPEED)). Checks again afterwards, then pans the card
- * to FOCUS_FX, leaving room on the right for the settings panel.
+ * Real canvas zoom, as a visitor would: with the frame (`target`) centred, the cursor rests on it
+ * and ⌘-scrolls by exactly the amount that scales it from its current share of the canvas to
+ * FILL_AIM (zoom × exp(−deltaY × WHEEL_ZOOM_SPEED)). Checks again afterwards, then pans it to
+ * FOCUS_FX, leaving room on the right for the settings panel.
  */
-async function zoomToFill(api: ScriptApi) {
-  await panToShow(api, [TRIP_CARD], { fx: 0.5, fy: 0.5 })
+async function zoomToFill(api: ScriptApi, target: string) {
+  await panToShow(api, [target], { fx: 0.5, fy: 0.5 })
   for (let attempt = 0; attempt < 3; attempt++) {
-    const card = api.boxOf(TRIP_CARD)
+    const frame = api.boxOf(target)
     const canvas = api.boxOf(CANVAS)
-    if (!card || !canvas || !canvas.width || !canvas.height) return
-    const share = Math.max(card.width / canvas.width, card.height / canvas.height)
+    if (!frame || !canvas || !canvas.width || !canvas.height) return
+    const share = Math.max(frame.width / canvas.width, frame.height / canvas.height)
     if (share >= FILL_SHARE) break
     const deltaY = -Math.log(FILL_AIM / share) / WHEEL_ZOOM_SPEED
-    await api.moveTo(TRIP_CARD, { fx: 0.5, fy: 0.5 })
+    await api.moveTo(target, { fx: 0.5, fy: 0.5 })
     await api.wheel(0, deltaY, { mods: { ctrl: true }, duration: 1100 })
     await api.wait(200)
   }
-  await panToShow(api, [TRIP_CARD], { fx: FOCUS_FX, fy: 0.5 })
+  await panToShow(api, [target], { fx: FOCUS_FX, fy: 0.5 })
 }
 
-/** Select the trip card: its right side is the card itself (its text hugs the left). */
-async function selectTripCard(api: ScriptApi) {
-  await api.click(TRIP_CARD, { fx: 0.85, fy: 0.5 })
-}
-
-/** 1. Capture the trip card in Build Mode; key moment: the snapshot on the canvas, selected. */
+/** 1. Live product on canvas; key moment: the captured trip card on the canvas, selected and editable. */
 const captureScript: DemoScript = async (api) => {
   await captureInBuildMode(api)
   await scene(api, "back to canvas", async () => {
@@ -73,31 +74,42 @@ const captureScript: DemoScript = async (api) => {
     await api.wait(500)
   })
   await scene(api, "the snapshot on canvas", async () => {
-    await zoomToFill(api)
-    await selectTripCard(api)
+    await zoomToFill(api, TRIP_CARD)
+    // Its right side is the card itself (its text hugs the left), so this selects it.
+    await api.click(TRIP_CARD, { fx: 0.85, fy: 0.5 })
     await api.wait(400)
   })
 }
 
-/** 2. Visual edits; key moment: the card takes its new Fill, the settings panel open beside it. */
+/**
+ * 2. Controls, not prompts; key moment: the Check-in Banner with rounded corners, made by dragging
+ * its radius thumb on the canvas, while the settings panel's Corner radius follows.
+ */
 const visualEditsScript: DemoScript = async (api) => {
-  await scene(api, "select and recolour", async () => {
-    await zoomToFill(api)
-    await selectTripCard(api)
-    await api.find(FILL_HEX)
+  await scene(api, "round the corners", async () => {
+    await zoomToFill(api, CHECK_IN_BANNER)
+    await api.click(CHECK_IN_BANNER, { fx: 0.8, fy: 0.5 })
+    await api.find(RADIUS_THUMB)
     await api.wait(600)
-    revealInList(api, FILL_HEX)
-    // Click into the Fill hex and type over it: the card takes the colour as the last digit lands.
-    await api.click(FILL_HEX)
-    await api.wait(250)
-    await api.type(NEW_FILL, { into: FILL_HEX, replace: true })
-    await api.wait(300)
-    await api.press("Enter", { on: FILL_HEX })
+    // Drag the top-left thumb diagonally inward: the radius grows by the distance travelled.
+    const banner = api.boxOf(CHECK_IN_BANNER)
+    const thumb = api.boxOf(RADIUS_THUMB)
+    if (banner && thumb) {
+      const inward = Math.min(banner.width, banner.height) * 0.16
+      const to = { x: thumb.left + thumb.width / 2 + inward, y: thumb.top + thumb.height / 2 + inward }
+      await api.drag(RADIUS_THUMB, to, { duration: 1100 })
+    }
     await api.wait(400)
+    // Point at the panel's Corner radius, which followed the drag.
+    if (api.exists(CORNER_RADIUS_FIELD)) await api.moveTo(CORNER_RADIUS_FIELD, { fx: 0.5, fy: 1, dy: 14, duration: 700 })
+    await api.wait(300)
   })
 }
 
-/** 4. Send the selected frame to the Build Agent; key moment: the chat with its build summary. */
+/**
+ * 4. Canvas to code in one shot; key moment: Code changes open on the scoped diff the Build Agent
+ * made from the trip card's frame (its designed "Check in" badge).
+ */
 const buildScript: DemoScript = async (api) => {
   await scene(api, "send to build chat", async () => {
     await focusTripCard(api)
@@ -105,11 +117,16 @@ const buildScript: DemoScript = async (api) => {
     await api.wait(250)
     await api.click(`${COMPOSER} button[type="submit"]`)
     await ensureSent(api, TRIP_CARD, BUILD_PROMPT)
-    // The chat closes while it builds (the frame's badge spins); reopen it on the summary.
+    // The chat closes while it builds (the frame's badge spins).
     await agentDone(api, 20000)
+    await api.wait(500)
+  })
+  await scene(api, "the diff", async () => {
+    await api.click(CODE_CHANGES_BUTTON)
+    await api.find(CODE_CHANGES_DIALOG)
     await api.wait(400)
-    await openChat(api, TRIP_CARD)
-    await api.wait(300)
+    // Rest over the diff (the built file is selected first).
+    await api.moveTo(CODE_CHANGES_DIALOG, { fx: 0.7, fy: 0.6, duration: 700 })
   })
 }
 
@@ -119,10 +136,13 @@ const createPreviewLink = (api: ScriptApi) => () =>
     el.textContent?.includes("Create Preview Link"),
   )
 
-/** 5. Share; key moment: the Preview URL window, published, with Open / Copy. */
+/**
+ * 5. Collaborate and ship; key moment: the Preview URL window, published, with Open / Copy, over
+ * the Codebase frame running the built change (the real thing being shared).
+ */
 const shareScript: DemoScript = async (api) => {
   await scene(api, "share", async () => {
-    await panToShow(api, [TRIP_CARD], { fx: 0.45, fy: 0.55 })
+    await panToShow(api, [CODEBASE], { fx: 0.45, fy: 0.55 })
     await api.wait(300)
     await api.click(SHARE_BUTTON)
     await api.find(SHARE_DIALOG)
