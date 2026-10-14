@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { ArrowRight, ChevronDown, ChevronsUp, Code2, Globe, GitBranch, Hash, MapIcon, MousePointer2, Redo2, Undo2 } from "lucide-react"
-import { LiveProductDemo } from "@/components/hero-screen/live-product-demo"
+import { FeatureClip, type FeatureClipId } from "@/components/hero-screen/live-product-demo"
 import { cn } from "@/lib/utils"
 
 /** Same fluid column as the hero: scales with the viewport, capped at 1280px. */
@@ -70,7 +70,7 @@ export function FeatureSection() {
             <FeatureCopy title="Live product on canvas" className="lg:order-2">
               Capture any element of your live product onto the canvas, pixel perfect and fully editable.
             </FeatureCopy>
-            <LiveProductMockup />
+            <ClipMockup clip="capture" />
           </div>
         </div>
       </div>
@@ -102,14 +102,14 @@ export function LastMileSection() {
               A padding change shouldn&apos;t take a paragraph. Edit anything, on canvas or in code, with the visual
               controls you already know.
             </FeatureCopy>
-            <EmptyMockup />
+            <ClipMockup clip="visual-edits" />
           </div>
 
           <div className={cn(FEATURE_CARD, "lg:grid-cols-[2fr_1fr]")}>
             <FeatureCopy title="Canvas to code in one shot" className="lg:order-2">
               Your changes build back as clean, scoped diffs with your design system enforced.
             </FeatureCopy>
-            <EmptyMockup />
+            <ClipMockup clip="build" />
           </div>
         </div>
       </div>
@@ -147,7 +147,7 @@ export function ShareSection() {
             <FeatureCopy title="Collaborate and ship" className="lg:order-2">
               No localhost to share, no branches to wrangle. Send a link, get comments, open the PR in one click.
             </FeatureCopy>
-            <EmptyMockup />
+            <ClipMockup clip="share" />
           </div>
         </div>
       </div>
@@ -413,13 +413,13 @@ function FeatureCopy({ title, className, children }: { title: string; className?
 }
 
 /**
- * The "Live product on canvas" showcase: the scripted demo (capture in Build Mode → back to the
- * canvas, on a loop) in the same dark frame as the other mockup.
+ * A feature card's clip (see FeatureClip): plays once when scrolled into view, stops on its key
+ * moment and holds it as a still, in the same dark frame as the other mockups.
  */
-function LiveProductMockup() {
+function ClipMockup({ clip }: { clip: FeatureClipId }) {
   return (
     <div className={cn(MOCKUP_FRAME, "p-[clamp(0.75rem,1.5vw,1rem)]")}>
-      <LiveProductDemo />
+      <FeatureClip clip={clip} />
     </div>
   )
 }

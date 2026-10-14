@@ -64,6 +64,12 @@ export type ScriptedStageProps = {
    * visitor turn's targets, so they can't close it. Hovering still works.
    */
   visitorLock?: string
+  /**
+   * Without `loop`: once the run is over, stay on its last frame as a still and hand the screen to
+   * the visitor. The simulated cursor goes away and their pointer and keys reach the screen (plain
+   * scroll over it still scrolls the page; pinch / ⌘-scroll zooms the canvas).
+   */
+  holdLastFrame?: boolean
   /** The script has started a run (after `startDelay`). */
   onStart?: () => void
   /**
@@ -96,6 +102,7 @@ export function ScriptedStage({
   resumeAfterIdle = 8000,
   visitorArea,
   visitorLock,
+  holdLastFrame = false,
   onStart,
   onFinish,
   className,
@@ -110,8 +117,10 @@ export function ScriptedStage({
   const [cursorVisible, setCursorVisible] = useState(false)
   /** The screen is faded out (end of a run, before the fresh one mounts). */
   const [faded, setFaded] = useState(false)
+  /** The run is over and the screen holds its last frame for the visitor (see `holdLastFrame`). */
+  const [held, setHeld] = useState(false)
   /** The visitor's mouse and keys are kept off the screen while the demo plays. */
-  const shielded = playing && !interruptible
+  const shielded = playing && !interruptible && !held
   /** Shielded, but the visitor's pointer may hover (and press inside `visitorArea`). */
   const visitorPlays = shielded && !!visitorArea
   /** The visitor is pressing on the screen, or released less than VISITOR_SETTLE_MS ago. */
@@ -213,6 +222,8 @@ export function ScriptedStage({
         onStartRef.current?.()
         await scriptRef.current(api)
         if (!loop) {
+          // Hold the last frame as a still; the screen is the visitor's from here.
+          if (holdLastFrame) setHeld(true)
           await sleep(loopDelay)
           onFinishRef.current?.()
           return
@@ -236,7 +247,10 @@ export function ScriptedStage({
       } catch (error) {
         if (!(error instanceof ScriptAborted)) console.error("[scripted-stage] demo step failed:", error)
         // A one-shot run that failed hands over as if it had finished.
-        if (!signal.aborted && !loop) onFinishRef.current?.()
+        if (!signal.aborted && !loop) {
+          if (holdLastFrame) setHeld(true)
+          onFinishRef.current?.()
+        }
         // A target never appeared, or a step failed: start over on a fresh screen.
         if (!signal.aborted && loop) {
           const last = runner as ScriptApi | null
@@ -253,7 +267,32 @@ export function ScriptedStage({
       controller.abort()
       resetHover()
     }
-  }, [playing, ready, iteration, pace, startDelay, loop, loopDelay, loopTransition, interruptible, visitorArea])
+  }, [playing, ready, iteration, pace, startDelay, loop, loopDelay, loopTransition, interruptible, visitorArea, holdLastFrame])
+
+  /*
+   * Holding the last frame (`holdLastFrame`): the visitor can play with the screen, but it mustn't
+   * take over the page. Plain scroll over it scrolls the page rather than panning the canvas
+   * (pinch / ⌘-scroll still zoom), and keys pressed outside any field never reach the screen's
+   * shortcuts.
+   */
+  useEffect(() => {
+    if (!held) return
+    const stage = stageRef.current
+    function onWheel(e: WheelEvent) {
+      if (!e.isTrusted || e.ctrlKey || e.metaKey) return
+      if (e.target instanceof Node && stage?.contains(e.target)) e.stopPropagation()
+    }
+    function onKey(e: Event) {
+      if (e.isTrusted && (e.target === document.body || e.target === document.documentElement)) e.stopImmediatePropagation()
+    }
+    const keyTypes = ["keydown", "keypress", "keyup"] as const
+    window.addEventListener("wheel", onWheel, { capture: true, passive: true })
+    keyTypes.forEach((type) => window.addEventListener(type, onKey, true))
+    return () => {
+      window.removeEventListener("wheel", onWheel, true)
+      keyTypes.forEach((type) => window.removeEventListener(type, onKey, true))
+    }
+  }, [held])
 
   /*
    * Independence from the visitor: the screen itself ignores the real pointer (pointer-events
@@ -407,7 +446,7 @@ export function ScriptedStage({
 
       {/* Overlay: never intercepts input, so synthetic events hit the screen underneath. */}
       <div ref={rippleLayerRef} aria-hidden="true" className="pointer-events-none absolute inset-0 z-[60] overflow-hidden">
-        <SimulatedCursor ref={cursorRef} visible={cursorVisible && playing} />
+        <SimulatedCursor ref={cursorRef} visible={cursorVisible && playing && !held} />
       </div>
     </div>
   )
