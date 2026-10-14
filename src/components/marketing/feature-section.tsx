@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { ChevronDown, Code2, Globe, GitBranch, Hash, MousePointer2, Redo2, Undo2 } from "lucide-react"
+import { ArrowRight, ChevronDown, ChevronsUp, Code2, Globe, GitBranch, Hash, MapIcon, MousePointer2, Redo2, Undo2 } from "lucide-react"
 import { LiveProductDemo } from "@/components/hero-screen/live-product-demo"
 import { cn } from "@/lib/utils"
 
@@ -158,6 +158,165 @@ export function ShareSection() {
 /** Placeholder mockup: an empty frame with the hero screen's background. */
 function EmptyMockup() {
   return <div aria-hidden="true" className={cn(MOCKUP_FRAME, "aspect-[12/7] w-full")} />
+}
+
+/** Light card surface shared by the proof section's cards (same look as the feature cards). */
+const SURFACE =
+  "rounded-[clamp(0.625rem,0.8vw,0.75rem)] border border-white/70 bg-[#f1efeb] shadow-[0_30px_80px_-30px_rgba(40,50,20,0.25)]"
+
+const STATS = [
+  { value: "22", unit: "days", label: "saved on delivery cycle" },
+  { value: "0", unit: null, label: "Engineering handoffs" },
+  { value: "95", unit: "%", label: "of UI from existing components" },
+]
+
+const TESTIMONIALS: { logo: ReactNode; name: string; role: string; quote: string }[] = [
+  {
+    logo: <span className="rounded-full border border-stone-500 px-1.5 text-[10px] font-semibold tracking-wide text-stone-600 uppercase">kiwi.com</span>,
+    name: "Martin MJ Jancik",
+    role: "Product Design Manager at Kiwi.com",
+    quote:
+      "Modeinspect integrates seamlessly with our codebase and design system, which is exactly what we have been looking for in AI design tools. It enables iteration on top of an already complex product.",
+  },
+  {
+    logo: (
+      <span className="flex items-center gap-1.5 font-semibold text-stone-600">
+        <MapIcon className="size-4" /> moss
+      </span>
+    ),
+    name: "Tereza Reznickova",
+    role: "Principal Product Manager at Moss",
+    quote:
+      "Modeinspect is the first AI tool that respects our design system 1:1. It allows us to create production-like prototypes, which makes our whole team faster.",
+  },
+  {
+    logo: <span className="text-lg font-black tracking-tight text-stone-600">NCCER</span>,
+    name: "Christian Bistany",
+    role: "UX Designer at NCCER",
+    quote:
+      "The biggest value add was being able to make changes in real time, using our design system, and immediately pushing the changes to code for senior devs to review and merge.",
+  },
+]
+
+/**
+ * "Production-grade isn't a tagline." headline, a stats + Prelude story card, three customer
+ * quotes, and a closing "Try it on your codebase." call to action.
+ */
+export function ProofSection() {
+  return (
+    <section className="relative isolate flex w-full flex-col overflow-hidden bg-[#cdc9c5] text-mi-ink">
+      <div className={cn(COLUMN, "flex flex-col pb-[clamp(4rem,8vw,8rem)] pt-[clamp(2rem,4vw,4rem)]")}>
+        <h2 className="max-w-[14em] text-[clamp(2.25rem,1.25rem+2.6vw,3.75rem)] leading-[1.15] tracking-[-0.03em]">
+          <span className="font-medium">Production-grade isn&apos;t a tagline. </span>
+          <span className="font-pixel font-black tracking-[-0.01em] text-stone-700 [font-synthesis:none]">
+            It&apos;s the metric.
+          </span>
+        </h2>
+        <p className="mt-[clamp(1rem,1.5vw,1.5rem)] max-w-[28em] text-[clamp(1.0625rem,0.95rem+0.3vw,1.25rem)] leading-[1.6] text-[#5c6252]">
+          Four teams that merged design and engineering in the same loop.
+        </p>
+
+        {/* Stats + featured story */}
+        <div className={cn(SURFACE, "mt-[clamp(2.5rem,5vw,4rem)] overflow-hidden")}>
+          <dl className="grid divide-y divide-black/10 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            {STATS.map((stat) => (
+              <div key={stat.label} className="flex flex-col gap-1 p-[clamp(1.25rem,2.5vw,2rem)]">
+                <dt className="sr-only">{stat.label}</dt>
+                <dd className="flex items-baseline gap-1 text-[clamp(2.5rem,2rem+1.5vw,3.5rem)] leading-none tracking-[-0.03em]">
+                  {stat.value}
+                  {stat.unit && <span className="text-[0.5em] text-stone-500">{stat.unit}</span>}
+                </dd>
+                <p aria-hidden="true" className="max-w-[12em] text-sm leading-[1.7] text-stone-500">
+                  {stat.label}
+                </p>
+              </div>
+            ))}
+          </dl>
+
+          <div className="grid items-center gap-10 border-t border-black/10 p-[clamp(1.5rem,4vw,3.5rem)] lg:grid-cols-2 lg:gap-0">
+            <div className="flex flex-col items-start gap-6 lg:pr-[clamp(2rem,4vw,3.5rem)]">
+              <p className="flex items-center gap-2 font-semibold">
+                <span className="flex size-6 items-center justify-center rounded-md bg-mi-ink text-white">
+                  <ChevronsUp className="size-3.5" />
+                </span>
+                Prelude
+              </p>
+              <h3 className="max-w-[13em] text-[clamp(1.5rem,1.1rem+1.2vw,2.125rem)] leading-[1.5] tracking-[-0.02em]">
+                How Prelude became an AI-native design team that ships its own PRs.
+              </h3>
+              <a
+                href="#"
+                className="flex items-center gap-2 rounded-full bg-mi-ink px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-stone-800"
+              >
+                Read story <ArrowRight className="size-3.5" />
+              </a>
+            </div>
+
+            <figure className="flex flex-col gap-6 lg:border-l lg:border-black/10 lg:py-4 lg:pl-[clamp(2rem,4vw,3.5rem)]">
+              <Person name="Quentin Le Bras" role="Chief Product & Design Officer at Prelude" />
+              <blockquote className="text-sm leading-[1.7] text-stone-500">
+                &ldquo;My designers explore on our actual codebase, with real data, and open the PR themselves. We go
+                from idea to a merged PR without a handoff in between - that&apos;s a superpower, not a workflow.&rdquo;
+              </blockquote>
+            </figure>
+          </div>
+        </div>
+
+        {/* Customer quotes */}
+        <div className="mt-[clamp(1rem,2vw,1.5rem)] grid gap-[clamp(1rem,2vw,1.5rem)] md:grid-cols-3">
+          {TESTIMONIALS.map((t) => (
+            <figure key={t.name} className={cn(SURFACE, "flex flex-col gap-6 p-[clamp(1.25rem,2.5vw,2rem)]")}>
+              <div className="flex h-6 items-center">{t.logo}</div>
+              <Person name={t.name} role={t.role} />
+              <blockquote className="text-sm leading-[1.7] text-stone-500">&ldquo;{t.quote}&rdquo;</blockquote>
+            </figure>
+          ))}
+        </div>
+
+        {/* Call to action */}
+        <div
+          className={cn(
+            SURFACE,
+            "mt-[clamp(4rem,9vw,8rem)] flex flex-col items-start justify-between gap-6 p-[clamp(1.5rem,3vw,2.5rem)] sm:flex-row sm:items-center",
+          )}
+        >
+          <div className="flex flex-col gap-2">
+            <h2 className="text-[clamp(1.75rem,1.3rem+1.2vw,2.5rem)] leading-[1.1] font-medium tracking-[-0.03em]">
+              Try it on your codebase.
+            </h2>
+            <p className="text-sm text-stone-500">Free on Hobby. No credit card required.</p>
+          </div>
+          <a
+            href="#"
+            className="rounded-lg border border-mi-lime-deep/60 bg-mi-lime/60 px-5 py-2.5 text-base font-medium text-mi-lime-ink shadow-[0_8px_24px_-12px_rgba(60,80,20,0.35)] transition-colors hover:bg-mi-lime/80"
+          >
+            Get started
+          </a>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** Avatar (initials placeholder), name and role. */
+function Person({ name, role }: { name: string; role: string }) {
+  const initials = name
+    .split(" ")
+    .filter((part) => /^[A-Z]/.test(part))
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join("")
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-full border border-white bg-stone-300 text-sm font-medium text-stone-600 shadow-sm">
+        {initials}
+      </span>
+      <div className="flex flex-col">
+        <span className="text-sm font-medium text-mi-ink">{name}</span>
+        <span className="text-xs text-stone-500">{role}</span>
+      </div>
+    </div>
+  )
 }
 
 /** A static snapshot of the canvas: a frame selected, its settings panel and the inspector beside it. */
