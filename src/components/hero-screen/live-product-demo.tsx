@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "re
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
-import { captureInBuildMode, CODEBASE, focusTripCard, TRIP_CARD } from "./hero-demo"
+import { captureInBuildMode, CODEBASE, TRIP_CARD } from "./hero-demo"
 import { agentDone, COMPOSER, ensureSent, panToShow, scene, typePrompt } from "./hero-demo-v1"
 import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
 
@@ -106,13 +106,47 @@ const visualEditsScript: DemoScript = async (api) => {
   })
 }
 
+/*
+ * Room for the Build Agent chat. It opens right of the selected frame, and the frame settings
+ * panel takes the screen's right edge. On this narrower screen (LAYOUT) a zoomed-in, centred card
+ * would push the chat under that panel. So the card is sized and placed to leave the chat its own
+ * column between the card and the panel. Widths are in the screen's layout px (see
+ * build-agent-composer / frame-settings-panel / left-sidebar).
+ */
+const SETTINGS_PANEL_SPACE = 326 + 4 + 12
+const CHAT_SPACE = 300 + 12
+const SIDEBAR_SPACE = 44 + 16
+
+/**
+ * Zoom the trip card out if needed and pan it so that it, the chat on its right and the settings
+ * panel all fit side by side.
+ */
+async function placeBesideChat(api: ScriptApi) {
+  await panToShow(api, [TRIP_CARD], { fx: 0.4, fy: 0.5 })
+  const stageWidth = api.stage.clientWidth
+  const rightEdge = stageWidth - SETTINGS_PANEL_SPACE - CHAT_SPACE
+  const room = rightEdge - SIDEBAR_SPACE
+  const card = api.boxOf(TRIP_CARD)
+  if (!card || room <= 0) return
+  if (card.width > room) {
+    // ⌘-scroll out by exactly the amount that fits the card into the room (zoom × exp(−deltaY × speed)).
+    await api.moveTo(TRIP_CARD, { fx: 0.5, fy: 0.5 })
+    await api.wheel(0, Math.log((card.width / room) * 1.04) / WHEEL_ZOOM_SPEED, { mods: { ctrl: true }, duration: 800 })
+    await api.wait(200)
+  }
+  const fitted = api.boxOf(TRIP_CARD)
+  if (!fitted) return
+  const centreX = Math.max(SIDEBAR_SPACE + fitted.width / 2, rightEdge - fitted.width / 2)
+  await panToShow(api, [TRIP_CARD], { fx: centreX / stageWidth, fy: 0.55 })
+}
+
 /**
  * 4. Canvas to code in one shot; key moment: Code changes open on the scoped diff the Build Agent
  * made from the trip card's frame (its designed "Check in" badge).
  */
 const buildScript: DemoScript = async (api) => {
   await scene(api, "send to build chat", async () => {
-    await focusTripCard(api)
+    await placeBesideChat(api)
     await typePrompt(api, TRIP_CARD, BUILD_PROMPT)
     await api.wait(250)
     await api.click(`${COMPOSER} button[type="submit"]`)
