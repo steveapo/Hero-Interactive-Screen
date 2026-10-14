@@ -96,16 +96,68 @@ export function LastMileSection() {
           Visual controls, your components and tokens 1:1, and canvas to code in one shot.
         </p>
 
-        <div className={cn(FEATURE_CARD, "mt-[clamp(2.5rem,5vw,4rem)]")}>
-          <FeatureCopy title="Controls, not prompts">
-            A padding change shouldn&apos;t take a paragraph. Edit anything, on canvas or in code, with the visual
-            controls you already know.
-          </FeatureCopy>
-          <div aria-hidden="true" className={cn(MOCKUP_FRAME, "aspect-[12/7] w-full")} />
+        <div className="mt-[clamp(2.5rem,5vw,4rem)] flex flex-col gap-[clamp(3rem,7vw,6rem)]">
+          <div className={FEATURE_CARD}>
+            <FeatureCopy title="Controls, not prompts">
+              A padding change shouldn&apos;t take a paragraph. Edit anything, on canvas or in code, with the visual
+              controls you already know.
+            </FeatureCopy>
+            <EmptyMockup />
+          </div>
+
+          <div className={cn(FEATURE_CARD, "lg:grid-cols-[2fr_1fr]")}>
+            <FeatureCopy title="Canvas to code in one shot" className="lg:order-2">
+              Your changes build back as clean, scoped diffs with your design system enforced.
+            </FeatureCopy>
+            <EmptyMockup />
+          </div>
         </div>
       </div>
     </section>
   )
+}
+
+/**
+ * "Share the real thing. Not a localhost." headline and two feature cards whose mockups are, for
+ * now, empty frames with the hero screen's background.
+ */
+export function ShareSection() {
+  return (
+    <section className="relative isolate flex w-full flex-col overflow-hidden bg-[#cdc9c5] text-mi-ink">
+      <div className={cn(COLUMN, "flex flex-col pb-[clamp(3rem,6vw,6rem)] pt-[clamp(2rem,4vw,4rem)]")}>
+        <h2 className="flex flex-col gap-[0.05em] text-[clamp(2.25rem,1.25rem+2.6vw,3.75rem)] leading-[1.05] tracking-[-0.03em]">
+          <span className="font-medium">Share the real thing.</span>
+          <span className="font-pixel font-black tracking-[-0.01em] text-stone-700 [font-synthesis:none]">
+            Not a localhost.
+          </span>
+        </h2>
+        <p className="mt-[clamp(1rem,1.5vw,1.5rem)] max-w-[28em] text-[clamp(1.0625rem,0.95rem+0.3vw,1.25rem)] leading-[1.6] text-[#5c6252]">
+          Users, stakeholders, and colleagues open the live change and comment on it. The PR is one click away.
+        </p>
+
+        <div className="mt-[clamp(2.5rem,5vw,4rem)] flex flex-col gap-[clamp(3rem,7vw,6rem)]">
+          <div className={FEATURE_CARD}>
+            <FeatureCopy title="Test the real thing">
+              Click through real components and live data, across every breakpoint. Not a simulation.
+            </FeatureCopy>
+            <EmptyMockup />
+          </div>
+
+          <div className={cn(FEATURE_CARD, "lg:grid-cols-[2fr_1fr]")}>
+            <FeatureCopy title="Collaborate and ship" className="lg:order-2">
+              No localhost to share, no branches to wrangle. Send a link, get comments, open the PR in one click.
+            </FeatureCopy>
+            <EmptyMockup />
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+/** Placeholder mockup: an empty frame with the hero screen's background. */
+function EmptyMockup() {
+  return <div aria-hidden="true" className={cn(MOCKUP_FRAME, "aspect-[12/7] w-full")} />
 }
 
 /** A static snapshot of the canvas: a frame selected, its settings panel and the inspector beside it. */
