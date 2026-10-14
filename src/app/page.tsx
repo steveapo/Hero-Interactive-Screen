@@ -2,6 +2,7 @@ import { HeroShowcase } from "@/components/hero-screen/hero-showcase"
 import { EngineersSection } from "@/components/marketing/engineers-section"
 import { FaqSection } from "@/components/marketing/faq-section"
 import { FeatureSection, LastMileSection, ProofSection, ShareSection } from "@/components/marketing/feature-section"
+import { SiteFooter } from "@/components/marketing/site-footer"
 import { SiteHero } from "@/components/marketing/site-hero"
 
 export default function Home() {
@@ -19,6 +20,7 @@ export default function Home() {
       <ProofSection />
       <EngineersSection />
       <FaqSection />
+      <SiteFooter />
     </main>
   )
 }
