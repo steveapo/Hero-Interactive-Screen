@@ -211,13 +211,18 @@ const PORTAL_LOAD_MS = 0
  */
 const LAYOUT = { width: 1100, height: 688 }
 
-/** Share of the showcase that must be on screen before it starts playing. */
-const VISIBLE_THRESHOLD = 0.4
+/**
+ * A clip starts once it's fully in the viewport. Checked at a few ratios near 1, since a box drawn
+ * at fractional px may never report exactly 1. A clip taller than the viewport counts as fully in
+ * view once it fills the viewport's height.
+ */
+const VISIBLE_THRESHOLDS = [0.9, 0.95, 0.99, 1]
+const FULLY_VISIBLE_RATIO = 0.99
 
-/** One feature clip (see CLIPS): plays once when scrolled into view, then holds its key moment. */
+/** One feature clip (see CLIPS): plays once when fully scrolled into view, then holds its key moment. */
 export function FeatureClip({ clip, className }: { clip: FeatureClipId; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
-  /** Scrolled into view (latched): the clip may start. */
+  /** Fully scrolled into view (latched): the clip may start. */
   const [ready, setReady] = useState(false)
   const { script, start } = CLIPS[clip]
 
@@ -227,10 +232,12 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (!entry?.isIntersecting) return
+        const fillsViewport = entry.intersectionRect.height >= window.innerHeight * FULLY_VISIBLE_RATIO
+        if (entry.intersectionRatio < FULLY_VISIBLE_RATIO && !fillsViewport) return
         setReady(true)
         observer.disconnect()
       },
-      { threshold: VISIBLE_THRESHOLD },
+      { threshold: VISIBLE_THRESHOLDS },
     )
     observer.observe(el)
     return () => observer.disconnect()
