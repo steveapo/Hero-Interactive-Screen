@@ -1,4 +1,6 @@
 import { HeroShowcase } from "@/components/hero-screen/hero-showcase"
+import { EngineersSection } from "@/components/marketing/engineers-section"
+import { FaqSection } from "@/components/marketing/faq-section"
 import { FeatureSection, LastMileSection, ProofSection, ShareSection } from "@/components/marketing/feature-section"
 import { SiteHero } from "@/components/marketing/site-hero"
 
@@ -15,6 +17,8 @@ export default function Home() {
       <LastMileSection />
       <ShareSection />
       <ProofSection />
+      <EngineersSection />
+      <FaqSection />
     </main>
   )
 }
