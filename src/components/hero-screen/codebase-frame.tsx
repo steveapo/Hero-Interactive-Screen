@@ -68,8 +68,17 @@ export function CodebaseFrame({
   const finishIntro = useCallback(() => setIntroDone(true), [])
   /** The thumbnail file is missing: keep the live app in place of it. */
   const [thumbnailMissing, setThumbnailMissing] = useState(false)
+  /**
+   * A thumbnail that failed before hydration never reports it through `onError` (the event fired
+   * before React listened), so check the image itself as soon as it mounts.
+   */
+  const thumbnailRef = useCallback((img: HTMLImageElement | null) => {
+    if (img && img.complete && img.naturalWidth === 0) setThumbnailMissing(true)
+  }, [])
   /** The live app is mounted only for the load-in's opening animation (or if there's no thumbnail). */
   const showLiveApp = (appear === "in" && !introDone) || (appear !== "hidden" && thumbnailMissing)
+  /** Standing in for a missing thumbnail (no load-in): the settled app straight away, no intro. */
+  const liveIntroSpeed = appear === "in" ? CODEBASE_INTRO_SPEED : 1000
 
   return (
     <div
@@ -134,6 +143,7 @@ export function CodebaseFrame({
         {appear !== "hidden" && !thumbnailMissing && (
           // eslint-disable-next-line @next/next/no-img-element -- a fixed-size canvas thumbnail, scaled by the frame
           <img
+            ref={thumbnailRef}
             src={CODEBASE_THUMBNAIL}
             alt="Fairbnb app"
             draggable={false}
@@ -151,7 +161,7 @@ export function CodebaseFrame({
               className="@container size-full overflow-hidden bg-white"
               style={covered ? { contentVisibility: "hidden" } : undefined}
             >
-              <AirbnbScreen introSpeed={CODEBASE_INTRO_SPEED} onIntroDone={finishIntro} />
+              <AirbnbScreen introSpeed={liveIntroSpeed} onIntroDone={finishIntro} />
             </div>
           </div>
         )}
