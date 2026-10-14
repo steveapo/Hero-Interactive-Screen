@@ -12,6 +12,10 @@ const LOGOS = ["moss", "apify", "E2B", "Prelude", "NCCER", "Deepnote"]
 const FEATURE_CARD =
   "grid items-center gap-8 rounded-[clamp(0.625rem,0.8vw,0.75rem)] border border-white/70 bg-[#f1efeb] p-[clamp(1rem,1.5vw,1.25rem)] shadow-[0_30px_80px_-30px_rgba(40,50,20,0.25)] lg:grid-cols-[1fr_2fr]"
 
+/** Dark frame around the mockups: the same background as the hero's interactive screen. */
+const MOCKUP_FRAME =
+  "relative overflow-hidden rounded-xl border border-black/80 bg-[#12120e] bg-[url(/hero/bg.png)] bg-cover bg-center bg-no-repeat"
+
 /**
  * Below the hero: a "Loved by" logo strip, the "Canvas and code, unified." headline, and a
  * feature card with a product mockup.
@@ -74,12 +78,42 @@ export function FeatureSection() {
   )
 }
 
+/**
+ * "Vibe coding gets you to 80%." headline and a feature card whose mockup is, for now, an empty
+ * frame with the hero screen's background.
+ */
+export function LastMileSection() {
+  return (
+    <section className="relative isolate flex w-full flex-col overflow-hidden bg-[#cdc9c5] text-mi-ink">
+      <div className={cn(COLUMN, "flex flex-col pb-[clamp(3rem,6vw,6rem)] pt-[clamp(2rem,4vw,4rem)]")}>
+        <h2 className="flex flex-col gap-[0.05em] text-[clamp(2.25rem,1.25rem+2.6vw,3.75rem)] leading-[1.05] tracking-[-0.03em]">
+          <span className="font-medium">Vibe coding gets you to 80%.</span>
+          <span className="font-pixel font-black tracking-[-0.01em] text-stone-700 [font-synthesis:none]">
+            Modeinspect is the last 20%.
+          </span>
+        </h2>
+        <p className="mt-[clamp(1rem,1.5vw,1.5rem)] max-w-[28em] text-[clamp(1.0625rem,0.95rem+0.3vw,1.25rem)] leading-[1.6] text-[#5c6252]">
+          Visual controls, your components and tokens 1:1, and canvas to code in one shot.
+        </p>
+
+        <div className={cn(FEATURE_CARD, "mt-[clamp(2.5rem,5vw,4rem)]")}>
+          <FeatureCopy title="Controls, not prompts">
+            A padding change shouldn&apos;t take a paragraph. Edit anything, on canvas or in code, with the visual
+            controls you already know.
+          </FeatureCopy>
+          <div aria-hidden="true" className={cn(MOCKUP_FRAME, "aspect-[12/7] w-full")} />
+        </div>
+      </div>
+    </section>
+  )
+}
+
 /** A static snapshot of the canvas: a frame selected, its settings panel and the inspector beside it. */
 function ProductMockup() {
   return (
     <div
       aria-hidden="true"
-      className="relative overflow-hidden rounded-xl border border-black/80 bg-[radial-gradient(ellipse_at_80%_10%,#6b6966_0%,#2b2a28_45%,#151514_100%)] p-[clamp(0.75rem,2vw,1.75rem)] pb-0"
+      className={cn(MOCKUP_FRAME, "p-[clamp(0.75rem,2vw,1.75rem)] pb-0")}
     >
       <div className="flex h-[clamp(18rem,30vw,26rem)] overflow-hidden rounded-t-lg bg-stone-100 text-[11px] text-stone-700">
         {/* Canvas */}
@@ -173,7 +207,7 @@ function FeatureCopy({ title, className, children }: { title: string; className?
  */
 function LiveProductMockup() {
   return (
-    <div className="relative overflow-hidden rounded-xl border border-black/80 bg-[radial-gradient(ellipse_at_80%_10%,#6b6966_0%,#2b2a28_45%,#151514_100%)] p-[clamp(0.75rem,1.5vw,1rem)]">
+    <div className={cn(MOCKUP_FRAME, "p-[clamp(0.75rem,1.5vw,1rem)]")}>
       <LiveProductDemo />
     </div>
   )
