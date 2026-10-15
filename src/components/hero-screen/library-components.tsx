@@ -249,8 +249,8 @@ const BUTTON_SIZE_CLASS: Record<BadgeSize, string> = {
 
 /**
  * The Fairbnb Button (its plum gradient call to action), sized in cqw. `done` is its reserved
- * state in the live app: it turns ink, and a check pops in beside "Reserved". Keyed by the state,
- * so the pop replays each time it changes.
+ * state in the live app: same plum gradient, with a check popping in beside "Reserved". Keyed by
+ * the state, so the pop replays each time it changes.
  */
 export function FrameButton({
   instance,
@@ -265,11 +265,9 @@ export function FrameButton({
     <span
       key={done ? "done" : "idle"}
       className={cn(
-        "flex items-center justify-center gap-[0.5em] whitespace-nowrap rounded-[0.6cqw] font-semibold leading-none tracking-tight text-white",
+        "flex items-center justify-center gap-[0.5em] whitespace-nowrap rounded-[0.6cqw] bg-[linear-gradient(90deg,#8e4585,#b0569f)] font-semibold leading-none tracking-tight text-white shadow-[0_0.2cqw_0.6cqw_rgba(142,69,133,0.35)]",
         BUTTON_SIZE_CLASS[instance.size],
-        done
-          ? "bg-[#222222] pl-[0.9em] animate-in zoom-in-90 duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
-          : "bg-[linear-gradient(90deg,#8e4585,#b0569f)] shadow-[0_0.2cqw_0.6cqw_rgba(142,69,133,0.35)]",
+        done && "pl-[0.9em] animate-in zoom-in-90 duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]",
         className,
       )}
     >
