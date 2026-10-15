@@ -32,6 +32,7 @@ import {
   WishlistsScreen,
 } from "./airbnb-explorations"
 import type { CanvasRect } from "./drag"
+import { MountWhenVisible } from "./mount-when-visible"
 import type { CssPosition, Insets, LayoutMode, Sides } from "./frame-settings-panel"
 
 /**
@@ -211,7 +212,8 @@ function exploration(id: string, name: string, at: { x: number; y: number }, con
     layout: "column",
     clip: true,
     colors: palette(WHITE, RAUSCH, INK, MUTED, HAIRLINE),
-    content,
+    // Far out on the canvas: only mounted (with its photos) once it's panned into view.
+    content: <MountWhenVisible>{content}</MountWhenVisible>,
   }
 }
 

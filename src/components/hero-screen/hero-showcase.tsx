@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
@@ -10,11 +11,14 @@ import { SafariChrome } from "./safari-chrome"
 
 type WindowId = "main" | "secondary"
 
-/** Load-in: "waiting" until the Desktop Area is in view, then "play" (once). */
+/** Load-in: "waiting" until the Desktop Area is centred in the viewport, then "play" (once). */
 type IntroPhase = "waiting" | "play"
 
-/** Share of the Desktop Area that must be on screen before the load-in plays. */
-const INTRO_VISIBLE_THRESHOLD = 0.35
+/**
+ * The load-in plays once the Desktop Area's vertical centre has scrolled up to this fraction of
+ * the viewport's height (0.5 = the middle), i.e. the window is fully in place.
+ */
+const INTRO_CENTER_AT = 0.5
 
 /**
  * The Canvas window shows the product as on a larger screen: its contents are laid out this much
@@ -104,16 +108,30 @@ export function HeroShowcase({
   useEffect(() => {
     const el = desktopRef.current
     if (!el) return
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry?.isIntersecting) return
-        setIntro("play")
-        observer.disconnect()
-      },
-      { threshold: INTRO_VISIBLE_THRESHOLD },
-    )
-    observer.observe(el)
-    return () => observer.disconnect()
+    let frame = 0
+    function check() {
+      frame = 0
+      if (!el) return
+      const rect = el.getBoundingClientRect()
+      const centered = rect.top + rect.height / 2 <= window.innerHeight * INTRO_CENTER_AT
+      // A page too short (or a viewport too tall) to ever centre it: play once scrolled to the end.
+      const atBottom = window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1
+      if (!centered && !atBottom) return
+      setIntro("play")
+      stop()
+    }
+    function schedule() {
+      if (!frame) frame = requestAnimationFrame(check)
+    }
+    function stop() {
+      cancelAnimationFrame(frame)
+      window.removeEventListener("scroll", schedule)
+      window.removeEventListener("resize", schedule)
+    }
+    window.addEventListener("scroll", schedule, { passive: true })
+    window.addEventListener("resize", schedule)
+    check()
+    return stop
   }, [])
 
   /** The canvas's part of the load-in (bars, Codebase, GitHub popover, elements). */
@@ -134,11 +152,22 @@ export function HeroShowcase({
       ref={desktopRef}
       data-desktop-area
       className={cn(
-        // Desktop wallpaper (bg.png from the canvas): covers the whole Desktop Area, centred; its dark tone shows while it loads.
-        "relative flex min-h-0 w-full flex-1 overflow-hidden bg-[#12120e] bg-[url(/hero/bg.png)] bg-cover bg-center bg-no-repeat",
+        // Its dark tone shows while the wallpaper loads.
+        "relative flex min-h-0 w-full flex-1 overflow-hidden bg-[#12120e]",
         className,
       )}
     >
+      {/* Desktop wallpaper (bg.png from the canvas): covers the whole Desktop Area, centred. Served
+          through next/image, so visitors get a resized AVIF / WebP instead of the full PNG. */}
+      <Image
+        src="/hero/bg.png"
+        alt=""
+        fill
+        sizes="100vw"
+        loading="eager"
+        draggable={false}
+        className="pointer-events-none select-none object-cover object-center"
+      />
       <DesktopWindow
         title="ModeInspect Canvas"
         // Centred on the desktop (equal margins on each side).
