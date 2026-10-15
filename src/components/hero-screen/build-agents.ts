@@ -61,7 +61,12 @@ export type AgentMessage = {
   shown?: number
   /** Variants this reply is generating (rendered as a progress list). */
   tasks?: AgentTask[]
+  /** The visitor's reply: a Sign up button shows below it once it has streamed in. */
+  signUp?: boolean
 }
+
+/** What the Build Agent answers a real visitor (instead of generating variants). */
+export const SIGN_UP_REPLY = "If you'd like to try it out sign up!"
 
 export type AgentPhase = "idle" | "thinking" | "replying" | "generating" | "building"
 
@@ -303,6 +308,7 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
       originOf,
       components = [],
       fills = [],
+      byVisitor = false,
     }: {
       elementIds: string[]
       text: string
@@ -313,6 +319,11 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
       components?: FrameComponent[]
       /** The card frames' fills changed on the canvas, as they are now (what a fill build ships). */
       fills?: FrameFill[]
+      /**
+       * Typed by a real visitor (not the scripted demo): the agent only thinks, then answers with
+       * SIGN_UP_REPLY and a Sign up button. No variants, no build.
+       */
+      byVisitor?: boolean
     }) => {
       const key = keyFor(elementIds)
       const current = sessionsRef.current
@@ -343,10 +354,22 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
       }
 
       const sessionId = session.id
+      const userMessage: AgentMessage = { id: nextMessage.current++, role: "user", text }
+
+      if (byVisitor) {
+        // A real visitor: think, then the sign-up reply. The scripted turns are left untouched.
+        patchSession(sessionId, (s) => ({ messages: [...s.messages, userMessage], working: true, phase: "thinking" }))
+        const end = streamReply(sessionId, THINK_MS, SIGN_UP_REPLY, { signUp: true }).end + REPLY_PAUSE_MS / 2
+        at(sessionId, end, () => {
+          patchSession(sessionId, () => ({ working: false, phase: "idle" }))
+          timers.current.delete(sessionId)
+        })
+        return
+      }
+
       const turn: AgentTurn = (session.chat !== null ? AGENT_CHATS[session.chat].turns[session.turn] : undefined) ?? {
         reply: FALLBACK_REPLY,
       }
-      const userMessage: AgentMessage = { id: nextMessage.current++, role: "user", text }
       patchSession(sessionId, (s) => ({
         messages: [...s.messages, userMessage],
         turn: s.turn + 1,

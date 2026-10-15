@@ -43,7 +43,7 @@ export function BuildAgentComposer({
   session: AgentSession | undefined
   /** Generated variants, for the progress list of a generating reply. */
   variants: VariantState[]
-  onSend: (text: string) => void
+  onSend: (text: string, byVisitor: boolean) => void
   onStop: () => void
   onClear: () => void
   /** "Choose where to build": pick one of this chat's variants to build into the codebase. */
@@ -55,6 +55,11 @@ export function BuildAgentComposer({
   onHeightChange: (height: number) => void
 }) {
   const [prompt, setPrompt] = useState("")
+  /**
+   * The prompt was last typed by a real visitor (trusted input events), not written by the scripted
+   * demo's cursor (its typing is synthetic). A visitor's message gets the sign-up reply.
+   */
+  const typedByVisitor = useRef(false)
   /** Thumbs up / down given to agent replies, by message id. */
   const [feedback, setFeedback] = useState<Record<number, "up" | "down">>({})
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -94,8 +99,9 @@ export function BuildAgentComposer({
   function send() {
     const text = prompt.trim()
     if (text === "" || working) return
-    onSend(text)
+    onSend(text, typedByVisitor.current)
     setPrompt("")
+    typedByVisitor.current = false
   }
 
   /** Clear the conversation (also stops the agent). */
@@ -143,6 +149,14 @@ export function BuildAgentComposer({
                 <div key={m.id} className="flex flex-col gap-1.5">
                   <p className="select-text whitespace-pre-wrap break-words text-[13px] text-stone-800">{streamed(m)}</p>
                   {m.tasks && <TaskList tasks={m.tasks} variants={variants} />}
+                  {m.signUp && (m.shown === undefined || m.shown >= wordsOf(m.text).length) && (
+                    <a
+                      href="#"
+                      className="mt-1 flex h-8 w-fit items-center rounded-full bg-[#2f6bf6] px-4 text-[13px] font-semibold text-white transition-colors animate-in fade-in duration-200 hover:bg-[#2159dc]"
+                    >
+                      Sign up
+                    </a>
+                  )}
                   {(m.shown === undefined || m.shown >= wordsOf(m.text).length) && !(working && m.tasks) && (
                   <div className={cn("-ml-1.5 flex items-center gap-0.5 transition-opacity", feedback[m.id] && "opacity-70")}>
                     <button
@@ -198,21 +212,24 @@ export function BuildAgentComposer({
                 <Trash2 className="size-3.5" strokeWidth={2} />
                 Clear
               </button>
-              <button
-                type="button"
-                data-cursor-id="choose-where-to-build"
-                aria-pressed={picking}
-                onClick={onChooseBuild}
-                className={cn(
-                  "flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-semibold transition-colors",
-                  picking
-                    ? "border-green-700 bg-green-700 text-white"
-                    : "border-green-700/25 text-green-700 hover:bg-green-700/5",
-                )}
-              >
-                <ScreenShare className="size-3.5" strokeWidth={2} />
-                {picking ? "Pick a variant…" : "Choose where to build"}
-              </button>
+              {/* Nothing to build from a sign-up reply: no variants were made. */}
+              {!messages[messages.length - 1]?.signUp && (
+                <button
+                  type="button"
+                  data-cursor-id="choose-where-to-build"
+                  aria-pressed={picking}
+                  onClick={onChooseBuild}
+                  className={cn(
+                    "flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-[12px] font-semibold transition-colors",
+                    picking
+                      ? "border-green-700 bg-green-700 text-white"
+                      : "border-green-700/25 text-green-700 hover:bg-green-700/5",
+                  )}
+                >
+                  <ScreenShare className="size-3.5" strokeWidth={2} />
+                  {picking ? "Pick a variant…" : "Choose where to build"}
+                </button>
+              )}
             </div>
           )}
           <div className="mx-2 h-px bg-stone-200/70" />
@@ -225,7 +242,10 @@ export function BuildAgentComposer({
           ref={inputRef}
           rows={1}
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={(e) => {
+            typedByVisitor.current = e.nativeEvent.isTrusted
+            setPrompt(e.target.value)
+          }}
           onKeyDown={(e) => {
             if (e.key === "Escape") onClose()
             if (e.key === "Enter" && !e.shiftKey) {

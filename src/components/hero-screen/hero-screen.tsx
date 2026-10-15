@@ -1361,11 +1361,13 @@ export function HeroScreen({
           {...composer}
           session={agentSession}
           variants={agents.variants}
-          onSend={(text) =>
+          onSend={(text, byVisitor) =>
             agents.send({
               // A reopened chat (single frame showing a group's run) keeps talking to that run.
               elementIds: agentSession?.elementIds ?? agentIds,
               text,
+              // A real visitor's message gets the sign-up reply instead of variants.
+              byVisitor,
               place: placeVariants,
               originOf: (id) => ({ x: elementRects[id].x, y: elementRects[id].y }),
               components: frameComponents,
