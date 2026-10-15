@@ -253,6 +253,7 @@ export function HeroScreen({
   scrollPans = true,
   loadIntro,
   portalLoadMs,
+  portalShowUrl = true,
   maxZoom = MAX_ZOOM,
   canvasEntrance = true,
   portalAutoPrompt = false,
@@ -284,6 +285,8 @@ export function HeroScreen({
   maxZoom?: number
   /** How long the Portal's live app takes to load (ms). Omitted: the Portal's default. */
   portalLoadMs?: number
+  /** The Portal's browser window shows the live app's address. Default on. */
+  portalShowUrl?: boolean
   /** Load-in intro (see LoadIntro). Omitted: everything is simply there. */
   loadIntro?: LoadIntro
   /**
@@ -1609,6 +1612,7 @@ export function HeroScreen({
           autoPrompt={portalAutoPrompt}
           canvasFrames={portalFrames}
           onBuildFrames={buildFramesFromPortal}
+          showUrl={portalShowUrl}
         />
       )}
 

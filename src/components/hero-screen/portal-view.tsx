@@ -121,9 +121,12 @@ export const PortalView = memo(function PortalView({
   autoPrompt = false,
   canvasFrames = [],
   onBuildFrames,
+  showUrl = true,
 }: {
   onClose: () => void
   closing?: boolean
+  /** The live app's browser window shows its address (fairbnb.com) in the title bar. Off: just the traffic lights. */
+  showUrl?: boolean
   /** Typing in the agent chat writes the next scripted prompt, a few words per keystroke (see PortalChat). */
   autoPrompt?: boolean
   /** The canvas's frames, offered by the agent chat's "Add canvas frame" menu. */
@@ -379,6 +382,7 @@ export const PortalView = memo(function PortalView({
                   skipIntro={instant || viewportSwitched}
                   viewport={viewport}
                   switched={viewportSwitched}
+                  showUrl={showUrl}
                 />
               </div>
             </div>
@@ -750,12 +754,15 @@ function AirbnbDevice({
   skipIntro = false,
   viewport = "desktop",
   switched = false,
+  showUrl = true,
 }: {
   loaded: boolean
   skipIntro?: boolean
   viewport?: ViewportId
   /** The viewport was switched: the device swaps in with a short fade. */
   switched?: boolean
+  /** The browser window's title bar shows the address. */
+  showUrl?: boolean
 }) {
   const handheld = HANDHELD_SCREENS[viewport]
   if (handheld) {
@@ -816,9 +823,11 @@ function AirbnbDevice({
             <span className="size-[0.95cqw] rounded-full bg-[#febc2e] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]" />
             <span className="size-[0.95cqw] rounded-full bg-[#28c840] shadow-[inset_0_0_0_1px_rgba(0,0,0,0.12)]" />
           </span>
-          <span className="absolute left-1/2 flex h-[2cqw] w-[34cqw] -translate-x-1/2 items-center justify-center rounded-[0.6cqw] bg-black/[0.05] text-[0.95cqw] text-stone-500">
-            fairbnb.com
-          </span>
+          {showUrl && (
+            <span className="absolute left-1/2 flex h-[2cqw] w-[34cqw] -translate-x-1/2 items-center justify-center rounded-[0.6cqw] bg-black/[0.05] text-[0.95cqw] text-stone-500">
+              fairbnb.com
+            </span>
+          )}
         </div>
         <div
           data-portal-screen

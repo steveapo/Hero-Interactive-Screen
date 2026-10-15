@@ -315,6 +315,8 @@ type ClipConfig = {
   elementIds?: string[]
   /** Leaving Build Mode, the canvas frames glide in (see HeroScreen's `canvasEntrance`). Default off. */
   canvasEntrance?: boolean
+  /** The Portal's browser window shows the live app's address (see HeroScreen's `portalShowUrl`). Default on. */
+  portalShowUrl?: boolean
 }
 
 const CLIPS: Record<FeatureClipId, ClipConfig> = {
@@ -323,8 +325,8 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
   // A calm canvas: just the Codebase frame, then the captured trip card gliding in beside it.
   capture: { script: captureScript, start: "portal", elementIds: ["card-upcoming-trip"], canvasEntrance: true },
   "visual-edits": { script: visualEditsScript, start: "canvas" },
-  // Opens in Build Mode, on the live app.
-  test: { script: testScript, start: "portal" },
+  // Opens in Build Mode, on the live app; its browser window has no address in the title bar.
+  test: { script: testScript, start: "portal", portalShowUrl: false },
   // The trip card's frame carries the designed "Check in" badge: that's what gets built.
   build: { script: buildScript, start: "designed" },
   // Built into the code, so there's a real change to share.
@@ -356,7 +358,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
   const ref = useRef<HTMLDivElement>(null)
   /** Fully scrolled into view (latched): the clip may start. */
   const [ready, setReady] = useState(false)
-  const { script, start, elementIds, canvasEntrance = false } = CLIPS[clip]
+  const { script, start, elementIds, canvasEntrance = false, portalShowUrl = true } = CLIPS[clip]
 
   useEffect(() => {
     const el = ref.current
@@ -386,6 +388,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
             className="h-auto min-h-0 flex-1"
             start={start}
             portalLoadMs={PORTAL_LOAD_MS}
+            portalShowUrl={portalShowUrl}
             maxZoom={MAX_ZOOM}
             canvasEntrance={canvasEntrance}
             elementIds={elementIds}
@@ -400,11 +403,11 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
           setReady(true)
           setRunId((id) => id + 1)
         }}
-        aria-label="Reset animation"
+        aria-label="Replay"
         className="absolute bottom-3 left-3 z-50 flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 opacity-0 shadow-[0_0_0_1px_#c9c7c3,0_4px_12px_rgba(17,17,16,0.2)] transition-opacity duration-200 hover:bg-neutral-100 focus-visible:opacity-100 group-hover/clip:opacity-100"
       >
         <RotateCcw className="size-3.5" aria-hidden />
-        Reset animation
+        Replay
       </button>
     </div>
   )
