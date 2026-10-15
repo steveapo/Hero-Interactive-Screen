@@ -1391,12 +1391,12 @@ export function HeroScreen({
             type="button"
             aria-label="Back to canvas"
             onClick={closePortal}
-            // Not through cn(): tailwind-merge reads the custom `text-px-11` size as a text colour and
-            // drops it in favour of `text-stone-800`. Own surface (not PORTAL_TOP_GROUP): a slightly
-            // darker grey pill with a rounder corner, regular-weight label and a small, light arrow.
-            className="flex h-[42px] items-center gap-2.5 rounded-[14px] border border-transparent bg-[#e6e6e4] px-4 text-px-11 font-normal text-stone-800 transition-colors hover:bg-[#dededc]"
+            // Not through cn(): tailwind-merge reads the custom `text-px-12` size as a text colour and
+            // drops it in favour of `text-stone-900`. Own surface (not PORTAL_TOP_GROUP): a slightly
+            // darker grey pill with a rounder corner; the arrow is drawn like the Portal toolbar's Back.
+            className="flex h-[42px] items-center gap-2 rounded-[14px] border border-transparent bg-[#e6e6e4] px-4 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#dededc]"
           >
-            <ArrowLeft className="size-2.5 text-stone-700" strokeWidth={1.75} />
+            <ArrowLeft className="size-3.5 shrink-0" strokeWidth={1.5} />
             Back to Canvas
           </button>
         ) : (
