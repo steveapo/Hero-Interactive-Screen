@@ -439,5 +439,14 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
 
   const builtVariant = variants.find((v) => v.id === built) ?? null
 
-  return { sessions, variants, focus, send, stop, clear, sessionFor, build, builtVariant, builtComponents }
+  /**
+   * Build frames straight into the codebase, outside a canvas chat (the Portal Agent, with canvas
+   * frames attached): their library components ship as they are now.
+   */
+  const buildFrames = useCallback((frameIds: string[], components: FrameComponent[]) => {
+    const snapshot = components.filter((c) => frameIds.includes(c.frameId))
+    setBuiltComponents((list) => [...list.filter((c) => !frameIds.includes(c.frameId)), ...snapshot])
+  }, [])
+
+  return { sessions, variants, focus, send, stop, clear, sessionFor, build, builtVariant, builtComponents, buildFrames }
 }

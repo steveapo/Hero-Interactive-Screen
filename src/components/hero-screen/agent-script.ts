@@ -142,7 +142,15 @@ export type PortalTurn = {
   applies?: string
   /** The agent ran the test suite: what's shown under the reply. */
   tests?: { file: string; names: string[]; passed: number }
+  /**
+   * Builds the canvas frames attached to the message (see PortalChat's "Add canvas frame") into the
+   * codebase, as designed: their library components show on the same cards in the live app.
+   */
+  buildsFrames?: boolean
 }
+
+/** Sent in Build Mode with the trip card's canvas frame attached (the "Canvas to code" showcase). */
+export const PORTAL_BUILD_FRAME_PROMPT = "Build this frame into the codebase"
 
 export const PORTAL_TURNS: PortalTurn[] = [
   {
@@ -154,6 +162,18 @@ export const PORTAL_TURNS: PortalTurn[] = [
     added: 14,
     removed: 1,
     applies: "search-pulse",
+  },
+  // The "Canvas to code in one shot" showcase (live-product-demo.tsx): the trip card's canvas frame,
+  // attached in Build Mode, built 1:1 into the live app.
+  {
+    prompt: PORTAL_BUILD_FRAME_PROMPT,
+    title: "Build Trip Card Frame",
+    reply:
+      "Done. The Vernazza Sea House card now renders <Badge> from @/components/ui/badge, exactly as you designed it on the canvas: same label, variant, size and placement. It's live on the left.",
+    workedFor: "Worked for 16 seconds",
+    added: 9,
+    removed: 0,
+    buildsFrames: true,
   },
   // The library-component story (hero-demo.tsx): functionality for the built badge, then tests.
   {

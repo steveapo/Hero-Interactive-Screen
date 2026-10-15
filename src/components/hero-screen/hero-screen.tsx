@@ -257,8 +257,14 @@ export function HeroScreen({
   canvasEntrance = true,
   portalAutoPrompt = false,
   githubPrSheet = true,
+  elementIds,
 }: {
   className?: string
+  /**
+   * Only these app element frames are on the canvas (by id), for a calmer canvas where one frame
+   * has to stand out (the "Live product on canvas" showcase). Omitted: all of them.
+   */
+  elementIds?: string[]
   /** The GitHub popover's "View on Github" opens the pull request sheet. Off: it does nothing but show a hint. */
   githubPrSheet?: boolean
   /**
@@ -304,6 +310,10 @@ export function HeroScreen({
   /** Where the screen opens; see HeroStart. Only read on mount. */
   start?: HeroStart
 } = {}) {
+  /** The app element frames on this canvas (see `elementIds`). Only read on mount. */
+  const [canvasElements] = useState(() =>
+    elementIds ? AIRBNB_ELEMENTS.filter((el) => elementIds.includes(el.id)) : AIRBNB_ELEMENTS,
+  )
   /** Library components already in frames when the screen opens. */
   const [seededComponents] = useState<FrameComponent[]>(() =>
     start === "designed" || start === "built" || start === "wired" ? [designedCheckInBadge()] : [],
@@ -449,6 +459,17 @@ export function HeroScreen({
   const [elementNames, setElementNames] = useState<Record<string, string>>(() =>
     Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.name])),
   )
+  /** The canvas's own frames, offered by the Portal Agent's "Add canvas frame" (memoized: the Portal is). */
+  const portalFrames = useMemo(
+    () => canvasElements.filter((el) => !el.exploration).map((el) => ({ id: el.id, name: elementNames[el.id] })),
+    [canvasElements, elementNames],
+  )
+  /** The Portal Agent builds the attached frames into the codebase, with the components designed into them. */
+  const { buildFrames } = agents
+  const buildFramesFromPortal = useCallback(
+    (frameIds: string[]) => buildFrames(frameIds, frameComponents),
+    [buildFrames, frameComponents],
+  )
   const canvasRef = useRef<HTMLDivElement>(null)
   /**
    * The canvas's width over REFERENCE_CANVAS_WIDTH (see Bounds). Measured before the first paint
@@ -549,14 +570,14 @@ export function HeroScreen({
       frameBounds(
         [
           codebaseRect,
-          ...AIRBNB_ELEMENTS.filter((el) => !el.exploration).map((el) => elementRects[el.id]),
+          ...canvasElements.filter((el) => !el.exploration).map((el) => elementRects[el.id]),
           ...drawnElements.map(elementRect),
           ...agents.variants.map((v) => v.rect),
         ],
         fit,
         maxZoom,
       ),
-    [codebaseRect, elementRects, drawnElements, agents.variants, fit, maxZoom],
+    [codebaseRect, canvasElements, elementRects, drawnElements, agents.variants, fit, maxZoom],
   )
   /** What the Share button compares against its last publish (memoized: same values, same array). */
   const shareChanges = useMemo(
@@ -1177,7 +1198,7 @@ export function HeroScreen({
           offsetY={camera.y + codebaseRect.y * camera.zoom}
           appear={hasIntro ? (codebaseIn ? "in" : "hidden") : undefined}
         />
-        {AIRBNB_ELEMENTS.map((el) => (
+        {canvasElements.map((el) => (
           <DesignFrame
             // Remount on each reveal so the entrance animation replays.
             key={`${el.id}-${revealId}`}
@@ -1586,6 +1607,8 @@ export function HeroScreen({
           builtComponents={agents.builtComponents}
           loadMs={portalLoadMs}
           autoPrompt={portalAutoPrompt}
+          canvasFrames={portalFrames}
+          onBuildFrames={buildFramesFromPortal}
         />
       )}
 

@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   Ellipsis,
+  Frame,
   Laptop,
   Link,
   Mic,
@@ -59,7 +60,18 @@ function advanceWords(text: string, from: number, count: number) {
 }
 
 type PortalChatEntry = { id: number; name: string; seeded: boolean }
-type PortalMessage = { id: number; role: "user" | "agent"; text: string; shown?: number; turn?: PortalTurn }
+type PortalMessage = {
+  id: number
+  role: "user" | "agent"
+  text: string
+  shown?: number
+  turn?: PortalTurn
+  /** Names of the canvas frames attached to a user message. */
+  frames?: string[]
+}
+
+/** A canvas frame the Portal Agent can be given (see PortalChat's "Add canvas frame"). */
+export type CanvasFrameOption = { id: string; name: string }
 
 /** How long the darkened loading state shows before the live Fairbnb app loads in. */
 const PORTAL_LOAD_MS = 2000
@@ -107,11 +119,17 @@ export const PortalView = memo(function PortalView({
   builtComponents = [],
   loadMs = PORTAL_LOAD_MS,
   autoPrompt = false,
+  canvasFrames = [],
+  onBuildFrames,
 }: {
   onClose: () => void
   closing?: boolean
   /** Typing in the agent chat writes the next scripted prompt, a few words per keystroke (see PortalChat). */
   autoPrompt?: boolean
+  /** The canvas's frames, offered by the agent chat's "Add canvas frame" menu. */
+  canvasFrames?: CanvasFrameOption[]
+  /** A reply that builds frames (PortalTurn.buildsFrames) finished: build the attached frames into the codebase. */
+  onBuildFrames?: (frameIds: string[]) => void
   /** A variant the Build Agent built into the codebase: it replaces its source card in the live app. */
   builtVariant?: VariantState | null
   /** Library components the Build Agent built into the codebase: they show on their cards in the live app. */
@@ -417,7 +435,7 @@ export const PortalView = memo(function PortalView({
         </div>
       </div>
 
-      <PortalChat onApply={applyChange} autoPrompt={autoPrompt} />
+      <PortalChat onApply={applyChange} autoPrompt={autoPrompt} canvasFrames={canvasFrames} onBuildFrames={onBuildFrames} />
     </div>
   )
 })
@@ -1043,11 +1061,17 @@ function ChatSwitcher({
 const PortalChat = memo(function PortalChat({
   onApply,
   autoPrompt = false,
+  canvasFrames,
+  onBuildFrames,
 }: {
   onApply: (change: string) => void
   autoPrompt?: boolean
+  canvasFrames: CanvasFrameOption[]
+  onBuildFrames?: (frameIds: string[]) => void
 }) {
   const [prompt, setPrompt] = useState("")
+  /** Canvas frames attached to the next message (chips above the prompt). */
+  const [attached, setAttached] = useState<string[]>([])
   /**
    * autoPrompt: the scripted prompt being written and how far the keystrokes so far reach into it.
    * The composer types toward `end` one character at a time (AUTO_PROMPT_CHAR_MS).
@@ -1129,9 +1153,12 @@ const PortalChat = memo(function PortalChat({
     const text = prompt.trim()
     if (text === "" || busy || autoTypingIn) return
     const chatId = current.id
-    addMessage(chatId, { id: nextId.current++, role: "user", text })
+    const frameIds = attached
+    const frameNames = frameIds.map((id) => canvasFrames.find((f) => f.id === id)?.name ?? id)
+    addMessage(chatId, { id: nextId.current++, role: "user", text, frames: frameNames.length > 0 ? frameNames : undefined })
     setPrompt("")
     setAutoGoal(null)
+    setAttached([])
 
     // Scripted reply: think, stream it in word by word, then apply its change to the preview. The
     // turn written for exactly this message, else the next general one.
@@ -1153,6 +1180,7 @@ const PortalChat = memo(function PortalChat({
     at(think + words * PORTAL_WORD_MS + 150, () => {
       setBusyChat(null)
       if (turn.applies) onApply(turn.applies)
+      if (turn.buildsFrames && frameIds.length > 0) onBuildFrames?.(frameIds)
       if (turn.title) {
         const title = turn.title
         setChats((c) => c.map((chat) => (chat.id === chatId && chat.name === "New agent" ? { ...chat, name: title } : chat)))
@@ -1261,7 +1289,9 @@ const PortalChat = memo(function PortalChat({
 
         {currentMessages.map((m) =>
           m.role === "user" ? (
-            <UserBubble key={m.id}>{m.text}</UserBubble>
+            <UserBubble key={m.id} frames={m.frames}>
+              {m.text}
+            </UserBubble>
           ) : (
             <div key={m.id} className="flex flex-col gap-2">
               <p className="select-text">
@@ -1321,6 +1351,31 @@ const PortalChat = memo(function PortalChat({
         }}
         className="mx-1.5 mb-1.5 flex flex-col rounded-xl border border-stone-200 bg-white px-2.5 pb-2 pt-2.5 shadow-[0_1px_2px_rgba(17,17,16,0.04)]"
       >
+        {attached.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1">
+            {attached.map((id) => {
+              const name = canvasFrames.find((f) => f.id === id)?.name ?? id
+              return (
+                <span
+                  key={id}
+                  data-cursor-id="portal-attached-frame"
+                  className="flex h-6 max-w-full items-center gap-1 rounded-md bg-[#2f6bf6]/10 pl-1.5 pr-0.5 text-px-12 font-medium text-[#2159dc] animate-in fade-in zoom-in-95 duration-150"
+                >
+                  <Frame className="size-3 shrink-0" strokeWidth={1.75} />
+                  <span className="min-w-0 truncate">{name}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove ${name}`}
+                    onClick={() => setAttached((list) => list.filter((f) => f !== id))}
+                    className="flex size-5 shrink-0 items-center justify-center rounded hover:bg-[#2f6bf6]/10"
+                  >
+                    <X className="size-3" strokeWidth={1.75} />
+                  </button>
+                </span>
+              )
+            })}
+          </div>
+        )}
         <textarea
           value={prompt}
           onChange={(e) => {
@@ -1349,6 +1404,11 @@ const PortalChat = memo(function PortalChat({
             <BarButton label="Capture page" side="top">
               <ScanLine className="size-3.5" strokeWidth={1.5} />
             </BarButton>
+            <AddCanvasFrameMenu
+              frames={canvasFrames}
+              attached={attached}
+              onAttach={(id) => setAttached((list) => (list.includes(id) ? list : [...list, id]))}
+            />
           </div>
           <div className="flex items-center gap-1">
             <BarButton label="Dictate" side="top">
@@ -1372,11 +1432,93 @@ const PortalChat = memo(function PortalChat({
   )
 })
 
-function UserBubble({ children }: { children: React.ReactNode }) {
+function UserBubble({ frames, children }: { frames?: string[]; children: React.ReactNode }) {
   return (
-    <p className="max-w-[85%] select-text self-end whitespace-pre-wrap break-words rounded-[14px] bg-stone-100 px-2.5 py-1.5 text-stone-900">
-      {children}
-    </p>
+    <div className="flex max-w-[85%] flex-col items-end gap-1 self-end">
+      {frames?.map((name) => (
+        <span
+          key={name}
+          className="flex h-6 max-w-full items-center gap-1 rounded-md bg-[#2f6bf6]/10 px-1.5 text-px-12 font-medium text-[#2159dc]"
+        >
+          <Frame className="size-3 shrink-0" strokeWidth={1.75} />
+          <span className="min-w-0 truncate">{name}</span>
+        </span>
+      ))}
+      <p className="select-text whitespace-pre-wrap break-words rounded-[14px] bg-stone-100 px-2.5 py-1.5 text-stone-900">
+        {children}
+      </p>
+    </div>
+  )
+}
+
+/**
+ * Composer "Add canvas frame": a menu (opening upward) of the canvas's frames. Picking one attaches
+ * it to the next message, so the agent can build it into the code as designed.
+ */
+function AddCanvasFrameMenu({
+  frames,
+  attached,
+  onAttach,
+}: {
+  frames: CanvasFrameOption[]
+  attached: string[]
+  onAttach: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  // Close on outside click or Escape (Escape is caught first so it doesn't also leave the portal).
+  useEffect(() => {
+    if (!open) return
+    function onPointerDown(e: PointerEvent) {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return
+      e.stopPropagation()
+      setOpen(false)
+    }
+    document.addEventListener("pointerdown", onPointerDown)
+    window.addEventListener("keydown", onKeyDown, true)
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown)
+      window.removeEventListener("keydown", onKeyDown, true)
+    }
+  }, [open])
+
+  return (
+    <div ref={ref} className="relative">
+      <BarButton label="Add canvas frame" side="top" active={open} onClick={() => setOpen((o) => !o)}>
+        <Frame className="size-3.5" strokeWidth={1.5} />
+      </BarButton>
+
+      {open && (
+        <div
+          role="menu"
+          aria-label="Canvas frames"
+          className="absolute bottom-full left-0 z-50 mb-1.5 flex max-h-[240px] w-[240px] flex-col overflow-y-auto rounded-xl border border-stone-200 bg-white p-1.5 shadow-[0_8px_24px_-8px_rgba(17,17,16,0.2),0_1px_3px_rgba(17,17,16,0.08)] animate-in fade-in slide-in-from-bottom-1 duration-150"
+        >
+          <p className="px-2 pb-1 pt-0.5 text-px-11 font-medium text-stone-500">From the canvas</p>
+          {frames.map((frame) => (
+            <button
+              key={frame.id}
+              type="button"
+              role="menuitem"
+              data-cursor-id={`portal-frame-${frame.id}`}
+              onClick={() => {
+                onAttach(frame.id)
+                setOpen(false)
+              }}
+              className="flex h-8 shrink-0 items-center gap-2 rounded-md px-2 text-left text-px-13 text-stone-900 hover:bg-stone-700/5"
+            >
+              <Frame className="size-3.5 shrink-0 text-stone-500" strokeWidth={1.5} />
+              <span className="min-w-0 flex-1 truncate">{frame.name}</span>
+              {attached.includes(frame.id) && <Check className="size-3.5 shrink-0 text-stone-500" strokeWidth={1.5} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 

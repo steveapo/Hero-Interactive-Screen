@@ -5,25 +5,27 @@ import { LISTINGS } from "@/app/copy-project/airbnb-data"
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
+import { PORTAL_BUILD_FRAME_PROMPT, PORTAL_TURNS } from "./agent-script"
 import { captureInBuildMode, CODEBASE, TRIP_CARD } from "./hero-demo"
-import { agentDone, COMPOSER, ensureSent, panToShow, PORTAL_FIELD, scene, textOf, typePrompt } from "./hero-demo-v1"
+import { moveOverCanvas, panToShow, PORTAL_FIELD, scene, textOf } from "./hero-demo-v1"
 import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
 
 /*
  * The feature cards' clips. One panel = one idea, each its own scenario: a clip plays once when it
  * scrolls into view, stops on its key moment and stays there as a still (the screen is then the
  * visitor's to play with; see ScriptedStage's `holdLastFrame`).
- *  0. "overview"      Everything in one place: from the canvas, the Codebase frame opens in Build
- *                     Mode and the Portal Agent changes the live app → the canvas, the running
- *                     codebase and a coding agent together, the change live.
- *  1. "capture"       Live product on canvas: capture the trip card from the live app → the
- *                     snapshot on the canvas, selected and editable.
+ *  0. "overview"      Everything in one place: starts on the canvas, the familiar ground: select the
+ *                     trip card's frame and give it a new fill, then open the Codebase frame in
+ *                     Build Mode → the live app, running from the code.
+ *  1. "capture"       Live product on canvas: capture the trip card from the live app → back on a
+ *                     calm canvas (just the Codebase frame), the captured card glides in and is
+ *                     selected, editable.
  *  2. "visual-edits"  Controls, not prompts: drag the Check-in Banner's corner-radius thumb on the
  *                     canvas → rounded corners, the panel's Corner radius following along.
  *  3. "test"          Test the real thing: click through the live app in Build Mode while the
  *                     Viewport menu takes it from desktop to tablet to mobile → the phone layout.
- *  4. "build"         Canvas to code: send the trip card (with its designed badge) to the Build
- *                     Agent chat → the scoped diff it built, in Code changes.
+ *  4. "build"         Canvas to code: the trip card's frame (with its designed badge) is added to
+ *                     the Build Mode agent and built → the badge in the live app, 1:1 as designed.
  *  5. "share"         Collaborate and ship: with the change live in the Codebase frame, open Share
  *                     and create the preview link → the Preview URL window, published.
  */
@@ -32,54 +34,64 @@ const BACK_TO_CANVAS = 'button[aria-label="Back to canvas"]'
 const CHECK_IN_BANNER = '[data-cursor-id="frame-check-in-tile"]'
 const RADIUS_THUMB = `${CHECK_IN_BANNER} [data-cursor-id="radius-top-left"]`
 const CORNER_RADIUS_FIELD = '[aria-label="Corner radius"]'
-const CODE_CHANGES_BUTTON = 'button[aria-label="View code changes"]'
-const CODE_CHANGES_DIALOG = '[role="dialog"][aria-label="Code changes"]'
 const SHARE_BUTTON = '[data-cursor-id="share"]'
 const SHARE_DIALOG = '[role="dialog"][aria-label="Preview URL"]'
-const BUILD_PROMPT = "Build this frame into the codebase"
 
-/* Everything in one place: Build Mode and the Portal Agent. */
+/* Build Mode and its agent (the Portal). */
 const OPEN_BUILD_MODE = '[data-cursor-id="open-build-mode"]'
 const PORTAL_SCREEN = "[data-portal-screen]"
 const PORTAL_MESSAGES = '[data-cursor-id="portal-chat-messages"]'
-const LIVE_SEARCH_BUTTON = `${PORTAL_SCREEN} [data-anim="search-button"]`
-/** Scripted in agent-script.ts (PORTAL_TURNS): the live app's search button starts pulsing. */
-const PULSE_PROMPT = "Make the search button pulse so it's easy to spot"
-const PULSE_DONE = "Worked for 12 seconds"
+/** The settings panel's editable Fill hex (a selected app frame). */
+const FILL_HEX = 'input[aria-label="Fill hex"]'
+/** The trip card's new fill in the overview: a soft tint of the brand plum. */
+const OVERVIEW_FILL = "#f6e9f3"
+/** The agent chat's "Add canvas frame" menu, and the trip card's frame in it. */
+const ADD_CANVAS_FRAME = 'button[aria-label="Add canvas frame"]'
+const TRIP_CARD_OPTION = '[data-cursor-id="portal-frame-card-upcoming-trip"]'
+/** The built badge on the trip card in the live app. */
+const BUILT_BADGE = '[data-cursor-id="built-component"]'
+/** "Worked for …" of the build turn: shows once its reply is done. */
+const BUILD_DONE = PORTAL_TURNS.find((t) => t.prompt === PORTAL_BUILD_FRAME_PROMPT)?.workedFor ?? "Worked for"
 
 /** The Portal chat's send button. */
 const portalSend = (api: ScriptApi) => () =>
   api.stage.querySelector(PORTAL_FIELD)?.closest("form")?.querySelector('button[type="submit"]')
 
+/** Select the Codebase frame and open it in Build Mode. */
+async function openBuildMode(api: ScriptApi) {
+  await api.click(CODEBASE, { fx: 0.5, fy: 0.35 })
+  await api.wait(350)
+  await api.click(OPEN_BUILD_MODE)
+  await api.find(PORTAL_SCREEN)
+}
+
 /**
- * 0. Everything in one place; key moment: in Build Mode, the live app running from the code with
- * the Portal Agent's change in it (the search button pulsing), its reply beside it, and the
- * canvas's own top bar over both.
+ * 0. Everything in one place; key moment: in Build Mode, the live app running from the code. It
+ * gets there from the canvas, what a new user already knows: a frame selected and given a new fill
+ * in the settings panel, then the Codebase frame opened in Build Mode.
  */
 const overviewScript: DemoScript = async (api) => {
   await scene(api, "the canvas", async () => {
-    // The canvas: the Codebase frame among the design frames.
-    await panToShow(api, [CODEBASE], { fx: 0.45, fy: 0.5 })
     await api.wait(400)
   })
-  await scene(api, "the codebase", async () => {
-    await api.click(CODEBASE, { fx: 0.5, fy: 0.35 })
-    await api.wait(350)
-    await api.click(OPEN_BUILD_MODE)
-    await api.find(PORTAL_SCREEN)
-    await api.wait(700)
+  await scene(api, "a visual edit", async () => {
+    await zoomToFill(api, TRIP_CARD)
+    // Its right side is the card itself (its text hugs the left), so this selects it.
+    await api.click(TRIP_CARD, { fx: 0.85, fy: 0.5 })
+    await api.find(FILL_HEX)
+    await api.wait(450)
+    await api.click(FILL_HEX)
+    await api.type(OVERVIEW_FILL, { into: FILL_HEX, replace: true })
+    await api.press("Enter", { on: FILL_HEX })
+    await api.wait(900)
   })
-  await scene(api, "the agent", async () => {
-    await api.click('button[aria-label="New agent"]')
+  await scene(api, "into the codebase", async () => {
+    await zoomOutTo(api, CODEBASE, CODEBASE_SHARE)
     await api.wait(300)
-    await api.click(PORTAL_FIELD)
-    await api.type(PULSE_PROMPT, { into: PORTAL_FIELD })
-    await api.wait(250)
-    await api.click(portalSend(api))
-    await api.until(() => textOf(api, PORTAL_MESSAGES).includes(PULSE_DONE), 15000)
-    await api.wait(300)
-    // Point at the change, live in the app.
-    await api.moveTo(LIVE_SEARCH_BUTTON, { fx: 0.5, fy: 1, dy: 26, duration: 800 })
+    await openBuildMode(api)
+    await api.wait(700)
+    // Rest over the live app.
+    await api.moveTo(PORTAL_SCREEN, { fx: 0.62, fy: 0.62, duration: 800 })
   })
 }
 
@@ -115,14 +127,39 @@ async function zoomToFill(api: ScriptApi, target: string) {
   await panToShow(api, [target], { fx: FOCUS_FX, fy: 0.5 })
 }
 
-/** 1. Live product on canvas; key moment: the captured trip card on the canvas, selected and editable. */
+/** Share of the canvas's width the Codebase frame takes once zoomed back out to it. */
+const CODEBASE_SHARE = 0.55
+
+/**
+ * Zoom back out (⌘-scroll over the canvas) until `target` takes `share` of the canvas's width, by
+ * exactly that amount (zoom × exp(−deltaY × WHEEL_ZOOM_SPEED)), then centre it.
+ */
+async function zoomOutTo(api: ScriptApi, target: string, share: number) {
+  await moveOverCanvas(api)
+  const frame = api.boxOf(target)
+  const canvas = api.boxOf(CANVAS)
+  if (frame && canvas && canvas.width) {
+    const current = frame.width / canvas.width
+    if (current > share) {
+      await api.wheel(0, Math.log(current / share) / WHEEL_ZOOM_SPEED, { mods: { ctrl: true }, duration: 900 })
+      await api.wait(200)
+    }
+  }
+  await panToShow(api, [target], { fx: 0.45, fy: 0.5 })
+}
+
+/**
+ * 1. Live product on canvas; key moment: the captured trip card on the canvas, selected and
+ * editable. The canvas holds only the Codebase frame, so the card gliding in after the capture is
+ * the one thing that changes.
+ */
 const captureScript: DemoScript = async (api) => {
   await captureInBuildMode(api)
   await scene(api, "back to canvas", async () => {
-    // The elements are already on the canvas (no entrance): just let the Portal fade out.
     await api.click(BACK_TO_CANVAS)
     await api.until(() => !api.exists("[data-portal-screen]"), 4000)
-    await api.wait(500)
+    // The captured card glides in beside the Codebase frame.
+    await api.wait(2300)
   })
   await scene(api, "the snapshot on canvas", async () => {
     await zoomToFill(api, TRIP_CARD)
@@ -157,61 +194,42 @@ const visualEditsScript: DemoScript = async (api) => {
   })
 }
 
-/*
- * Room for the Build Agent chat. It opens right of the selected frame, and the frame settings
- * panel takes the screen's right edge. On this narrower screen (LAYOUT) a zoomed-in, centred card
- * would push the chat under that panel. So the card is sized and placed to leave the chat its own
- * column between the card and the panel. Widths are in the screen's layout px (see
- * build-agent-composer / frame-settings-panel / left-sidebar).
- */
-const SETTINGS_PANEL_SPACE = 326 + 4 + 12
-const CHAT_SPACE = 300 + 12
-const SIDEBAR_SPACE = 44 + 16
-
 /**
- * Zoom the trip card out if needed and pan it so that it, the chat on its right and the settings
- * panel all fit side by side.
- */
-async function placeBesideChat(api: ScriptApi) {
-  await panToShow(api, [TRIP_CARD], { fx: 0.4, fy: 0.5 })
-  const stageWidth = api.stage.clientWidth
-  const rightEdge = stageWidth - SETTINGS_PANEL_SPACE - CHAT_SPACE
-  const room = rightEdge - SIDEBAR_SPACE
-  const card = api.boxOf(TRIP_CARD)
-  if (!card || room <= 0) return
-  if (card.width > room) {
-    // ⌘-scroll out by exactly the amount that fits the card into the room (zoom × exp(−deltaY × speed)).
-    await api.moveTo(TRIP_CARD, { fx: 0.5, fy: 0.5 })
-    await api.wheel(0, Math.log((card.width / room) * 1.04) / WHEEL_ZOOM_SPEED, { mods: { ctrl: true }, duration: 800 })
-    await api.wait(200)
-  }
-  const fitted = api.boxOf(TRIP_CARD)
-  if (!fitted) return
-  const centreX = Math.max(SIDEBAR_SPACE + fitted.width / 2, rightEdge - fitted.width / 2)
-  await panToShow(api, [TRIP_CARD], { fx: centreX / stageWidth, fy: 0.55 })
-}
-
-/**
- * 4. Canvas to code in one shot; key moment: Code changes open on the scoped diff the Build Agent
- * made from the trip card's frame (its designed "Check in" badge).
+ * 4. Canvas to code in one shot; key moment: in Build Mode, the trip card in the live app with the
+ * "Check in" badge exactly as it was designed into its frame on the canvas. The frame is added to
+ * the Build Mode agent ("Add canvas frame") and built.
  */
 const buildScript: DemoScript = async (api) => {
-  await scene(api, "send to build chat", async () => {
-    await placeBesideChat(api)
-    await typePrompt(api, TRIP_CARD, BUILD_PROMPT)
-    await api.wait(250)
-    await api.click(`${COMPOSER} button[type="submit"]`)
-    await ensureSent(api, TRIP_CARD, BUILD_PROMPT)
-    // The chat closes while it builds (the frame's badge spins).
-    await agentDone(api, 20000)
-    await api.wait(500)
+  await scene(api, "the designed frame", async () => {
+    // The trip card's frame on the canvas, with the badge designed into it.
+    await zoomToFill(api, TRIP_CARD)
+    await api.wait(900)
   })
-  await scene(api, "the diff", async () => {
-    await api.click(CODE_CHANGES_BUTTON)
-    await api.find(CODE_CHANGES_DIALOG)
+  await scene(api, "into build mode", async () => {
+    await zoomOutTo(api, CODEBASE, CODEBASE_SHARE)
+    await api.wait(300)
+    await openBuildMode(api)
+    await api.wait(600)
+  })
+  await scene(api, "add the frame and build", async () => {
+    await api.click('button[aria-label="New agent"]')
+    await api.wait(300)
+    await api.click(ADD_CANVAS_FRAME)
+    await api.find(TRIP_CARD_OPTION)
+    await api.wait(350)
+    await api.click(TRIP_CARD_OPTION)
     await api.wait(400)
-    // Rest over the diff (the built file is selected first).
-    await api.moveTo(CODE_CHANGES_DIALOG, { fx: 0.7, fy: 0.6, duration: 700 })
+    await api.click(PORTAL_FIELD)
+    await api.type(PORTAL_BUILD_FRAME_PROMPT, { into: PORTAL_FIELD })
+    await api.wait(250)
+    await api.click(portalSend(api))
+    await api.until(() => textOf(api, PORTAL_MESSAGES).includes(BUILD_DONE), 15000)
+  })
+  await scene(api, "1:1 in the live app", async () => {
+    // The built badge swaps in on the trip card with a blue flash.
+    await api.find(BUILT_BADGE, 6000)
+    await api.wait(400)
+    await api.moveTo(BUILT_BADGE, { fx: 0.5, fy: 2.2, duration: 800 })
   })
 }
 
@@ -289,14 +307,24 @@ const testScript: DemoScript = async (api) => {
 
 export type FeatureClipId = "overview" | "capture" | "visual-edits" | "test" | "build" | "share"
 
-const CLIPS: Record<FeatureClipId, { script: DemoScript; start: HeroStart }> = {
+type ClipConfig = {
+  script: DemoScript
+  start: HeroStart
+  /** Only these app frames are on the canvas (see HeroScreen's `elementIds`). Omitted: all. */
+  elementIds?: string[]
+  /** Leaving Build Mode, the canvas frames glide in (see HeroScreen's `canvasEntrance`). Default off. */
+  canvasEntrance?: boolean
+}
+
+const CLIPS: Record<FeatureClipId, ClipConfig> = {
   // Opens on the canvas, around the Codebase frame.
   overview: { script: overviewScript, start: "canvas" },
-  capture: { script: captureScript, start: "portal" },
+  // A calm canvas: just the Codebase frame, then the captured trip card gliding in beside it.
+  capture: { script: captureScript, start: "portal", elementIds: ["card-upcoming-trip"], canvasEntrance: true },
   "visual-edits": { script: visualEditsScript, start: "canvas" },
   // Opens in Build Mode, on the live app.
   test: { script: testScript, start: "portal" },
-  // The trip card carries the designed "Check in" badge: that's what gets built.
+  // The trip card's frame carries the designed "Check in" badge: that's what gets built.
   build: { script: buildScript, start: "designed" },
   // Built into the code, so there's a real change to share.
   share: { script: shareScript, start: "built" },
@@ -327,7 +355,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
   const ref = useRef<HTMLDivElement>(null)
   /** Fully scrolled into view (latched): the clip may start. */
   const [ready, setReady] = useState(false)
-  const { script, start } = CLIPS[clip]
+  const { script, start, elementIds, canvasEntrance = false } = CLIPS[clip]
 
   useEffect(() => {
     const el = ref.current
@@ -355,7 +383,8 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
             start={start}
             portalLoadMs={PORTAL_LOAD_MS}
             maxZoom={MAX_ZOOM}
-            canvasEntrance={false}
+            canvasEntrance={canvasEntrance}
+            elementIds={elementIds}
           />
         </ScriptedStage>
       </ScaledScreen>
