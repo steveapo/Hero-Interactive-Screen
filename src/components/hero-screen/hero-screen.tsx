@@ -1392,10 +1392,11 @@ export function HeroScreen({
             aria-label="Back to canvas"
             onClick={closePortal}
             // Not through cn(): tailwind-merge reads the custom `text-px-11` size as a text colour and
-            // drops it in favour of `text-stone-900`.
-            className={`flex h-[42px] items-center gap-2 px-3.5 text-px-11 font-medium text-stone-900 hover:bg-[#e6e6e4] ${PORTAL_TOP_GROUP}`}
+            // drops it in favour of `text-stone-800`. Own surface (not PORTAL_TOP_GROUP): a slightly
+            // darker grey pill with a rounder corner, regular-weight label and a small, light arrow.
+            className="flex h-[42px] items-center gap-2.5 rounded-[14px] border border-transparent bg-[#e6e6e4] px-4 text-px-11 font-normal text-stone-800 transition-colors hover:bg-[#dededc]"
           >
-            <ArrowLeft className="size-3" strokeWidth={1.5} />
+            <ArrowLeft className="size-2.5 text-stone-700" strokeWidth={1.75} />
             Back to Canvas
           </button>
         ) : (
