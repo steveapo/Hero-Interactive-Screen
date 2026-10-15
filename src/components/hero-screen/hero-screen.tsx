@@ -251,6 +251,7 @@ export function HeroScreen({
   reopened = false,
   start = "portal",
   githubSyncOpen = false,
+  githubPopoverOpen = true,
   portalEnabled = true,
   toolsEnabled = true,
   scrollPans = true,
@@ -326,6 +327,8 @@ export function HeroScreen({
   toolsEnabled?: boolean
   /** Opens with the repo linked and the GitHub Sync popover open ("Sync to Github" showing). Only read on mount. */
   githubSyncOpen?: boolean
+  /** With `githubSyncOpen`, whether the GitHub Sync popover opens. Off: linked, popover closed. Default on. */
+  githubPopoverOpen?: boolean
   /**
    * The Codebase frame can be opened in the Portal (double-click it, or "Open Build Mode" in its
    * settings). Off for the homepage hero: frames can still be selected and moved, but the Portal
@@ -1528,8 +1531,8 @@ export function HeroScreen({
               opens linked to its repo, with the sync popover open) */}
           <GithubButton
             connected={githubSyncOpen}
-            defaultOpen={githubSyncOpen && !hasIntro}
-            openOnCue={githubSyncOpen && githubIn}
+            defaultOpen={githubSyncOpen && githubPopoverOpen && !hasIntro}
+            openOnCue={githubSyncOpen && githubPopoverOpen && githubIn}
             defaultRepoName={githubSyncOpen ? "hero-fairbnb" : "Hero-Interactive-Screen"}
             changes={githubChanges}
             pullRequest={pullRequest}
