@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { cn } from "@/lib/utils"
 import { SimulatedCursor } from "./cursor"
-import { createScriptRunner, resetHover, ScriptAborted, type ScriptApi } from "./script-runner"
+import { createScriptRunner, resetHover, ScriptAborted, type ScriptApi, type ScriptClock } from "./script-runner"
 
 /** A scripted demo: drives the screen through `api` and resolves when the run is over. */
 export type DemoScript = (api: ScriptApi) => Promise<void>
@@ -70,6 +70,11 @@ export type ScriptedStageProps = {
    * scroll over it still scrolls the page; pinch / ⌘-scroll zooms the canvas).
    */
   holdLastFrame?: boolean
+  /**
+   * Pause the run where it is (e.g. while the stage is scrolled out of view): the cursor stops
+   * mid-glide and the script picks up exactly where it left off once this is false again.
+   */
+  paused?: boolean
   /** The script has started a run (after `startDelay`). */
   onStart?: () => void
   /**
@@ -103,10 +108,31 @@ export function ScriptedStage({
   visitorArea,
   visitorLock,
   holdLastFrame = false,
+  paused = false,
   onStart,
   onFinish,
   className,
 }: ScriptedStageProps) {
+  /*
+   * The run's clock (see ScriptClock): wall-clock time minus the time spent paused, so it stands
+   * still while `paused`. Read through refs, so pausing never restarts the run.
+   */
+  const pauseRef = useRef<{ since: number | null; total: number }>({ since: null, total: 0 })
+  useLayoutEffect(() => {
+    const p = pauseRef.current
+    if (paused && p.since === null) p.since = performance.now()
+    if (!paused && p.since !== null) {
+      p.total += performance.now() - p.since
+      p.since = null
+    }
+  }, [paused])
+  const clockRef = useRef<ScriptClock>({
+    now: () => {
+      const p = pauseRef.current
+      return (p.since ?? performance.now()) - p.total
+    },
+    paused: () => pauseRef.current.since !== null,
+  })
   const stageRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const cursorRef = useRef<HTMLDivElement>(null)
@@ -216,7 +242,13 @@ export function ScriptedStage({
         // Start where the last run left the cursor (the stage may have resized since, which
         // would move a freshly measured home), else at home. Story captions aren't shown.
         const start = endPosRef.current ?? home
-        const api = createScriptRunner({ stage, cursor, rippleLayer }, signal, { pace, start, live, visitorBusy })
+        const api = createScriptRunner({ stage, cursor, rippleLayer }, signal, {
+          pace,
+          start,
+          live,
+          visitorBusy,
+          clock: clockRef.current,
+        })
         runner = api
         setCursorVisible(true)
         onStartRef.current?.()

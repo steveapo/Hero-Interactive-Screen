@@ -121,6 +121,18 @@ const easeInOut = (k: number) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k 
 const easeOut = (k: number) => 1 - Math.pow(1 - k, 3)
 
 /**
+ * A run's time source. `now()` is its own clock (ms), which must stand still while `paused()` is
+ * true, so every glide, wait and timeout picks up exactly where it stopped.
+ */
+export type ScriptClock = { now: () => number; paused: () => boolean }
+
+/** Never paused: plain wall-clock time. */
+const REAL_CLOCK: ScriptClock = { now: () => performance.now(), paused: () => false }
+
+/** While paused, the run re-checks this often (ms). */
+const PAUSED_POLL_MS = 100
+
+/**
  * `pace` scales every duration (2 = everything takes twice as long). The cursor keeps its
  * position between runs (pass `start`), so a loop can glide straight into the next run.
  */
@@ -133,6 +145,7 @@ export function createScriptRunner(
     live = (run) => run(),
     onCaption = () => {},
     visitorBusy = () => false,
+    clock = REAL_CLOCK,
   }: {
     pace?: number
     start?: { x: number; y: number }
@@ -145,9 +158,17 @@ export function createScriptRunner(
     onCaption?: (text: string | null) => void
     /** The visitor is interacting with the screen: hold before the next move / press / key. */
     visitorBusy?: () => boolean
+    /**
+     * The run's time (see ScriptClock). While `paused()`, the run freezes where it is: glides stop
+     * mid-way, waits stop counting down, and nothing is pressed or typed, until it's unpaused.
+     */
+    clock?: ScriptClock
   } = {},
 ): ScriptApi {
   const { stage, cursor: cursorEl, rippleLayer } = els
+  /** The run's own time (ms): stands still while paused. */
+  const now = clock.now
+  const paused = clock.paused
   let pos = { ...start }
   /**
    * The field the script last clicked or typed into. A real click elsewhere on the page can take
@@ -278,12 +299,35 @@ export function createScriptRunner(
     return el && el.isConnected && el.getClientRects().length > 0 ? el : null
   }
 
+  /** Hold (as long as it takes) while the run is paused. */
+  async function whilePaused() {
+    while (paused()) {
+      check()
+      await new Promise((r) => setTimeout(r, PAUSED_POLL_MS))
+    }
+    check()
+  }
+
   function wait(ms: number) {
     return pause(ms * pace)
   }
 
-  /** A pause in real time, not scaled by the pace (typing keeps its own rhythm). */
-  function pause(ms: number) {
+  /**
+   * A pause in the run's time, not scaled by the pace (typing keeps its own rhythm). While the run
+   * is paused it stops counting down, and resumes with whatever was left.
+   */
+  async function pause(ms: number) {
+    const end = now() + ms
+    for (;;) {
+      check()
+      const left = end - now()
+      if (left <= 0 && !paused()) return
+      await realPause(paused() ? PAUSED_POLL_MS : left)
+    }
+  }
+
+  /** A pause in real time (abortable). */
+  function realPause(ms: number) {
     return new Promise<void>((resolveWait, reject) => {
       if (signal.aborted) return reject(new ScriptAborted())
       const timer = setTimeout(() => {
@@ -298,22 +342,24 @@ export function createScriptRunner(
     })
   }
 
-  /** Real-time pause (not scaled), for frame pacing. */
-  function frame() {
-    return new Promise<void>((resolveFrame, reject) => {
-      if (signal.aborted) return reject(new ScriptAborted())
-      requestAnimationFrame(() => (signal.aborted ? reject(new ScriptAborted()) : resolveFrame()))
-    })
+  /** The next animation frame, for frame pacing. While paused it holds until the run resumes. */
+  async function frame() {
+    do {
+      await new Promise<void>((resolveFrame, reject) => {
+        if (signal.aborted) return reject(new ScriptAborted())
+        requestAnimationFrame(() => (signal.aborted ? reject(new ScriptAborted()) : resolveFrame()))
+      })
+    } while (paused())
   }
 
   async function until(condition: () => boolean, timeout = FIND_TIMEOUT) {
-    const started = performance.now()
+    const started = now()
     while (!condition()) {
       check()
-      if (performance.now() - started > timeout) throw new ScriptAborted("timed out waiting")
+      if (now() - started > timeout) throw new ScriptAborted("timed out waiting")
       await new Promise((r) => setTimeout(r, 100))
     }
-    check()
+    await whilePaused()
   }
 
   async function find(target: ScriptTarget, timeout = FIND_TIMEOUT) {
@@ -364,10 +410,10 @@ export function createScriptRunner(
     const duration = (durationMs ?? Math.min(MOVE_MAX_MS, Math.max(MOVE_MIN_MS, MOVE_MIN_MS + distance * MOVE_MS_PER_PX))) * pace
     arcSide = -arcSide
     const bow = distance * MOVE_ARC * arcSide * (0.6 + random() * 0.4)
-    const started = performance.now()
+    const started = now()
     for (;;) {
       await frame()
-      const k = Math.min(1, (performance.now() - started) / duration)
+      const k = Math.min(1, (now() - started) / duration)
       const e = easeInOut(k)
       const to = goal()
       // Quadratic bow: perpendicular offset that peaks mid-way and vanishes at both ends.
@@ -419,6 +465,7 @@ export function createScriptRunner(
   async function press0(mods?: KeyModifiers, hold = CLICK_HOLD_MS) {
     await whileVisitorBusy()
     await whileOffscreen()
+    await whilePaused()
     const point = toClient(pos)
     cursorEl.dataset.pressed = "true"
     stage.dataset.scriptPressing = "true"
@@ -516,6 +563,7 @@ export function createScriptRunner(
   async function press(key: string, options: { on?: ScriptTarget; mods?: KeyModifiers } = {}) {
     const target = options.on ? await find(options.on) : (currentField() ?? document.activeElement ?? document.body)
     await whileVisitorBusy()
+    await whilePaused()
     dispatchKey(target, key, undefined, options.mods)
     await wait(60)
   }
@@ -524,12 +572,12 @@ export function createScriptRunner(
     await whileVisitorBusy()
     await whileOffscreen()
     const duration = (options.duration ?? 600) * pace
-    const started = performance.now()
+    const started = now()
     let sentX = 0
     let sentY = 0
     for (;;) {
       await frame()
-      const k = Math.min(1, (performance.now() - started) / duration)
+      const k = Math.min(1, (now() - started) / duration)
       const e = easeOut(k)
       const stepX = dx * e - sentX
       const stepY = dy * e - sentY
@@ -545,10 +593,10 @@ export function createScriptRunner(
   async function scroll(target: ScriptTarget, top: number, duration = 700) {
     const el = await find(target)
     const from = el.scrollTop
-    const started = performance.now()
+    const started = now()
     for (;;) {
       await frame()
-      const k = Math.min(1, (performance.now() - started) / (duration * pace))
+      const k = Math.min(1, (now() - started) / (duration * pace))
       el.scrollTop = from + (top - from) * easeInOut(k)
       if (k >= 1) break
     }
@@ -630,16 +678,16 @@ export function createScriptRunner(
 
     try {
       let waited = 0
-      let last = performance.now()
+      let last = now()
       while (!state.chosen && waited < (options.timeout ?? YOUR_TURN_MS) * pace) {
         await frame()
-        const now = performance.now()
+        const current = now()
         const boxes = choices.map(({ el }) => (el.isConnected ? boxOf(el) : null))
         if (boxes.every((b) => b === null)) break // the choices went away: nothing left to click
         const shown = boxes.filter((b): b is DOMRect => b !== null)
         // The countdown only runs while they can actually see it.
-        if (watching(shown)) waited += now - last
-        last = now
+        if (watching(shown)) waited += current - last
+        last = current
         const pad = 6
         boxes.forEach((box, i) => {
           rings[i].style.display = box ? "" : "none"

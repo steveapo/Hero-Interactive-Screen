@@ -471,6 +471,11 @@ const LAYOUT = { width: 1100, height: 688 }
 const VISIBLE_THRESHOLDS = [0.9, 0.95, 0.99, 1]
 const FULLY_VISIBLE_RATIO = 0.99
 
+/** A playing clip pauses once this share of it is out of the viewport. */
+const PAUSE_HIDDEN_SHARE = 0.75
+/** Visibility is re-checked at every 5% step, so the 75% mark is caught in both directions. */
+const PAUSE_THRESHOLDS = Array.from({ length: 21 }, (_, i) => i / 20)
+
 /** One feature clip (see CLIPS): plays once when fully scrolled into view, then holds its key moment. */
 export function FeatureClip({ clip, className }: { clip: FeatureClipId; className?: string }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -498,10 +503,40 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
   /** Bumped by the reset button: remounts the stage, so the clip replays from its first frame. */
   const [runId, setRunId] = useState(0)
 
+  /**
+   * 75% or more of the clip is out of the viewport (scrolled past the top or back below the
+   * bottom): it pauses where it is, and carries on once it's back in view. A clip taller than the
+   * viewport counts as in view while it covers more than the rest of the viewport.
+   */
+  const [outOfView, setOutOfView] = useState(false)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry) return
+        const visibleShare = Math.max(entry.intersectionRatio, entry.intersectionRect.height / window.innerHeight)
+        setOutOfView(!entry.isIntersecting || visibleShare < 1 - PAUSE_HIDDEN_SHARE)
+      },
+      { threshold: PAUSE_THRESHOLDS },
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
+
   return (
     <div ref={ref} className={cn("group/clip relative overflow-hidden rounded-lg bg-mi-canvas", className)}>
       <ScaledScreen>
-        <ScriptedStage key={runId} script={script} pace={PACE} ready={ready} loop={false} holdLastFrame className="min-h-0">
+        <ScriptedStage
+          key={runId}
+          script={script}
+          pace={PACE}
+          ready={ready}
+          paused={outOfView}
+          loop={false}
+          holdLastFrame
+          className="min-h-0"
+        >
           <HeroScreen
             className="h-auto min-h-0 flex-1"
             start={start}
