@@ -224,8 +224,8 @@ const captureScript: DemoScript = async (api) => {
   await scene(api, "back to canvas", async () => {
     await api.click(BACK_TO_CANVAS)
     await api.until(() => !api.exists("[data-portal-screen]"), 4000)
-    // The captured card glides in beside the Codebase frame.
-    await api.wait(2300)
+    // The captured card glides in beside the Codebase frame (a quick glide, see `quickEntrance`).
+    await api.wait(900)
   })
   await scene(api, "the snapshot on canvas", async () => {
     await zoomToFill(api, TRIP_CARD)
@@ -438,6 +438,8 @@ type ClipConfig = {
   elementIds?: string[]
   /** Leaving Build Mode, the canvas frames glide in (see HeroScreen's `canvasEntrance`). Default off. */
   canvasEntrance?: boolean
+  /** That entrance is a quick single glide (see HeroScreen's `quickEntrance`). Default off. */
+  quickEntrance?: boolean
   /** The Portal's browser window shows the live app's address (see HeroScreen's `portalShowUrl`). Default on. */
   portalShowUrl?: boolean
   /** The design system in the Components library (see HeroScreen's `componentLibrary`). Default "default". */
@@ -448,7 +450,13 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
   // Opens on the canvas, around the Codebase frame.
   overview: { script: overviewScript, start: "canvas" },
   // A calm canvas: just the Codebase frame, then the captured trip card gliding in beside it.
-  capture: { script: captureScript, start: "portal", elementIds: ["card-upcoming-trip"], canvasEntrance: true },
+  capture: {
+    script: captureScript,
+    start: "portal",
+    elementIds: ["card-upcoming-trip"],
+    canvasEntrance: true,
+    quickEntrance: true,
+  },
   "visual-edits": { script: visualEditsScript, start: "canvas" },
   // The library holds the Fairbnb app's own components, so the dropped Badge is the app's.
   components: { script: componentsScript, start: "canvas", componentLibrary: "fairbnb" },
@@ -490,7 +498,15 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
   const ref = useRef<HTMLDivElement>(null)
   /** Fully scrolled into view (latched): the clip may start. */
   const [ready, setReady] = useState(false)
-  const { script, start, elementIds, canvasEntrance = false, portalShowUrl = true, componentLibrary } = CLIPS[clip]
+  const {
+    script,
+    start,
+    elementIds,
+    canvasEntrance = false,
+    quickEntrance = false,
+    portalShowUrl = true,
+    componentLibrary,
+  } = CLIPS[clip]
 
   useEffect(() => {
     const el = ref.current
@@ -553,6 +569,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
             portalShowUrl={portalShowUrl}
             maxZoom={MAX_ZOOM}
             canvasEntrance={canvasEntrance}
+            quickEntrance={quickEntrance}
             elementIds={elementIds}
             componentLibrary={componentLibrary}
           />

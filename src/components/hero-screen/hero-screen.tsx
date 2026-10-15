@@ -96,6 +96,9 @@ const PORTAL_EXIT_MS = 300
 const PORTAL_COVER_MS = 400
 const ENTER_BASE_DELAY = 120
 const ENTER_SWEEP_MS = 1440
+/** Quick entrance (HeroScreen's `quickEntrance`): no sweep, a short glide (ms). */
+const QUICK_ENTER_DELAY = 60
+const QUICK_ENTER_DURATION_MS = 520
 /** Where the sweep starts, in turns clockwise from straight up (−⅛ = the top-left diagonal). */
 const ENTER_SWEEP_START = -1 / 8
 
@@ -256,6 +259,7 @@ export function HeroScreen({
   portalShowUrl = true,
   maxZoom = MAX_ZOOM,
   canvasEntrance = true,
+  quickEntrance = false,
   portalAutoPrompt = false,
   githubPrSheet = true,
   elementIds,
@@ -284,6 +288,11 @@ export function HeroScreen({
    * Off: they're already on the canvas, in place.
    */
   canvasEntrance?: boolean
+  /**
+   * The canvas entrance is a quick glide (no clockwise sweep across many elements): for a calm
+   * canvas with a single frame (see `elementIds`). Default off.
+   */
+  quickEntrance?: boolean
   /**
    * Furthest the canvas zooms in (at the reference width; 0.4 = 40% in the zoom readout). Raise it
    * where a single frame needs to fill much of the canvas (the "Live product on canvas" showcase).
@@ -1069,6 +1078,15 @@ export function HeroScreen({
     // The load-in may play the entrance faster (its delays and glides alike); leaving the Portal
     // always plays it at its own pace.
     const pace = loadIntro?.elementsTimeScale ?? 1
+    // A calm canvas with just a frame or two: it simply glides in, right away and briefly.
+    if (quickEntrance) {
+      return {
+        x: outsideVertically ? 0 : travel(dx),
+        y: outsideVertically ? travel(dy) : 0,
+        delay: QUICK_ENTER_DELAY,
+        duration: QUICK_ENTER_DURATION_MS,
+      }
+    }
     return {
       x: outsideVertically ? 0 : travel(dx),
       y: outsideVertically ? travel(dy) : 0,
