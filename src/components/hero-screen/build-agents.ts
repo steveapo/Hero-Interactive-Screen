@@ -32,6 +32,8 @@ import type { FrameComponent } from "./library-components"
 
 /** Default thinking time before a reply starts. */
 const THINK_MS = 1400
+/** Thinking time before the sign-up reply to a real visitor: just a moment. */
+const VISITOR_THINK_MS = 500
 /** One word of a streamed reply. */
 const WORD_MS = 45
 /** Pause after a reply before the agent moves on. */
@@ -359,7 +361,7 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
       if (byVisitor) {
         // A real visitor: think, then the sign-up reply. The scripted turns are left untouched.
         patchSession(sessionId, (s) => ({ messages: [...s.messages, userMessage], working: true, phase: "thinking" }))
-        const end = streamReply(sessionId, THINK_MS, SIGN_UP_REPLY, { signUp: true }).end + REPLY_PAUSE_MS / 2
+        const end = streamReply(sessionId, VISITOR_THINK_MS, SIGN_UP_REPLY, { signUp: true }).end + REPLY_PAUSE_MS / 2
         at(sessionId, end, () => {
           patchSession(sessionId, () => ({ working: false, phase: "idle" }))
           timers.current.delete(sessionId)

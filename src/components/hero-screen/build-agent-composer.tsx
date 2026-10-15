@@ -152,7 +152,7 @@ export function BuildAgentComposer({
                   {m.signUp && (m.shown === undefined || m.shown >= wordsOf(m.text).length) && (
                     <a
                       href="#"
-                      className="mt-1 flex h-8 w-fit items-center rounded-full bg-[#2f6bf6] px-4 text-[13px] font-semibold text-white transition-colors animate-in fade-in duration-200 hover:bg-[#2159dc]"
+                      className="mt-1 flex h-8 w-fit items-center rounded-full bg-mi-lime px-4 text-[13px] font-semibold text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] transition-colors animate-in fade-in duration-200 hover:bg-mi-lime-deep"
                     >
                       Sign up
                     </a>
