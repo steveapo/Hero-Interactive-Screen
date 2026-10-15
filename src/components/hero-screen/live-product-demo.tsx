@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { RotateCcw } from "lucide-react"
 import { LISTINGS } from "@/app/copy-project/airbnb-data"
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
@@ -374,10 +375,13 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
     return () => observer.disconnect()
   }, [])
 
+  /** Bumped by the reset button: remounts the stage, so the clip replays from its first frame. */
+  const [runId, setRunId] = useState(0)
+
   return (
-    <div ref={ref} className={cn("relative overflow-hidden rounded-lg bg-mi-canvas", className)}>
+    <div ref={ref} className={cn("group/clip relative overflow-hidden rounded-lg bg-mi-canvas", className)}>
       <ScaledScreen>
-        <ScriptedStage script={script} pace={PACE} ready={ready} loop={false} holdLastFrame className="min-h-0">
+        <ScriptedStage key={runId} script={script} pace={PACE} ready={ready} loop={false} holdLastFrame className="min-h-0">
           <HeroScreen
             className="h-auto min-h-0 flex-1"
             start={start}
@@ -388,6 +392,20 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
           />
         </ScriptedStage>
       </ScaledScreen>
+
+      {/* Reset: shown while the screen is hovered (or the button has keyboard focus). */}
+      <button
+        type="button"
+        onClick={() => {
+          setReady(true)
+          setRunId((id) => id + 1)
+        }}
+        aria-label="Reset animation"
+        className="absolute bottom-3 left-3 z-50 flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 opacity-0 shadow-[0_0_0_1px_#c9c7c3,0_4px_12px_rgba(17,17,16,0.2)] transition-opacity duration-200 hover:bg-neutral-100 focus-visible:opacity-100 group-hover/clip:opacity-100"
+      >
+        <RotateCcw className="size-3.5" aria-hidden />
+        Reset animation
+      </button>
     </div>
   )
 }

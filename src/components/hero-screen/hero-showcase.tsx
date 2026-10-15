@@ -1,7 +1,6 @@
 "use client"
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { RotateCcw } from "lucide-react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
 import { CodeChangesPanel } from "./code-changes-popover"
@@ -130,25 +129,16 @@ export function HeroShowcase({
     [intro],
   )
 
-  /** Bumped by the reset button: remounts both windows, so the whole load-in replays from the start. */
-  const [runId, setRunId] = useState(0)
-  function resetAnimation() {
-    setStack(showCodeWindow ? ["secondary", "main"] : ["main"])
-    setIntro("play")
-    setRunId((id) => id + 1)
-  }
-
   return (
     <div
       ref={desktopRef}
       data-desktop-area
       className={cn(
         // Desktop wallpaper (bg.png from the canvas): covers the whole Desktop Area, centred; its dark tone shows while it loads.
-        "group/desktop relative flex min-h-0 w-full flex-1 overflow-hidden bg-[#12120e] bg-[url(/hero/bg.png)] bg-cover bg-center bg-no-repeat",
+        "relative flex min-h-0 w-full flex-1 overflow-hidden bg-[#12120e] bg-[url(/hero/bg.png)] bg-cover bg-center bg-no-repeat",
         className,
       )}
     >
-      <Fragment key={runId}>
       <DesktopWindow
         title="ModeInspect Canvas"
         // Centred on the desktop (equal margins on each side).
@@ -199,18 +189,6 @@ export function HeroShowcase({
           />
         </DesktopWindow>
       )}
-      </Fragment>
-
-      {/* Reset: shown while the interactive screen is hovered (or the button has keyboard focus). */}
-      <button
-        type="button"
-        onClick={resetAnimation}
-        aria-label="Reset animation"
-        className="absolute bottom-4 left-4 z-50 flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 opacity-0 shadow-[0_0_0_1px_#c9c7c3,0_4px_12px_rgba(17,17,16,0.2)] transition-opacity duration-200 hover:bg-neutral-100 focus-visible:opacity-100 group-hover/desktop:opacity-100"
-      >
-        <RotateCcw className="size-3.5" aria-hidden />
-        Reset animation
-      </button>
     </div>
   )
 }
