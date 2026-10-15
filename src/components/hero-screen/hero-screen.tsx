@@ -384,6 +384,8 @@ export function HeroScreen({
    * inside the Portal; leaving it reveals the canvas.
    */
   const [portalOpen, setPortalOpen] = useState(start === "portal")
+  /** Frames sent to the Portal's agent by "Add to Build Chat" (attached when it opens). */
+  const [portalAttach, setPortalAttach] = useState<string[] | undefined>(undefined)
   /** Open the Codebase frame in the Portal, unless this screen keeps the Portal shut (`portalEnabled`). */
   const openPortal = useCallback(() => {
     if (portalEnabled) setPortalOpen(true)
@@ -443,6 +445,8 @@ export function HeroScreen({
       closeTimerRef.current = undefined
       setPortalClosing(false)
       setPortalOpen(false)
+      // The next opening (e.g. Open Build Mode) starts without frames attached.
+      setPortalAttach(undefined)
       if (opensInPortal && canvasEntrance) setRevealId((id) => (id === 0 ? 1 : id))
     }, PORTAL_EXIT_MS)
   }, [opensInPortal, canvasEntrance])
@@ -566,6 +570,12 @@ export function HeroScreen({
     },
     [activeElementId],
   )
+  /** "Add to Build Chat" on the selected frame: the Portal opens with it attached to a fresh chat. */
+  const addActiveToChat = useCallback(() => {
+    if (!activeElementId) return
+    setPortalAttach([activeElementId])
+    openPortal()
+  }, [activeElementId, openPortal])
   /** A single selected drawn frame / text (its settings panel shows). */
   const activeDrawn =
     !codebaseSelected && selectedIds.length === 1 ? drawnElements.find((el) => el.id === selectedIds[0]) : undefined
@@ -1578,6 +1588,7 @@ export function HeroScreen({
           height={activeRect.h}
           fill={elementFills[activeElement.id]}
           onFillChange={changeActiveFill}
+          onAddToChat={addActiveToChat}
           radius={elementRadii[activeElement.id]}
           border={activeElement.border}
           tag={activeElement.tag}
@@ -1633,6 +1644,7 @@ export function HeroScreen({
           canvasFrames={portalFrames}
           onBuildFrames={buildFramesFromPortal}
           showUrl={portalShowUrl}
+          initialAttached={portalAttach}
         />
       )}
 

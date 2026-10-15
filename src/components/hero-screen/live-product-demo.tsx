@@ -42,8 +42,9 @@ import type { ComponentLibrary } from "./library-components"
  *                     instance, selected, its design-system props in the settings panel.
  *  3. "test"          Test the real thing: click through the live app in Build Mode while the
  *                     Viewport menu takes it from desktop to tablet to mobile → the phone layout.
- *  4. "build"         Canvas to code: the trip card's frame (with its designed badge) is added to
- *                     the Build Mode agent and built → the badge in the live app, 1:1 as designed.
+ *  4. "build"         Canvas to code: the trip card's frame (with its designed badge) is selected and
+ *                     sent with "Add to Build Chat", opening Build Mode with it attached, then built
+ *                     → the badge in the live app, 1:1 as designed.
  *  5. "share"         Collaborate and ship: with the change live in the Codebase frame, open Share
  *                     and create the preview link → the Preview URL window, published.
  */
@@ -63,9 +64,10 @@ const PORTAL_MESSAGES = '[data-cursor-id="portal-chat-messages"]'
 const FILL_HEX = 'input[aria-label="Fill hex"]'
 /** The trip card's new fill in the overview: a soft tint of the brand plum. */
 const OVERVIEW_FILL = "#f6e9f3"
-/** The agent chat's "Add canvas frame" menu, and the trip card's frame in it. */
-const ADD_CANVAS_FRAME = 'button[aria-label="Add canvas frame"]'
-const TRIP_CARD_OPTION = '[data-cursor-id="portal-frame-card-upcoming-trip"]'
+/** The selected frame's settings panel button that sends it to the Build Mode agent. */
+const ADD_TO_BUILD_CHAT = '[data-cursor-id="add-to-build-chat"]'
+/** A frame attached to the Build Mode agent's composer. */
+const ATTACHED_FRAME = '[data-cursor-id="portal-attached-frame"]'
 /** The built badge on the trip card in the live app. */
 const BUILT_BADGE = '[data-cursor-id="built-component"]'
 /** The trip card's built background in the live app (its flash, over the card). */
@@ -311,29 +313,27 @@ const componentsScript: DemoScript = async (api) => {
 
 /**
  * 4. Canvas to code in one shot; key moment: in Build Mode, the trip card in the live app with the
- * "Check in" badge exactly as it was designed into its frame on the canvas. The frame is added to
- * the Build Mode agent ("Add canvas frame") and built.
+ * "Check in" badge exactly as it was designed into its frame on the canvas. The frame is selected
+ * and sent with its settings panel's "Add to Build Chat", which opens Build Mode with the frame
+ * attached to the agent's composer; then it's built.
  */
 const buildScript: DemoScript = async (api) => {
   await scene(api, "the designed frame", async () => {
     // The trip card's frame on the canvas, with the badge designed into it.
     await zoomToFill(api, TRIP_CARD)
-    await api.wait(900)
-  })
-  await scene(api, "into build mode", async () => {
-    await zoomOutTo(api, CODEBASE, CODEBASE_SHARE)
-    await api.wait(300)
-    await openBuildMode(api)
     await api.wait(600)
+    // Its right side is the card itself (its text hugs the left; the badge sits higher up).
+    await api.click(TRIP_CARD, { fx: 0.85, fy: 0.6 })
+    await api.find(ADD_TO_BUILD_CHAT)
+    await api.wait(500)
   })
-  await scene(api, "add the frame and build", async () => {
-    await api.click('button[aria-label="New agent"]')
-    await api.wait(300)
-    await api.click(ADD_CANVAS_FRAME)
-    await api.find(TRIP_CARD_OPTION)
-    await api.wait(350)
-    await api.click(TRIP_CARD_OPTION)
-    await api.wait(400)
+  await scene(api, "add to build chat", async () => {
+    await api.click(ADD_TO_BUILD_CHAT)
+    await api.find(PORTAL_SCREEN)
+    await api.find(ATTACHED_FRAME)
+    await api.wait(700)
+  })
+  await scene(api, "build", async () => {
     await api.click(PORTAL_FIELD)
     await api.type(PORTAL_BUILD_FRAME_PROMPT, { into: PORTAL_FIELD })
     await api.wait(250)

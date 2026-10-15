@@ -127,9 +127,15 @@ export const PortalView = memo(function PortalView({
   canvasFrames = [],
   onBuildFrames,
   showUrl = true,
+  initialAttached,
 }: {
   onClose: () => void
   closing?: boolean
+  /**
+   * Canvas frames sent here by "Add to Build Chat": the agent chat opens on a fresh chat with them
+   * attached to the composer. Only read on mount.
+   */
+  initialAttached?: string[]
   /** The live app's browser window shows its address (fairbnb.com) in the title bar. Off: just the traffic lights. */
   showUrl?: boolean
   /** Typing in the agent chat writes the next scripted prompt, a few words per keystroke (see PortalChat). */
@@ -451,7 +457,13 @@ export const PortalView = memo(function PortalView({
         </div>
       </div>
 
-      <PortalChat onApply={applyChange} autoPrompt={autoPrompt} canvasFrames={canvasFrames} onBuildFrames={onBuildFrames} />
+      <PortalChat
+        onApply={applyChange}
+        autoPrompt={autoPrompt}
+        canvasFrames={canvasFrames}
+        onBuildFrames={onBuildFrames}
+        initialAttached={initialAttached}
+      />
     </div>
   )
 })
@@ -1160,11 +1172,14 @@ const PortalChat = memo(function PortalChat({
   autoPrompt = false,
   canvasFrames,
   onBuildFrames,
+  initialAttached,
 }: {
   onApply: (change: string) => void
   autoPrompt?: boolean
   canvasFrames: CanvasFrameOption[]
   onBuildFrames?: (frameIds: string[]) => void
+  /** Frames sent by "Add to Build Chat": a fresh chat opens with them attached. Only read on mount. */
+  initialAttached?: string[]
 }) {
   const [prompt, setPrompt] = useState("")
   /**
@@ -1172,8 +1187,10 @@ const PortalChat = memo(function PortalChat({
    * demo's cursor (its typing is synthetic). A visitor's message gets the sign-up reply.
    */
   const typedByVisitor = useRef(false)
+  /** Opened from "Add to Build Chat": a fresh chat, the frames already attached. */
+  const openedWithFrames = (initialAttached?.length ?? 0) > 0
   /** Canvas frames attached to the next message (chips above the prompt). */
-  const [attached, setAttached] = useState<string[]>([])
+  const [attached, setAttached] = useState<string[]>(() => initialAttached ?? [])
   /**
    * autoPrompt: the scripted prompt being written and how far the keystrokes so far reach into it.
    * The composer types toward `end` one character at a time (AUTO_PROMPT_CHAR_MS).
@@ -1182,7 +1199,10 @@ const PortalChat = memo(function PortalChat({
   /** The composer is still typing queued words in: sending waits until they've landed. */
   const autoTypingIn = autoGoal !== null && prompt.length < autoGoal.end
   /** Chat names (renamable) and which one is open. Seeded chats show the earlier conversation. */
-  const [chats, setChats] = useState<PortalChatEntry[]>(() => CHATS.map((name, id) => ({ id, name, seeded: true })))
+  const [chats, setChats] = useState<PortalChatEntry[]>(() => {
+    const seeded = CHATS.map((name, id) => ({ id, name, seeded: true }))
+    return openedWithFrames ? [{ id: CHATS.length, name: "New agent", seeded: false }, ...seeded] : seeded
+  })
   const [currentIndex, setCurrentIndex] = useState(0)
   const [renaming, setRenaming] = useState(false)
   /** Messages sent / received this session, per chat id. */
@@ -1193,7 +1213,7 @@ const PortalChat = memo(function PortalChat({
   const [busyChat, setBusyChat] = useState<number | null>(null)
   const busy = busyChat !== null
   const nextId = useRef(1)
-  const nextChatId = useRef(CHATS.length)
+  const nextChatId = useRef(CHATS.length + (openedWithFrames ? 1 : 0))
   /** Indexes of the PORTAL_TURNS used so far (each plays once per session). */
   const usedTurns = useRef(new Set<number>())
   const timers = useRef<ReturnType<typeof setTimeout>[]>([])
@@ -1488,15 +1508,15 @@ const PortalChat = memo(function PortalChat({
                 <span
                   key={id}
                   data-cursor-id="portal-attached-frame"
-                  className="flex h-6 max-w-full items-center gap-1 rounded-md bg-[#2f6bf6]/10 pl-1.5 pr-0.5 text-px-12 font-medium text-[#2159dc] animate-in fade-in zoom-in-95 duration-150"
+                  className="flex h-7 max-w-full items-center gap-1.5 rounded-lg border border-stone-300 bg-white pl-1.5 pr-1 text-px-12 font-medium text-stone-900 animate-in fade-in zoom-in-95 duration-150"
                 >
-                  <Frame className="size-3 shrink-0" strokeWidth={1.75} />
+                  <span aria-hidden="true" className="h-3 w-5 shrink-0 rounded-[3px] bg-stone-950" />
                   <span className="min-w-0 truncate">{name}</span>
                   <button
                     type="button"
                     aria-label={`Remove ${name}`}
                     onClick={() => setAttached((list) => list.filter((f) => f !== id))}
-                    className="flex size-5 shrink-0 items-center justify-center rounded hover:bg-[#2f6bf6]/10"
+                    className="flex size-5 shrink-0 items-center justify-center rounded text-stone-600 hover:bg-stone-700/5"
                   >
                     <X className="size-3" strokeWidth={1.75} />
                   </button>

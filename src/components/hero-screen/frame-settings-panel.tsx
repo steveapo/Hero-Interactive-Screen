@@ -51,6 +51,7 @@ export const FrameSettingsPanel = memo(function FrameSettingsPanel({
   border,
   colors,
   onFillChange,
+  onAddToChat,
 }: {
   ref?: React.Ref<HTMLElement>
   /** Element tag shown in the header. */
@@ -76,11 +77,13 @@ export const FrameSettingsPanel = memo(function FrameSettingsPanel({
   colors?: string[]
   /** Makes the fill editable: the Fill swatch opens preset colours (see FillSection). */
   onFillChange?: (color: string) => void
+  /** "Add to Build Chat": hand this frame to the Build Mode agent (opens the Portal with it attached). */
+  onAddToChat?: () => void
 }) {
   const selectionColors = colors ?? [fill, border].filter((c): c is string => c !== null)
 
   return (
-    <SettingsPanelShell ref={ref} icon={<FrameGlyph />} title={tag}>
+    <SettingsPanelShell ref={ref} icon={<FrameGlyph />} title={tag} onAddToChat={onAddToChat}>
       <PositionSection position={position} inset={inset} x={x} y={y} />
       <SizeSection width={px(width)} height={px(height)} />
       <LayoutSection layout={layout} padding={padding} clip={clip} />
@@ -99,11 +102,14 @@ export function SettingsPanelShell({
   ref,
   icon,
   title,
+  onAddToChat,
   children,
 }: {
   ref?: React.Ref<HTMLElement>
   icon: React.ReactNode
   title: string
+  /** "Add to Build Chat" was clicked. */
+  onAddToChat?: () => void
   children: React.ReactNode
 }) {
   return (
@@ -119,6 +125,8 @@ export function SettingsPanelShell({
         </h2>
         <button
           type="button"
+          data-cursor-id="add-to-build-chat"
+          onClick={onAddToChat}
           className="flex h-7 items-center gap-1.5 rounded-full bg-[#46a35a] px-2.5 text-[12px] font-semibold text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] transition-colors hover:bg-[#3d9150]"
         >
           <AddToChatIcon />
