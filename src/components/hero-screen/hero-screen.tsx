@@ -20,6 +20,7 @@ import { CodebaseSettingsPanel } from "./codebase-settings-panel"
 import { trackDrag, useMeasuredRect, type CanvasRect } from "./drag"
 import { FrameSettingsPanel } from "./frame-settings-panel"
 import { GithubButton } from "./github-popover"
+import { LayerSelectionOverlay } from "./layer-selection-overlay"
 import { LayerSettingsPanel } from "./layer-settings-panel"
 import { LeftSidebar } from "./left-sidebar"
 import {
@@ -193,9 +194,6 @@ const TRIP_CARD_RECT = AIRBNB_ELEMENTS.find((el) => el.id === TRIP_CARD_ID)!.rec
 const NIGHTS_FONT_SIZE = 4.6 * CQW
 /** The nights layer, hovered: a selection-blue outline (its width set per zoom in --layer-line). */
 const NIGHTS_LAYER_HOVER = "[&_[data-layer=nights]:hover]:[outline:var(--layer-line)_solid_#2f6bf6]"
-/** The nights layer, selected: outlined, with its top margin (--layer-margin) tinted above it. */
-const NIGHTS_LAYER_SELECTED =
-  "[&_[data-layer=nights]]:[outline:var(--layer-line)_solid_#2f6bf6] [&_[data-layer=nights]]:relative [&_[data-layer=nights]]:before:absolute [&_[data-layer=nights]]:before:inset-x-0 [&_[data-layer=nights]]:before:bottom-full [&_[data-layer=nights]]:before:h-(--layer-margin) [&_[data-layer=nights]]:before:bg-[#f59e0b]/25"
 
 /**
  * Edits already made to the trip card when the screen opens (the feature cards' story, where each
@@ -1416,18 +1414,17 @@ export function HeroScreen({
             entrance={entranceFor(elementRects[el.id])}
           >
             {isTrip ? (
-              // The nights numeral is a selectable layer: outlined on hover and while selected, its
-              // top margin tinted while selected. Lines stay 1.5 screen px at any zoom.
+              // The nights numeral is a selectable layer: outlined on hover; selected, it gets its
+              // selection chrome and margin guides (LayerSelectionOverlay). The wrapper is positioned
+              // so the overlay can read the numeral's offsets against it.
               <div
-                className={cn("size-full", NIGHTS_LAYER_HOVER, selectedLayer === "nights" && NIGHTS_LAYER_SELECTED)}
-                style={
-                  {
-                    "--layer-line": `${1.5 / camera.zoom}px`,
-                    "--layer-margin": `${numeralGap}px`,
-                  } as React.CSSProperties
-                }
+                className={cn("relative size-full", selectedLayer !== "nights" && NIGHTS_LAYER_HOVER)}
+                style={{ "--layer-line": `${1 / camera.zoom}px` } as React.CSSProperties}
               >
                 <TripCard numeralGap={numeralGap / CQW} />
+                {selectedLayer === "nights" && (
+                  <LayerSelectionOverlay layer="nights" marginTop={numeralGap} zoom={camera.zoom} />
+                )}
               </div>
             ) : (
               el.content
