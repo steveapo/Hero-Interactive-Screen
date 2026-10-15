@@ -36,13 +36,15 @@ import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { screenScale } from "@/lib/screen-scale"
 import { PORTAL_FALLBACK, PORTAL_TURNS, type PortalTurn } from "./agent-script"
-import { wordsOf, type FrameFill, type VariantState } from "./build-agents"
+import { SIGN_UP_REPLY, wordsOf, type FrameFill, type VariantState } from "./build-agents"
 import { CQW, FrameBadge, type FrameComponent } from "./library-components"
 import { AgentStar } from "./planner-frame"
 import { FinishedEventCard } from "./variant-frame"
 
 /** Portal Agent: thinking time before a reply, and one streamed word (ms). */
 const PORTAL_THINK_MS = 1300
+/** Thinking time before the sign-up reply to a real visitor: just a moment. */
+const PORTAL_VISITOR_THINK_MS = 500
 const PORTAL_WORD_MS = 40
 /** Auto prompt (PortalChat's `autoPrompt`): how many words of the scripted prompt each keystroke writes. */
 const AUTO_PROMPT_WORDS_PER_KEY = 2
@@ -68,6 +70,8 @@ type PortalMessage = {
   turn?: PortalTurn
   /** Names of the canvas frames attached to a user message. */
   frames?: string[]
+  /** The visitor's reply: a Sign up button shows below it once it has streamed in. */
+  signUp?: boolean
 }
 
 /** A canvas frame the Portal Agent can be given (see PortalChat's "Add canvas frame"). */
@@ -1163,6 +1167,11 @@ const PortalChat = memo(function PortalChat({
   onBuildFrames?: (frameIds: string[]) => void
 }) {
   const [prompt, setPrompt] = useState("")
+  /**
+   * The prompt was typed by a real visitor (trusted input events), not written by the scripted
+   * demo's cursor (its typing is synthetic). A visitor's message gets the sign-up reply.
+   */
+  const typedByVisitor = useRef(false)
   /** Canvas frames attached to the next message (chips above the prompt). */
   const [attached, setAttached] = useState<string[]>([])
   /**
@@ -1252,6 +1261,26 @@ const PortalChat = memo(function PortalChat({
     setPrompt("")
     setAutoGoal(null)
     setAttached([])
+    const byVisitor = typedByVisitor.current
+    typedByVisitor.current = false
+    const at = (ms: number, run: () => void) => timers.current.push(setTimeout(run, ms))
+
+    if (byVisitor) {
+      // A real visitor: think for a moment, then the sign-up reply. No change lands in the app.
+      const signUpId = nextId.current++
+      const signUpWords = wordsOf(SIGN_UP_REPLY).length
+      setBusyChat(chatId)
+      setThinking(true)
+      at(PORTAL_VISITOR_THINK_MS, () => {
+        setThinking(false)
+        addMessage(chatId, { id: signUpId, role: "agent", text: SIGN_UP_REPLY, shown: 0, signUp: true })
+      })
+      for (let i = 1; i <= signUpWords; i++) {
+        at(PORTAL_VISITOR_THINK_MS + i * PORTAL_WORD_MS, () => patchMessage(chatId, signUpId, { shown: i }))
+      }
+      at(PORTAL_VISITOR_THINK_MS + signUpWords * PORTAL_WORD_MS + 150, () => setBusyChat(null))
+      return
+    }
 
     // Scripted reply: think, stream it in word by word, then apply its change to the preview. The
     // turn written for exactly this message, else the next general one.
@@ -1261,7 +1290,6 @@ const PortalChat = memo(function PortalChat({
     const turn = index >= 0 ? PORTAL_TURNS[index] : PORTAL_FALLBACK
     const replyId = nextId.current++
     const words = wordsOf(turn.reply).length
-    const at = (ms: number, run: () => void) => timers.current.push(setTimeout(run, ms))
     const think = turn.thinkMs ?? PORTAL_THINK_MS
     setBusyChat(chatId)
     setThinking(true)
@@ -1390,6 +1418,14 @@ const PortalChat = memo(function PortalChat({
               <p className="select-text">
                 {m.shown === undefined ? m.text : wordsOf(m.text).slice(0, m.shown).join("")}
               </p>
+              {m.signUp && (m.shown ?? 0) >= wordsOf(m.text).length && (
+                <a
+                  href="#"
+                  className="flex h-8 w-fit items-center rounded-full bg-mi-lime px-4 text-px-13 font-semibold text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] transition-colors animate-in fade-in duration-200 hover:bg-mi-lime-deep"
+                >
+                  Sign up
+                </a>
+              )}
               {m.turn && (m.shown ?? 0) >= wordsOf(m.text).length && (
                 <div className="flex flex-col gap-2 animate-in fade-in duration-200">
                   <span className="-ml-0.5 flex items-center gap-1 text-stone-600">
@@ -1472,6 +1508,7 @@ const PortalChat = memo(function PortalChat({
         <textarea
           value={prompt}
           onChange={(e) => {
+            typedByVisitor.current = e.nativeEvent.isTrusted
             // autoPrompt: typing (anything that adds) writes the scripted prompt; deleting works as usual.
             if (autoPrompt && e.target.value.length > prompt.length && autoPromptKeystroke()) return
             // Deleting (or free typing) stops any typing-in; later keystrokes carry on from what's left.
