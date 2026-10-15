@@ -569,6 +569,7 @@ export const AirbnbScreen = memo(function AirbnbScreen({
   introSpeed = 1,
   onIntroDone,
   tripNumeralGap = 0,
+  tripExtras,
 }: {
   /** Playback rate of the opening animation: 0.5 = half speed. */
   introSpeed?: number;
@@ -576,6 +577,8 @@ export const AirbnbScreen = memo(function AirbnbScreen({
   onIntroDone?: () => void;
   /** Extra space between the trip's dates and its nights (cqw); the trip row grows to fit it. */
   tripNumeralGap?: number;
+  /** Rendered over the trip card, in its positioned host (built components, placed in cqw). */
+  tripExtras?: React.ReactNode;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [category, setCategory] = useState(0);
@@ -607,6 +610,7 @@ export const AirbnbScreen = memo(function AirbnbScreen({
           {/* Each card sits in its own positioned host: the Portal builds components onto it there. */}
           <div data-anim="trip" className="relative h-full shrink-0" style={{ width: cqw(TRIP_CARD_WIDTH) }}>
             <TripCard numeralGap={tripNumeralGap} animateGap />
+            {tripExtras}
           </div>
           <div className="relative h-full shrink-0" style={{ width: cqw(CHECK_IN_WIDTH) }}>
             <CheckInTile />

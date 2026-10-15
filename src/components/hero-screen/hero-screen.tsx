@@ -28,6 +28,7 @@ import {
   ComponentDragGhost,
   ComponentSettingsPanel,
   CQW,
+  FrameBadge,
   FrameComponentsLayer,
   newComponentOf,
   type ComponentLibrary,
@@ -413,6 +414,28 @@ export function HeroScreen({
   const numeralGapRef = useRef(numeralGap)
   /** That gap as built into the codebase (canvas units): the live app's card grows by it. */
   const [builtNumeralGap, setBuiltNumeralGap] = useState(() => (seed?.built ? (seed.numeralGap ?? 0) : 0))
+  /**
+   * What the Codebase frame must show on top of its screenshot: the trip card's built components
+   * (placed in cqw from the card's top-left, as in the live app) and its built spacing. Memoized,
+   * so the frame's memoized live app only re-renders when a build changes them. None: undefined.
+   */
+  const { builtComponents: builtForCodebase } = agents
+  const codebaseBuilt = useMemo(() => {
+    const onTrip = builtForCodebase.filter((c) => c.frameId === TRIP_CARD_ID)
+    if (onTrip.length === 0 && !builtNumeralGap) return undefined
+    return {
+      tripNumeralGap: builtNumeralGap / CQW,
+      tripExtras: onTrip.map((c) => (
+        <div
+          key={c.id}
+          className="pointer-events-none absolute flex"
+          style={{ left: `${c.x / CQW}cqw`, top: `${c.y / CQW}cqw` }}
+        >
+          <FrameBadge instance={c} />
+        </div>
+      )),
+    }
+  }, [builtForCodebase, builtNumeralGap])
   /** A layer selected inside a frame (the trip card's nights numeral), with its own settings panel. */
   const [selectedLayer, setSelectedLayer] = useState<"nights" | null>(null)
   /** Where each generating agent's cursor sits, in canvas units (measured from the piece it edits). */
@@ -1370,6 +1393,7 @@ export function HeroScreen({
             offsetX={camera.x + codebaseRect.x * camera.zoom}
             offsetY={camera.y + codebaseRect.y * camera.zoom}
             appear={hasIntro ? (codebaseIn ? "in" : "hidden") : undefined}
+            built={codebaseBuilt}
           />
         )}
         {canvasElements.map((el) => {

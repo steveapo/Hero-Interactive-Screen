@@ -38,7 +38,14 @@ export function CodebaseFrame({
   offsetX,
   offsetY,
   appear,
+  built,
 }: {
+  /**
+   * Changes built into the codebase that the screenshot doesn't have (the trip card's built
+   * components and spacing). While set, the frame shows the settled live app with them instead of
+   * the static thumbnail, so it always matches the code.
+   */
+  built?: { tripNumeralGap: number; tripExtras: React.ReactNode }
   /**
    * Load-in: "hidden" keeps the frame invisible; "in" fades the frame in and plays the live app's
    * opening animation inside it, after which the frame settles on the static thumbnail.
@@ -75,10 +82,15 @@ export function CodebaseFrame({
   const thumbnailRef = useCallback((img: HTMLImageElement | null) => {
     if (img && img.complete && img.naturalWidth === 0) setThumbnailMissing(true)
   }, [])
-  /** The live app is mounted only for the load-in's opening animation (or if there's no thumbnail). */
-  const showLiveApp = (appear === "in" && !introDone) || (appear !== "hidden" && thumbnailMissing)
-  /** Standing in for a missing thumbnail (no load-in): the settled app straight away, no intro. */
-  const liveIntroSpeed = appear === "in" ? CODEBASE_INTRO_SPEED : 1000
+  /** The intro is playing in the frame (it settles on the thumbnail, or on the built app). */
+  const introPlaying = appear === "in" && !introDone
+  /**
+   * The live app is mounted for the load-in's opening animation, while built changes must show
+   * (the thumbnail predates them), or if there's no thumbnail.
+   */
+  const showLiveApp = introPlaying || (appear !== "hidden" && (thumbnailMissing || built !== undefined))
+  /** Not playing the intro: the settled app straight away. */
+  const liveIntroSpeed = introPlaying ? CODEBASE_INTRO_SPEED : 1000
 
   return (
     <div
@@ -161,7 +173,12 @@ export function CodebaseFrame({
               className="@container size-full overflow-hidden bg-white"
               style={covered ? { contentVisibility: "hidden" } : undefined}
             >
-              <AirbnbScreen introSpeed={liveIntroSpeed} onIntroDone={finishIntro} />
+              <AirbnbScreen
+                introSpeed={liveIntroSpeed}
+                onIntroDone={finishIntro}
+                tripNumeralGap={built?.tripNumeralGap}
+                tripExtras={built?.tripExtras}
+              />
             </div>
           </div>
         )}
