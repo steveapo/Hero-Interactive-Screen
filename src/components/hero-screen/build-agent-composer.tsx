@@ -283,7 +283,7 @@ export function BuildAgentComposer({
             aria-label="Send"
             className={cn(
               "flex size-9 shrink-0 items-center justify-center rounded-full transition-colors",
-              empty ? "bg-stone-200/80 text-stone-400" : "bg-[#2f6bf6] text-white hover:bg-[#2159dc]",
+              empty ? "bg-stone-200/80 text-stone-400" : "bg-[#46a35a] text-white hover:bg-[#3d9150]",
             )}
           >
             <ArrowUp className="size-4" strokeWidth={2} />

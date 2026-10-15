@@ -1570,7 +1570,7 @@ const PortalChat = memo(function PortalChat({
               aria-label="Send"
               className={cn(
                 "flex size-7 items-center justify-center rounded-full transition-colors",
-                empty ? "bg-stone-200/80 text-stone-400" : "bg-[#2f6bf6] text-white hover:bg-[#2159dc]",
+                empty ? "bg-stone-200/80 text-stone-400" : "bg-[#46a35a] text-white hover:bg-[#3d9150]",
               )}
             >
               <ArrowUp className="size-3.5" strokeWidth={2} />
