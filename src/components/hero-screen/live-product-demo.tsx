@@ -54,8 +54,9 @@ import {
  *  4. "build"         Canvas to code in one shot: the edited card's frame is sent with "Add to
  *                     Build Chat" and the agent is asked to update the card → the live app's card,
  *                     badge, Reserve button and spacing exactly as designed.
- *  5. "test"          Test the real thing: in the live app, the built Reserve button is clicked →
- *                     it turns into "Reserved", a check popping in.
+ *  5. "test"          Test the real thing: in the live app, the built Reserve button is clicked on
+ *                     desktop; then the Viewport menu switches to mobile, the phone is scrolled
+ *                     to the reflowed card and its Reserve is clicked again → "Reserved".
  *  6. "share"         Collaborate and ship: with the change built, open Share and create the
  *                     preview link → the Preview URL window, published; then Copy → "Copied
  *                     Preview Link" slides up at the bottom right and back down.
@@ -502,24 +503,66 @@ const shareScript: DemoScript = async (api) => {
 }
 
 /**
- * 5. Test the real thing; key moment: the built Reserve button, clicked in the live app, turned
- * into "Reserved" with a check popping in: real components, really interactive.
+ * 5. Test the real thing; key moment: the built card on a phone, its Reserve button (full width
+ * there) just clicked into "Reserved". The built Reserve is clicked on desktop first; then the
+ * Viewport menu takes the live app to mobile, where the card reflows to that breakpoint's own
+ * layout, the screen is scrolled down to it, and Reserve is clicked again: real components,
+ * really interactive, at every breakpoint.
  */
 const testScript: DemoScript = async (api) => {
-  await scene(api, "the built card", async () => {
-    await api.find(PORTAL_SCREEN)
+  const desktopReserve = `${screenAt("desktop")} ${BUILT_RESERVE}`
+  const mobileReserve = `${screenAt("mobile")} ${BUILT_RESERVE}`
+  await scene(api, "reserve on desktop", async () => {
+    await api.find(screenAt("desktop"))
     // The built badge and button swap in once the app has settled.
-    await api.find(BUILT_RESERVE, 6000)
+    await api.find(desktopReserve, 6000)
     await api.wait(700)
-    await api.moveTo(BUILT_RESERVE, { duration: 900 })
-    await api.wait(350)
+    await api.moveTo(desktopReserve, { duration: 900 })
+    await api.wait(300)
+    await api.click(desktopReserve)
+    await api.wait(1100)
   })
-  await scene(api, "reserve", async () => {
-    await api.click(BUILT_RESERVE)
+  await scene(api, "to mobile", async () => {
+    await switchViewport(api, "mobile")
+  })
+  await scene(api, "scroll down", async () => {
+    // Scroll the phone's content until the trip card sits at the top of it.
+    const main = api.stage.querySelector<HTMLElement>(`${screenAt("mobile")} main`)
+    const card = main?.querySelector("[data-trip-card]")
+    const mainBox = main ? api.boxOf(main) : null
+    const cardBox = card ? api.boxOf(card) : null
+    if (main && mainBox && cardBox && mainBox.height) {
+      // Stage px → the phone's CSS px (the device is drawn scaled).
+      const k = main.clientHeight / mainBox.height
+      const top = main.scrollTop + (cardBox.top - mainBox.top) * k - 12
+      await api.moveTo(main, { fx: 0.5, fy: 0.6, duration: 600 })
+      await api.scroll(main, Math.max(0, top), 900)
+    }
+    await api.wait(500)
+  })
+  await scene(api, "reserve on mobile", async () => {
+    await api.moveTo(mobileReserve, { duration: 800 })
+    await api.wait(300)
+    await api.click(mobileReserve)
     await api.wait(1100)
     // Rest just below it, so "Reserved" reads clearly.
-    await api.moveTo(BUILT_RESERVE, { fx: 0.5, fy: 2.4, duration: 600 })
+    await api.moveTo(mobileReserve, { fx: 0.7, fy: 2.2, duration: 600 })
   })
+}
+
+const VIEWPORT_MENU = 'button[aria-label="Viewport"]'
+const viewportOption = (id: string) => `[data-cursor-id="viewport-${id}"]`
+/** The live app's screen at a viewport (see AirbnbDevice in portal-view). */
+const screenAt = (viewport: string) => `[data-portal-screen][data-viewport="${viewport}"]`
+
+/** Switch the Portal's preview to `viewport` through its Viewport menu. */
+async function switchViewport(api: ScriptApi, viewport: string) {
+  await api.click(VIEWPORT_MENU)
+  await api.find(viewportOption(viewport))
+  await api.wait(450)
+  await api.click(viewportOption(viewport))
+  await api.find(screenAt(viewport))
+  await api.wait(700)
 }
 
 export type FeatureClipId = "overview" | "capture" | "visual-edits" | "components" | "test" | "build" | "share"

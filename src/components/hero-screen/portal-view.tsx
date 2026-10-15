@@ -1,6 +1,6 @@
 "use client"
 
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import {
   Archive,
@@ -30,7 +30,8 @@ import {
   X,
   type LucideIcon,
 } from "lucide-react"
-import { AirbnbCompactScreen } from "@/app/copy-project/airbnb-compact-screen"
+import { AirbnbCompactScreen, type BuiltTrip } from "@/app/copy-project/airbnb-compact-screen"
+import { TRIP } from "@/app/copy-project/airbnb-data"
 import { AirbnbScreen } from "@/app/copy-project/airbnb-screen"
 import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
@@ -282,6 +283,19 @@ export const PortalView = memo(function PortalView({
   }, [loaded, builtNumeralGap, gapKey])
   const shownNumeralGap = gapShownFor === gapKey ? builtNumeralGap : 0
 
+  /**
+   * The Fairbnb components built onto the trip card, for the mobile / tablet layouts: they lay
+   * them out natively, their own way per breakpoint (see BuiltTrip). Undefined: none built.
+   */
+  const builtTrip = useMemo<BuiltTrip | undefined>(() => {
+    const onTrip = builtComponents.filter((c) => c.cardTitle === TRIP.title && c.library === "fairbnb")
+    if (onTrip.length === 0) return undefined
+    return {
+      badge: onTrip.find((c) => c.component === "Badge")?.label,
+      reserve: onTrip.some((c) => c.component === "Button"),
+    }
+  }, [builtComponents])
+
   return (
     <div
       className={cn(
@@ -416,6 +430,7 @@ export const PortalView = memo(function PortalView({
                   switched={viewportSwitched}
                   showUrl={showUrl}
                   tripNumeralGap={shownNumeralGap}
+                  builtTrip={builtTrip}
                 />
               </div>
             </div>
@@ -894,6 +909,7 @@ function AirbnbDevice({
   switched = false,
   showUrl = true,
   tripNumeralGap = 0,
+  builtTrip,
 }: {
   loaded: boolean
   skipIntro?: boolean
@@ -904,6 +920,8 @@ function AirbnbDevice({
   showUrl?: boolean
   /** Built extra space between the trip card's dates and nights (cqw; desktop layouts). */
   tripNumeralGap?: number
+  /** Components built onto the trip card, laid out by the mobile / tablet layouts themselves. */
+  builtTrip?: BuiltTrip
 }) {
   const handheld = HANDHELD_SCREENS[viewport]
   if (handheld) {
@@ -927,7 +945,7 @@ function AirbnbDevice({
             className="@container overflow-hidden bg-white"
             style={{ aspectRatio: `${handheld.w} / ${handheld.h}`, borderRadius: pct(handheld.radius) }}
           >
-            <AirbnbCompactScreen size={handheld.size} />
+            <AirbnbCompactScreen size={handheld.size} builtTrip={builtTrip} />
           </div>
         </div>
       </div>

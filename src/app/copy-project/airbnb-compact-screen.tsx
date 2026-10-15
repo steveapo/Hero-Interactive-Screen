@@ -4,6 +4,7 @@ import { memo, useState, type ComponentType } from "react";
 import Image from "next/image";
 import {
   BatteryFull,
+  Check,
   CircleUser,
   Heart,
   KeyRound,
@@ -34,18 +35,32 @@ import { CATEGORIES, LogoMark } from "./airbnb-screen";
  */
 export type CompactSize = "mobile" | "tablet";
 
+/**
+ * Components built onto the trip card (the feature cards' story): a badge's label and whether the
+ * card has its Reserve button. Each breakpoint lays them out its own way: on mobile the badge sits
+ * in the card's top-right corner and Reserve spans the card's full width under its content; on
+ * tablet both sit in the card's corners, as on desktop.
+ */
+export type BuiltTrip = { badge?: string; reserve?: boolean };
+
 const PLUM = "#8e4585";
 
-export const AirbnbCompactScreen = memo(function AirbnbCompactScreen({ size }: { size: CompactSize }) {
+export const AirbnbCompactScreen = memo(function AirbnbCompactScreen({
+  size,
+  builtTrip,
+}: {
+  size: CompactSize;
+  builtTrip?: BuiltTrip;
+}) {
   const [category, setCategory] = useState(0);
   const [saved, setSaved] = useState<string[]>([]);
   const toggleSave = (id: string) =>
     setSaved((list) => (list.includes(id) ? list.filter((s) => s !== id) : [...list, id]));
 
   return size === "mobile" ? (
-    <MobileScreen category={category} onCategory={setCategory} saved={saved} onToggleSave={toggleSave} />
+    <MobileScreen category={category} onCategory={setCategory} saved={saved} onToggleSave={toggleSave} builtTrip={builtTrip} />
   ) : (
-    <TabletScreen category={category} onCategory={setCategory} saved={saved} onToggleSave={toggleSave} />
+    <TabletScreen category={category} onCategory={setCategory} saved={saved} onToggleSave={toggleSave} builtTrip={builtTrip} />
   );
 });
 
@@ -54,11 +69,12 @@ type ScreenProps = {
   onCategory: (index: number) => void;
   saved: string[];
   onToggleSave: (id: string) => void;
+  builtTrip?: BuiltTrip;
 };
 
 /* --------------------------------- Mobile --------------------------------- */
 
-function MobileScreen({ category, onCategory, saved, onToggleSave }: ScreenProps) {
+function MobileScreen({ category, onCategory, saved, onToggleSave, builtTrip }: ScreenProps) {
   const [tab, setTab] = useState(0);
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-white font-sans text-[#222222]">
@@ -114,16 +130,26 @@ function MobileScreen({ category, onCategory, saved, onToggleSave }: ScreenProps
           Your upcoming trip
         </SectionTitle>
         <div className="mt-[3.5cqw] flex flex-col gap-[3cqw]">
-          <div className="flex items-end justify-between rounded-[4cqw] border border-[#ebebeb] bg-white p-[5cqw] shadow-[0_1cqw_4cqw_rgba(0,0,0,0.08)]">
-            <div className="flex min-w-0 flex-col gap-[0.6cqw]">
-              <p className="text-[4.6cqw] font-semibold tracking-tight">{TRIP.title}</p>
-              {TRIP.lines.map((line) => (
-                <p key={line} className="text-[3.4cqw] font-medium tracking-tight text-[#6a6a6a]">
-                  {line}
-                </p>
-              ))}
+          <div
+            data-trip-card
+            className="relative flex flex-col gap-[4.5cqw] rounded-[4cqw] border border-[#ebebeb] bg-white p-[5cqw] shadow-[0_1cqw_4cqw_rgba(0,0,0,0.08)]"
+          >
+            <div className="flex items-end justify-between">
+              <div className="flex min-w-0 flex-col gap-[0.6cqw]">
+                <p className="text-[4.6cqw] font-semibold tracking-tight">{TRIP.title}</p>
+                {TRIP.lines.map((line) => (
+                  <p key={line} className="text-[3.4cqw] font-medium tracking-tight text-[#6a6a6a]">
+                    {line}
+                  </p>
+                ))}
+              </div>
+              <Nights className="text-[13cqw]" unitClass="text-[2.6cqw]" />
             </div>
-            <Nights className="text-[13cqw]" unitClass="text-[2.6cqw]" />
+            {/* Built: Reserve spans the card under its content on mobile */}
+            {builtTrip?.reserve && <ReserveButton className="h-[11cqw] w-full rounded-[3cqw] text-[3.8cqw]" />}
+            {builtTrip?.badge && (
+              <GuestBadge label={builtTrip.badge} className="absolute top-[5cqw] right-[5cqw] text-[3cqw]" />
+            )}
           </div>
           <CheckInBanner className="h-[38cqw] rounded-[4cqw]" pad="p-[4.5cqw]" text="text-[4.4cqw]" small="text-[2.6cqw]" pill="text-[2.8cqw] px-[2.6cqw] py-[1.4cqw]" />
         </div>
@@ -184,7 +210,7 @@ const MOBILE_TABS: { label: string; icon: ComponentType<{ className?: string; st
 /** Categories that fit across the tablet's width (the rest sit off to the right on desktop). */
 const TABLET_CATEGORIES = 7;
 
-function TabletScreen({ category, onCategory, saved, onToggleSave }: ScreenProps) {
+function TabletScreen({ category, onCategory, saved, onToggleSave, builtTrip }: ScreenProps) {
   return (
     <div className="relative flex h-full w-full flex-col overflow-hidden bg-white font-sans text-[#222222]">
       {/* Header: logo, a compact search pill, account menu */}
@@ -250,7 +276,10 @@ function TabletScreen({ category, onCategory, saved, onToggleSave }: ScreenProps
           Your upcoming trip
         </SectionTitle>
         <div className="mt-[2.2cqw] grid h-[26cqw] grid-cols-2 gap-[3cqw]">
-          <div className="flex flex-col justify-between rounded-[2cqw] border border-[#ebebeb] bg-white p-[3cqw] shadow-[0_0.6cqw_2.4cqw_rgba(0,0,0,0.08)]">
+          <div
+            data-trip-card
+            className="relative flex flex-col justify-between rounded-[2cqw] border border-[#ebebeb] bg-white p-[3cqw] shadow-[0_0.6cqw_2.4cqw_rgba(0,0,0,0.08)]"
+          >
             <div className="flex flex-col gap-[0.4cqw]">
               <p className="text-[2.8cqw] font-semibold tracking-tight">{TRIP.title}</p>
               {TRIP.lines.map((line) => (
@@ -259,7 +288,18 @@ function TabletScreen({ category, onCategory, saved, onToggleSave }: ScreenProps
                 </p>
               ))}
             </div>
-            <Nights className="text-[8cqw]" unitClass="text-[1.5cqw]" />
+            {/* Built: the badge in the top-right corner; Reserve beside the nights, as on desktop */}
+            {builtTrip?.reserve ? (
+              <div className="flex items-end justify-between">
+                <Nights className="text-[8cqw]" unitClass="text-[1.5cqw]" />
+                <ReserveButton className="h-[5cqw] rounded-[1.2cqw] px-[2.6cqw] text-[1.9cqw]" />
+              </div>
+            ) : (
+              <Nights className="text-[8cqw]" unitClass="text-[1.5cqw]" />
+            )}
+            {builtTrip?.badge && (
+              <GuestBadge label={builtTrip.badge} className="absolute top-[3cqw] right-[3cqw] text-[1.6cqw]" />
+            )}
           </div>
           <CheckInBanner className="h-full rounded-[2cqw]" pad="p-[3cqw]" text="text-[2.8cqw]" small="text-[1.5cqw]" pill="text-[1.6cqw] px-[1.5cqw] py-[0.8cqw]" />
         </div>
@@ -291,6 +331,54 @@ function TabletScreen({ category, onCategory, saved, onToggleSave }: ScreenProps
 }
 
 /* --------------------------------- Shared --------------------------------- */
+
+/** The built Guest favorite badge on the trip card: the app's white pill. */
+function GuestBadge({ label, className }: { label: string; className: string }) {
+  return (
+    <span
+      className={cn(
+        "flex items-center rounded-full bg-white px-[0.85em] py-[0.55em] leading-none font-semibold whitespace-nowrap text-[#222222] shadow-[0_0.1em_0.5em_rgba(0,0,0,0.18)]",
+        className,
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+/**
+ * The built Reserve button on the trip card: the plum gradient call to action. Clicking it
+ * reserves the stay ("Reserved", a check popping in; same background); clicking again undoes it.
+ */
+function ReserveButton({ className }: { className: string }) {
+  const [reserved, setReserved] = useState(false);
+  return (
+    <button
+      type="button"
+      data-cursor-id="built-reserve"
+      aria-label={reserved ? `Cancel reservation at ${TRIP.title}` : `Reserve ${TRIP.title}`}
+      aria-pressed={reserved}
+      onClick={() => setReserved((r) => !r)}
+      className={cn(
+        "flex cursor-pointer items-center justify-center gap-[0.5em] bg-[linear-gradient(90deg,#8e4585,#b0569f)] leading-none font-semibold tracking-tight whitespace-nowrap text-white shadow-[0_0.2em_0.6em_rgba(142,69,133,0.35)] transition-transform active:scale-95",
+        className,
+      )}
+    >
+      {reserved && (
+        <span
+          key="check"
+          aria-hidden="true"
+          className="flex size-[1.4em] shrink-0 items-center justify-center rounded-full bg-[#46a35a] text-white animate-in zoom-in-0 spin-in-[-30deg] delay-100 duration-300 fill-mode-both"
+        >
+          <Check className="size-[0.9em]" strokeWidth={3.5} />
+        </span>
+      )}
+      <span key={reserved ? "reserved" : "reserve"} className={cn(reserved && "animate-in zoom-in-90 duration-300")}>
+        {reserved ? "Reserved" : "Reserve"}
+      </span>
+    </button>
+  );
+}
 
 function SectionTitle({
   children,
