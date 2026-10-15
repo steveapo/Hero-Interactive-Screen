@@ -103,6 +103,15 @@ export type VariantState = {
 /** Where an agent's cursor is: the piece it's editing. */
 export type AgentFocus = { variantId: string; part: VariantPart }
 
+/** A card frame's fill, as set on the canvas: what a fill build ships (see AgentTurn.buildsFill). */
+export type FrameFill = {
+  /** The card frame. */
+  frameId: string
+  /** Title of that card in the live app ("Vernazza Sea House"): where it's built. */
+  cardTitle: string
+  fill: string
+}
+
 /** Lays variants out: one row of rects per source, in the given order. */
 export type PlaceVariants = (sources: { elementId: string; count: number }[]) => CanvasRect[][]
 
@@ -133,6 +142,8 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
   const [built, setBuilt] = useState<string | null>(null)
   /** Library components built into the codebase from their frames (a snapshot taken at build time). */
   const [builtComponents, setBuiltComponents] = useState<FrameComponent[]>(initialBuiltComponents)
+  /** Card fills built into the codebase from their frames (a snapshot taken at build time). */
+  const [builtFills, setBuiltFills] = useState<FrameFill[]>([])
   const sessionsRef = useRef(sessions)
   const variantsRef = useRef(variants)
   useEffect(() => {
@@ -291,6 +302,7 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
       place,
       originOf,
       components = [],
+      fills = [],
     }: {
       elementIds: string[]
       text: string
@@ -299,6 +311,8 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
       originOf: (elementId: string) => { x: number; y: number }
       /** The library components inside the selected frames, as they are now (what a frame build ships). */
       components?: FrameComponent[]
+      /** The card frames' fills changed on the canvas, as they are now (what a fill build ships). */
+      fills?: FrameFill[]
     }) => {
       const key = keyFor(elementIds)
       const current = sessionsRef.current
@@ -349,12 +363,17 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
         const snapshot = components
           .filter((c) => elementIds.includes(c.frameId))
           .map((c) => (turn.wiresUp ? { ...c, functional: true } : c))
+        // A fill build also ships the selected frames' fills, as they were when the message was sent.
+        const fillSnapshot = turn.buildsFill ? fills.filter((f) => elementIds.includes(f.frameId)) : []
         t = streamReply(sessionId, t, turn.reply).end + REPLY_PAUSE_MS
         at(sessionId, t, () => patchSession(sessionId, () => ({ phase: "building" })))
         t += BUILD_FRAME_MS
-        at(sessionId, t, () =>
-          setBuiltComponents((list) => [...list.filter((c) => !elementIds.includes(c.frameId)), ...snapshot]),
-        )
+        at(sessionId, t, () => {
+          setBuiltComponents((list) => [...list.filter((c) => !elementIds.includes(c.frameId)), ...snapshot])
+          if (turn.buildsFill) {
+            setBuiltFills((list) => [...list.filter((f) => !elementIds.includes(f.frameId)), ...fillSnapshot])
+          }
+        })
         if (turn.summary) t = streamReply(sessionId, t + 100, turn.summary).end
         t += REPLY_PAUSE_MS / 2
       } else if (sources.length === 0) {
@@ -448,5 +467,5 @@ export function useBuildAgents(initialBuiltComponents: FrameComponent[] = []) {
     setBuiltComponents((list) => [...list.filter((c) => !frameIds.includes(c.frameId)), ...snapshot])
   }, [])
 
-  return { sessions, variants, focus, send, stop, clear, sessionFor, build, builtVariant, builtComponents, buildFrames }
+  return { sessions, variants, focus, send, stop, clear, sessionFor, build, builtVariant, builtComponents, builtFills, buildFrames }
 }

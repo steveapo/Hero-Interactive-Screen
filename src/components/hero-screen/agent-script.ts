@@ -13,6 +13,9 @@
 /** Typed to the Canvas Agent in the "Live product on canvas" showcase (matches its chat below). */
 export const CANVAS_AGENT_PROMPT = "Make tapping the badge check me in, then build it"
 
+/** Typed to the Canvas Agent in the "Everything in one place" showcase, after the trip card's new fill (matches its chat below). */
+export const OVERVIEW_BUILD_PROMPT = "Update the app with this new background"
+
 export type AgentTurn = {
   /** What the agent answers (streamed in word by word). */
   reply: string
@@ -29,6 +32,8 @@ export type AgentTurn = {
   buildFrame?: boolean
   /** With `buildFrame`: the built components come out functional (see FrameComponent.functional). */
   wiresUp?: boolean
+  /** With `buildFrame`: the frames' fills (as set on the canvas) are built too: the cards repaint in the live app. */
+  buildsFill?: boolean
 }
 
 export type AgentChat = {
@@ -108,6 +113,21 @@ export const AGENT_CHATS: AgentChat[] = [
         wiresUp: true,
         summary:
           "Done. The Vernazza Sea House card now renders <Badge> from @/components/ui/badge, and tapping it checks you in (tap again to undo). Open the codebase and give it a tap.",
+      },
+    ],
+  },
+  {
+    // The "Everything in one place" showcase (live-product-demo.tsx): the trip card's frame got a
+    // new fill on the canvas; the Canvas Agent builds it into the app.
+    elements: ["card-upcoming-trip"],
+    prompt: OVERVIEW_BUILD_PROMPT,
+    turns: [
+      {
+        reply: "On it. I'll update the TripCard's background in the codebase to the fill you set on its frame.",
+        buildFrame: true,
+        buildsFill: true,
+        summary:
+          "Done. The Vernazza Sea House card in the live app now has the new background, straight from your frame. Open the codebase to see it.",
       },
     ],
   },

@@ -6,9 +6,21 @@ import { LISTINGS } from "@/app/copy-project/airbnb-data"
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
-import { PORTAL_BUILD_FRAME_PROMPT, PORTAL_TURNS } from "./agent-script"
+import { OVERVIEW_BUILD_PROMPT, PORTAL_BUILD_FRAME_PROMPT, PORTAL_TURNS } from "./agent-script"
 import { captureInBuildMode, CODEBASE, TRIP_CARD } from "./hero-demo"
-import { moveOverCanvas, panToShow, PORTAL_FIELD, scene, textOf } from "./hero-demo-v1"
+import {
+  agentDone,
+  COMPOSER,
+  ensureSent,
+  moveOverCanvas,
+  openChat,
+  panToShow,
+  PORTAL_FIELD,
+  PROMPT_FIELD,
+  scene,
+  textOf,
+  typePrompt,
+} from "./hero-demo-v1"
 import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
 
 /*
@@ -16,8 +28,9 @@ import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
  * scrolls into view, stops on its key moment and stays there as a still (the screen is then the
  * visitor's to play with; see ScriptedStage's `holdLastFrame`).
  *  0. "overview"      Everything in one place: starts on the canvas, the familiar ground: select the
- *                     trip card's frame and give it a new fill, then open the Codebase frame in
- *                     Build Mode → the live app, running from the code.
+ *                     trip card's frame and give it a new fill, ask the frame's Build Agent to
+ *                     update the app with it, then open the Codebase frame in Build Mode → the
+ *                     live app, running from the code, with the card's new background.
  *  1. "capture"       Live product on canvas: capture the trip card from the live app → back on a
  *                     calm canvas (just the Codebase frame), the captured card glides in and is
  *                     selected, editable.
@@ -51,6 +64,8 @@ const ADD_CANVAS_FRAME = 'button[aria-label="Add canvas frame"]'
 const TRIP_CARD_OPTION = '[data-cursor-id="portal-frame-card-upcoming-trip"]'
 /** The built badge on the trip card in the live app. */
 const BUILT_BADGE = '[data-cursor-id="built-component"]'
+/** The trip card's built background in the live app (its flash, over the card). */
+const BUILT_FILL = '[data-cursor-id="built-fill"]'
 /** "Worked for …" of the build turn: shows once its reply is done. */
 const BUILD_DONE = PORTAL_TURNS.find((t) => t.prompt === PORTAL_BUILD_FRAME_PROMPT)?.workedFor ?? "Worked for"
 
@@ -67,9 +82,33 @@ async function openBuildMode(api: ScriptApi) {
 }
 
 /**
- * 0. Everything in one place; key moment: in Build Mode, the live app running from the code. It
- * gets there from the canvas, what a new user already knows: a frame selected and given a new fill
- * in the settings panel, then the Codebase frame opened in Build Mode.
+ * Open the trip card frame's Build Agent chat: straight from its Build Agent button while it's
+ * selected (its right side is the card itself, so nothing needs re-selecting), else by selecting it.
+ */
+async function openTripCardAgent(api: ScriptApi) {
+  if (api.exists(PROMPT_FIELD)) return
+  const button = `${TRIP_CARD} button[aria-label="Build Agent"]`
+  if (!api.exists(button)) await api.click(TRIP_CARD, { fx: 0.85, fy: 0.5 })
+  const found = await api.find(button, 1500).then(
+    () => true,
+    (error) => {
+      if (api.aborted()) throw error
+      return false
+    },
+  )
+  if (found) {
+    await api.click(button)
+    await api.find(PROMPT_FIELD)
+    return
+  }
+  await openChat(api, TRIP_CARD)
+}
+
+/**
+ * 0. Everything in one place; key moment: in Build Mode, the live app running from the code with
+ * the trip card's new background. It gets there from the canvas, what a new user already knows: a
+ * frame selected and given a new fill in the settings panel; then the canvas's Build Agent is
+ * asked to update the app with it, and the Codebase frame is opened in Build Mode to show it.
  */
 const overviewScript: DemoScript = async (api) => {
   await scene(api, "the canvas", async () => {
@@ -86,13 +125,30 @@ const overviewScript: DemoScript = async (api) => {
     await api.press("Enter", { on: FILL_HEX })
     await api.wait(900)
   })
+  await scene(api, "ask the build agent", async () => {
+    // The card is still selected: open its Build Agent, ask it to update the app, wait for the build.
+    await openTripCardAgent(api)
+    await typePrompt(api, TRIP_CARD, OVERVIEW_BUILD_PROMPT)
+    await api.wait(250)
+    await api.click(`${COMPOSER} button[type="submit"]`)
+    await ensureSent(api, TRIP_CARD, OVERVIEW_BUILD_PROMPT)
+    // The chat closes while it builds (the frame's badge spins); reopen it to read the summary.
+    await agentDone(api, 20000)
+    await api.wait(300)
+    await openTripCardAgent(api)
+    await api.wait(2000)
+    if (api.exists(PROMPT_FIELD)) await api.press("Escape", { on: PROMPT_FIELD })
+    await api.wait(300)
+  })
   await scene(api, "into the codebase", async () => {
     await zoomOutTo(api, CODEBASE, CODEBASE_SHARE)
     await api.wait(300)
     await openBuildMode(api)
-    await api.wait(700)
-    // Rest over the live app.
-    await api.moveTo(PORTAL_SCREEN, { fx: 0.62, fy: 0.62, duration: 800 })
+    // The trip card repaints with the built background, with a blue flash.
+    await api.find(BUILT_FILL, 6000)
+    await api.wait(400)
+    // Rest beside the updated card.
+    await api.moveTo(BUILT_FILL, { fx: 0.5, fy: 1, dy: 40, duration: 800 })
   })
 }
 

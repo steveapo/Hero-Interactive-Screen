@@ -36,7 +36,7 @@ import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { screenScale } from "@/lib/screen-scale"
 import { PORTAL_FALLBACK, PORTAL_TURNS, type PortalTurn } from "./agent-script"
-import { wordsOf, type VariantState } from "./build-agents"
+import { wordsOf, type FrameFill, type VariantState } from "./build-agents"
 import { CQW, FrameBadge, type FrameComponent } from "./library-components"
 import { AgentStar } from "./planner-frame"
 import { FinishedEventCard } from "./variant-frame"
@@ -117,6 +117,7 @@ export const PortalView = memo(function PortalView({
   closing = false,
   builtVariant = null,
   builtComponents = [],
+  builtFills = [],
   loadMs = PORTAL_LOAD_MS,
   autoPrompt = false,
   canvasFrames = [],
@@ -137,6 +138,8 @@ export const PortalView = memo(function PortalView({
   builtVariant?: VariantState | null
   /** Library components the Build Agent built into the codebase: they show on their cards in the live app. */
   builtComponents?: FrameComponent[]
+  /** Card fills the Build Agent built into the codebase: their cards repaint in the live app. */
+  builtFills?: FrameFill[]
   /** How long the loading state shows before the live app loads in (ms). 0: no loading and no intro. */
   loadMs?: number
 }) {
@@ -390,6 +393,11 @@ export const PortalView = memo(function PortalView({
             {loaded && builtVariant && <BuiltVariantOverlay key={loadId} variant={builtVariant} previewRef={previewRef} />}
 
             {loaded &&
+              builtFills.map((f) => (
+                <BuiltCardFill key={`${loadId}:${f.frameId}`} title={f.cardTitle} fill={f.fill} previewRef={previewRef} />
+              ))}
+
+            {loaded &&
               [...new Set(builtComponents.map((c) => c.cardTitle))].map((title) => (
                 <BuiltCardComponents
                   key={`${loadId}:${title}`}
@@ -536,6 +544,82 @@ function BuiltVariantOverlay({
         style={{ borderColor: CAPTURE_BLUE, background: `${CAPTURE_BLUE}1f` }}
       />
     </div>,
+    place.host,
+  )
+}
+
+/**
+ * A card fill built into the live app: the card (found by its title) repaints its own background
+ * with the fill from its canvas frame. It swaps in after the intro with a blue flash, like the
+ * built components. The card is re-found every frame (a viewport switch or reload remounts it),
+ * and its own background comes back when this unmounts.
+ */
+function BuiltCardFill({
+  title,
+  fill,
+  previewRef,
+}: {
+  title: string
+  fill: string
+  previewRef: React.RefObject<HTMLDivElement | null>
+}) {
+  const [place, setPlace] = useState<{ host: Element; left: number; top: number; width: number; height: number } | null>(null)
+  const [shown, setShown] = useState(false)
+
+  useEffect(() => {
+    const timer = setTimeout(() => setShown(true), REPLACE_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
+    if (!shown) return
+    let frame = 0
+    let painted: HTMLElement | null = null
+    const unpaint = () => {
+      painted?.style.removeProperty("background-color")
+      painted = null
+    }
+    const measure = () => {
+      const screen = previewRef.current?.querySelector("[data-portal-screen]")
+      const card = screen ? sourceTitleBlock(screen, title) : undefined
+      const host = card?.parentElement
+      if (card && host) {
+        if (card !== painted) {
+          unpaint()
+          card.style.backgroundColor = fill
+          painted = card
+        }
+        const next = { host, left: card.offsetLeft, top: card.offsetTop, width: card.offsetWidth, height: card.offsetHeight }
+        setPlace((p) =>
+          p && p.host === host && p.left === next.left && p.top === next.top && p.width === next.width && p.height === next.height
+            ? p
+            : next,
+        )
+      }
+      frame = requestAnimationFrame(measure)
+    }
+    measure()
+    return () => {
+      cancelAnimationFrame(frame)
+      unpaint()
+    }
+  }, [shown, previewRef, title, fill])
+
+  if (!shown || !place) return null
+  return createPortal(
+    <div
+      aria-hidden="true"
+      data-cursor-id="built-fill"
+      className="pointer-events-none absolute z-20 rounded-[1.3cqw] border-[0.2cqw] animate-mi-capture-pulse"
+      style={{
+        left: `calc(${place.left}px - 0.3cqw)`,
+        top: `calc(${place.top}px - 0.3cqw)`,
+        width: `calc(${place.width}px + 0.6cqw)`,
+        height: `calc(${place.height}px + 0.6cqw)`,
+        borderColor: CAPTURE_BLUE,
+        background: `${CAPTURE_BLUE}1f`,
+      }}
+    />,
     place.host,
   )
 }
