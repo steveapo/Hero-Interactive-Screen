@@ -1394,7 +1394,7 @@ export function HeroScreen({
             // Not through cn(): tailwind-merge reads the custom `text-px-12` size as a text colour and
             // drops it in favour of `text-stone-900`. Own surface (not PORTAL_TOP_GROUP): a slightly
             // darker grey pill with a rounder corner; the arrow is drawn like the Portal toolbar's Back.
-            className="flex h-[42px] items-center gap-2 rounded-[14px] border border-transparent bg-[#e6e6e4] px-4 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#dededc]"
+            className="flex h-[42px] items-center gap-2 rounded-[10px] border border-transparent bg-[#efefed] px-3 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#e6e6e4]"
           >
             <ArrowLeft className="size-3.5 shrink-0" strokeWidth={1.5} />
             Back to Canvas
