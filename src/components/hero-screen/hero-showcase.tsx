@@ -89,8 +89,14 @@ export function HeroShowcase({
   githubPopoverOpen = true,
   portalEnabled = false,
   githubPrSheet = true,
+  introOnMount = false,
 }: {
   className?: string
+  /**
+   * The load-in plays as soon as the showcase mounts, instead of waiting for the Desktop Area to be
+   * scrolled to the viewport's centre (INTRO_CENTER_AT). Only read on mount.
+   */
+  introOnMount?: boolean
   /** With `showGithubPopover`, whether the GitHub Sync popover opens. Off: the repo stays linked, popover closed. */
   githubPopoverOpen?: boolean
   /** The GitHub popover's "View on Github" opens the pull request sheet. Off: it does nothing but show a hint. */
@@ -109,6 +115,11 @@ export function HeroShowcase({
   const desktopRef = useRef<HTMLDivElement>(null)
   const [intro, setIntro] = useState<IntroPhase>("waiting")
   useEffect(() => {
+    // Played on mount: no waiting for the Desktop Area to scroll to the viewport's centre.
+    if (introOnMount) {
+      setIntro("play")
+      return
+    }
     const el = desktopRef.current
     if (!el) return
     let frame = 0
@@ -135,6 +146,8 @@ export function HeroShowcase({
     window.addEventListener("resize", schedule)
     check()
     return stop
+    // Only read on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   /** The canvas's part of the load-in (bars, Codebase, GitHub popover, elements). */
