@@ -46,7 +46,8 @@ import type { ComponentLibrary } from "./library-components"
  *                     sent with "Add to Build Chat", opening Build Mode with it attached, then built
  *                     → the badge in the live app, 1:1 as designed.
  *  5. "share"         Collaborate and ship: with the change live in the Codebase frame, open Share
- *                     and create the preview link → the Preview URL window, published.
+ *                     and create the preview link → the Preview URL window, published; then Copy →
+ *                     "Copied Preview Link" slides up at the bottom right and back down.
  */
 
 const BACK_TO_CANVAS = 'button[aria-label="Back to canvas"]'
@@ -55,6 +56,8 @@ const RADIUS_THUMB = `${CHECK_IN_BANNER} [data-cursor-id="radius-top-left"]`
 const CORNER_RADIUS_FIELD = '[aria-label="Corner radius"]'
 const SHARE_BUTTON = '[data-cursor-id="share"]'
 const SHARE_DIALOG = '[role="dialog"][aria-label="Preview URL"]'
+const SHARE_COPY = '[data-cursor-id="share-copy"]'
+const COPIED_TOAST = '[data-cursor-id="copied-toast"]'
 
 /* Build Mode and its agent (the Portal). */
 const OPEN_BUILD_MODE = '[data-cursor-id="open-build-mode"]'
@@ -355,8 +358,9 @@ const createPreviewLink = (api: ScriptApi) => () =>
   )
 
 /**
- * 5. Collaborate and ship; key moment: the Preview URL window, published, with Open / Copy, over
- * the Codebase frame running the built change (the real thing being shared).
+ * 5. Collaborate and ship; key moment: the Preview URL window, published, over the Codebase frame
+ * running the built change (the real thing being shared). Its link is copied: the "Copied Preview
+ * Link" box slides up at the bottom right, stays a moment, and slides back down.
  */
 const shareScript: DemoScript = async (api) => {
   await scene(api, "share", async () => {
@@ -367,8 +371,13 @@ const shareScript: DemoScript = async (api) => {
     await api.wait(600)
     await api.click(createPreviewLink(api))
     await api.wait(500)
-    // Rest beside the window, so it reads clearly.
+  })
+  await scene(api, "copy the link", async () => {
+    await api.click(SHARE_COPY)
+    await api.find(COPIED_TOAST)
+    // Rest beside the window while the box is up; it slides away by itself.
     await api.moveTo(SHARE_DIALOG, { fx: 0.3, fy: 1, dy: 28, duration: 600 })
+    await api.until(() => !api.exists(COPIED_TOAST), 5000)
   })
 }
 
