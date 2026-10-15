@@ -23,10 +23,13 @@ export const LeftSidebar = memo(function LeftSidebar({
   onLibraryDragStart,
   names,
   library = "default",
+  initialPanel = null,
   className,
   style,
 }: {
   ref?: React.Ref<HTMLElement>
+  /** The rail panel open on mount (e.g. "layers"). Default: none. Only read on mount. */
+  initialPanel?: RailPanel | null
   onLibraryDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
   /** Current frame names by element id (renamed on the canvas); falls back to each element's own name. */
   names?: Record<string, string>
@@ -36,7 +39,7 @@ export const LeftSidebar = memo(function LeftSidebar({
   className?: string
   style?: React.CSSProperties
 }) {
-  const [panel, setPanel] = useState<RailPanel | null>(null)
+  const [panel, setPanel] = useState<RailPanel | null>(initialPanel)
   const open = panel === "layers" || panel === "components"
 
   return (

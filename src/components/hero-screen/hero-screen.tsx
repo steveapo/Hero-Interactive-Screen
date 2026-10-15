@@ -264,8 +264,17 @@ export function HeroScreen({
   githubPrSheet = true,
   elementIds,
   componentLibrary = "default",
+  layersOpen = false,
+  initialSelectedId,
 }: {
   className?: string
+  /** The left sidebar opens with its Layers panel showing. Only read on mount. */
+  layersOpen?: boolean
+  /**
+   * The app element frame (by id) selected when the screen opens, so its settings panel shows.
+   * With a load-in intro it's selected once the canvas elements come in. Only read on mount.
+   */
+  initialSelectedId?: string
   /**
    * The design system the left sidebar's Components library shows, and what a dragged-out Badge
    * looks like: "default" (generic shadcn/ui) or "fairbnb" (the Fairbnb app's own components).
@@ -339,7 +348,9 @@ export function HeroScreen({
   const [tool, setTool] = useState<Tool>("select")
   const [codebaseSelected, setCodebaseSelected] = useState(false)
   /** Ids of the selected Fairbnb element frames. */
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [selectedIds, setSelectedIds] = useState<string[]>(() =>
+    initialSelectedId && !loadIntro ? [initialSelectedId] : [],
+  )
   const [agentOpen, setAgentOpen] = useState(false)
   /** Simulated Build Agents: sessions per selection, the variants they generate, their cursors. */
   const agents = useBuildAgents(
@@ -432,6 +443,13 @@ export function HeroScreen({
   const elementsIn = introSteps.includes("elements")
   useLayoutEffect(() => {
     if (elementsIn) setRevealId((id) => (id === 0 ? 1 : id))
+  }, [elementsIn])
+  // With an intro, the initially selected frame gets selected as the elements come in (not before,
+  // so its settings panel doesn't show over an empty canvas).
+  const initialSelectedIdRef = useRef(initialSelectedId)
+  useLayoutEffect(() => {
+    const id = initialSelectedIdRef.current
+    if (elementsIn && id) setSelectedIds([id])
   }, [elementsIn])
   const hasIntro = loadIntro !== undefined
   // Bars and tools, in the order they come in: the canvas title, the tool bar and the sidebar, the
@@ -1577,6 +1595,7 @@ export function HeroScreen({
         onLibraryDragStart={onLibraryDragStart}
         names={elementNames}
         library={componentLibrary}
+        initialPanel={layersOpen ? "layers" : null}
         className={sidebarIntro.className}
         style={sidebarIntro.style}
       />

@@ -191,6 +191,9 @@ export function HeroShowcase({
               toolsEnabled={false}
               scrollPans={false}
               loadIntro={canvasIntro}
+              // Opens with the Layers panel showing and the trip card frame selected (its settings panel open).
+              layersOpen
+              initialSelectedId="card-upcoming-trip"
             />
           </DensityScale>
         </div>
