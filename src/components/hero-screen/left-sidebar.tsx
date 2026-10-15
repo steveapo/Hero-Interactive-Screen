@@ -47,7 +47,8 @@ export const LeftSidebar = memo(function LeftSidebar({
       ref={ref}
       style={style}
       className={cn(
-        "absolute left-1 top-[46px] z-30 flex overflow-hidden rounded-xl border border-transparent",
+        // Soft shadow cast to the right (onto the canvas), plus a faint hairline so it lifts off it.
+        "absolute left-1 top-[46px] z-30 flex overflow-hidden rounded-xl border border-transparent shadow-[6px_4px_20px_-6px_rgba(17,17,16,0.14),2px_1px_4px_-1px_rgba(17,17,16,0.06),0_0_0_1px_rgba(17,17,16,0.05)]",
         PANEL_BG,
         open && "bottom-1",
         className,

@@ -340,7 +340,7 @@ export function ComponentSettingsPanel({
   return (
     <aside
       data-cursor-id="component-settings"
-      className="absolute right-1 top-[46px] z-30 flex max-h-[calc(100%-50px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-transparent bg-[#f5f5f4] animate-in fade-in slide-in-from-right-1 duration-150"
+      className="absolute right-1 top-[46px] z-30 flex max-h-[calc(100%-50px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-transparent bg-[#f5f5f4] shadow-[-6px_4px_20px_-6px_rgba(17,17,16,0.14),-2px_1px_4px_-1px_rgba(17,17,16,0.06),0_0_0_1px_rgba(17,17,16,0.05)] animate-in fade-in slide-in-from-right-1 duration-150"
     >
       {/* Header: instance name + Add to Build Chat, then the main component + Detach */}
       <div className="flex flex-col gap-2.5 border-b border-stone-700/10 px-3 py-2.5">
