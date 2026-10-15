@@ -172,6 +172,12 @@ export type PortalTurn = {
 /** Sent in Build Mode with the trip card's canvas frame attached (the "Canvas to code" showcase). */
 export const PORTAL_BUILD_FRAME_PROMPT = "Build this frame into the codebase"
 
+/**
+ * Sent in Build Mode with the edited trip card's canvas frame attached (the feature cards' story:
+ * the Guest favorite badge, the Reserve button and the wider gap above the nights, all built).
+ */
+export const PORTAL_UPDATE_CARD_PROMPT = "Update this card to match the new design"
+
 export const PORTAL_TURNS: PortalTurn[] = [
   {
     prompt: "Make the search button pulse so it's easy to spot",
@@ -218,6 +224,18 @@ export const PORTAL_TURNS: PortalTurn[] = [
       names: ["checks in to Vernazza Sea House when the badge is tapped", "tapping again undoes it", "keeps other trips untouched"],
       passed: 24,
     },
+  },
+  // The feature cards' story (live-product-demo.tsx): the edited trip card frame built 1:1. Last, so
+  // the visitor's auto-prompt order (the first unused scripted prompt) is unchanged.
+  {
+    prompt: PORTAL_UPDATE_CARD_PROMPT,
+    title: "Update Trip Card",
+    reply:
+      "Done. The Vernazza Sea House card now matches the canvas: the Guest favorite <Badge> in the top right, a <Button> to Reserve in the bottom right, and more room between the dates and the nights. Real components from your design system, no new styles. Give Reserve a click on the left.",
+    workedFor: "Worked for 19 seconds",
+    added: 18,
+    removed: 2,
+    buildsFrames: true,
   },
 ]
 

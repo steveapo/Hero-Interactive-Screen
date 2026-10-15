@@ -164,7 +164,7 @@ function ComponentsPanel({
         className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-x-1.5 gap-y-3.5 overflow-y-auto px-2 pb-3 pt-3.5 [scrollbar-width:thin]"
       >
         {results.map(({ name, preview }) => {
-          const insertable = isInsertable(name)
+          const insertable = isInsertable(name, library)
           return (
             <li
               key={name}

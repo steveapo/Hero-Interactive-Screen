@@ -833,7 +833,7 @@ function PaddingPerSideIcon() {
   )
 }
 
-function MarginPerSideIcon() {
+export function MarginPerSideIcon() {
   return (
     <Glyph>
       <path d="M1.5 2v10M12.5 2v10" />
@@ -843,7 +843,7 @@ function MarginPerSideIcon() {
   )
 }
 
-function MarginLeftIcon() {
+export function MarginLeftIcon() {
   return (
     <Glyph>
       <path d="M1.5 2.5v9" />
@@ -852,7 +852,7 @@ function MarginLeftIcon() {
   )
 }
 
-function MarginRightIcon() {
+export function MarginRightIcon() {
   return (
     <Glyph>
       <path d="M12.5 2.5v9" />
@@ -861,7 +861,7 @@ function MarginRightIcon() {
   )
 }
 
-function MarginTopIcon() {
+export function MarginTopIcon() {
   return (
     <Glyph>
       <path d="M2.5 1.5h9" />
@@ -870,7 +870,7 @@ function MarginTopIcon() {
   )
 }
 
-function MarginBottomIcon() {
+export function MarginBottomIcon() {
   return (
     <Glyph>
       <path d="M2.5 12.5h9" />

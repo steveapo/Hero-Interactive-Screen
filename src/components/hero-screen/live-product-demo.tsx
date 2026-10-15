@@ -2,14 +2,16 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
 import { RotateCcw } from "lucide-react"
-import { LISTINGS } from "@/app/copy-project/airbnb-data"
+import { TRIP } from "@/app/copy-project/airbnb-data"
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
-import { OVERVIEW_BUILD_PROMPT, PORTAL_BUILD_FRAME_PROMPT, PORTAL_TURNS } from "./agent-script"
-import { captureInBuildMode, CODEBASE, TRIP_CARD } from "./hero-demo"
+import { OVERVIEW_BUILD_PROMPT, PORTAL_TURNS, PORTAL_UPDATE_CARD_PROMPT } from "./agent-script"
+import { AIRBNB_ELEMENTS } from "./airbnb-elements"
+import { CODEBASE, TRIP_CARD } from "./hero-demo"
 import {
   agentDone,
+  clearSpotOf,
   COMPOSER,
   ensureSent,
   moveOverCanvas,
@@ -21,39 +23,45 @@ import {
   textOf,
   typePrompt,
 } from "./hero-demo-v1"
-import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
-import type { ComponentLibrary } from "./library-components"
+import { HeroScreen, TRIP_CARD_ID, WHEEL_ZOOM_SPEED, type HeroSeed, type HeroStart } from "./hero-screen"
+import { MARGIN_SCRUB_PX } from "./layer-settings-panel"
+import {
+  CQW,
+  NEW_FAIRBNB_BADGE,
+  NEW_FAIRBNB_BADGE_SIZE,
+  NEW_FAIRBNB_BUTTON,
+  NEW_FAIRBNB_BUTTON_SIZE,
+  type ComponentLibrary,
+  type FrameComponent,
+} from "./library-components"
 
 /*
- * The feature cards' clips. One panel = one idea, each its own scenario: a clip plays once when it
- * scrolls into view, stops on its key moment and stays there as a still (the screen is then the
- * visitor's to play with; see ScriptedStage's `holdLastFrame`).
- *  0. "overview"      Everything in one place: starts on the canvas, the familiar ground: select the
- *                     trip card's frame and give it a new fill, ask the frame's Build Agent to
- *                     update the app with it, then open the Codebase frame in Build Mode → the
- *                     live app, running from the code, with the card's new background.
- *  1. "capture"       Live product on canvas: capture the trip card from the live app → back on a
- *                     calm canvas (just the Codebase frame), the captured card glides in and is
- *                     selected, editable.
- *  2. "visual-edits"  Controls, not prompts: drag the Check-in Banner's corner-radius thumb on the
- *                     canvas → rounded corners, the panel's Corner radius following along.
- *  2b. "components"   Your components, 1:1: open the Components library (the Fairbnb app's own
- *                     components) and drag its Badge onto the trip card → a real "Guest favorite"
- *                     instance, selected, its design-system props in the settings panel.
- *  3. "test"          Test the real thing: click through the live app in Build Mode while the
- *                     Viewport menu takes it from desktop to tablet to mobile → the phone layout.
- *  4. "build"         Canvas to code: the trip card's frame (with its designed badge) is selected and
- *                     sent with "Add to Build Chat", opening Build Mode with it attached, then built
- *                     → the badge in the live app, 1:1 as designed.
- *  5. "share"         Collaborate and ship: with the change live in the Codebase frame, open Share
- *                     and create the preview link → the Preview URL window, published; then Copy →
- *                     "Copied Preview Link" slides up at the bottom right and back down.
+ * The feature cards' clips. Each plays once when it scrolls into view, stops on its key moment and
+ * stays there as a still (the screen is then the visitor's to play with; see ScriptedStage's
+ * `holdLastFrame`).
+ *
+ * "overview" stands on its own. The others tell one story, in page order, about the trip card:
+ * each clip opens on the result of the one before (see STORY and HeroSeed), so they read as steps.
+ *  1. "capture"       Live product on canvas: in Build Mode, straight to Capture, then the trip card
+ *                     → back on a calm canvas (just the Codebase frame), the captured card glides
+ *                     in and is selected, editable.
+ *  2. "components"    Your components, 1:1: only the captured card on the canvas. From the Fairbnb
+ *                     library, its Badge goes in the top right ("Guest favorite") and its Button
+ *                     in the bottom right ("Reserve"): real instances, their props in the panel.
+ *  3. "visual-edits"  Controls, not prompts: on that card, the nights numeral is selected and its
+ *                     top margin scrubbed up in the settings panel → more room between the dates
+ *                     and the nights, the card growing with it.
+ *  4. "build"         Canvas to code in one shot: the edited card's frame is sent with "Add to
+ *                     Build Chat" and the agent is asked to update the card → the live app's card,
+ *                     badge, Reserve button and spacing exactly as designed.
+ *  5. "test"          Test the real thing: in the live app, the built Reserve button is clicked →
+ *                     it turns into "Reserved", a check popping in.
+ *  6. "share"         Collaborate and ship: with the change built, open Share and create the
+ *                     preview link → the Preview URL window, published; then Copy → "Copied
+ *                     Preview Link" slides up at the bottom right and back down.
  */
 
 const BACK_TO_CANVAS = 'button[aria-label="Back to canvas"]'
-const CHECK_IN_BANNER = '[data-cursor-id="frame-check-in-tile"]'
-const RADIUS_THUMB = `${CHECK_IN_BANNER} [data-cursor-id="radius-top-left"]`
-const CORNER_RADIUS_FIELD = '[aria-label="Corner radius"]'
 const SHARE_BUTTON = '[data-cursor-id="share"]'
 const SHARE_DIALOG = '[role="dialog"][aria-label="Preview URL"]'
 const SHARE_COPY = '[data-cursor-id="share-copy"]'
@@ -71,12 +79,12 @@ const OVERVIEW_FILL = "#f6e9f3"
 const ADD_TO_BUILD_CHAT = '[data-cursor-id="add-to-build-chat"]'
 /** A frame attached to the Build Mode agent's composer. */
 const ATTACHED_FRAME = '[data-cursor-id="portal-attached-frame"]'
-/** The built badge on the trip card in the live app. */
-const BUILT_BADGE = '[data-cursor-id="built-component"]'
+/** The built Reserve button on the trip card in the live app. */
+const BUILT_RESERVE = '[data-cursor-id="built-reserve"]'
 /** The trip card's built background in the live app (its flash, over the card). */
 const BUILT_FILL = '[data-cursor-id="built-fill"]'
-/** "Worked for …" of the build turn: shows once its reply is done. */
-const BUILD_DONE = PORTAL_TURNS.find((t) => t.prompt === PORTAL_BUILD_FRAME_PROMPT)?.workedFor ?? "Worked for"
+/** "Worked for …" of the update turn: shows once its reply is done. */
+const UPDATE_DONE = PORTAL_TURNS.find((t) => t.prompt === PORTAL_UPDATE_CARD_PROMPT)?.workedFor ?? "Worked for"
 
 /** The Portal chat's send button. */
 const portalSend = (api: ScriptApi) => () =>
@@ -214,13 +222,95 @@ async function zoomOutTo(api: ScriptApi, target: string, share: number) {
   await panToShow(api, [target], { fx: 0.45, fy: 0.5 })
 }
 
+/* ------------------------------- The story -------------------------------- */
+/*
+ * The trip card as each clip leaves it, so the next one opens there. Positions are the instances'
+ * top-left corners in the card's frame (canvas units), inset by the card's own 1.6cqw padding: the
+ * Guest favorite Badge in the top-right corner, the Reserve Button in the bottom-right one. The
+ * components clip drops them on exactly these spots (see dropAimOf).
+ */
+
+const TRIP_RECT = AIRBNB_ELEMENTS.find((el) => el.id === TRIP_CARD_ID)!.rect
+/** The card's own padding, in canvas units. */
+const TRIP_INSET = 1.6 * CQW
+/** Space added above the nights in "Controls, not prompts" (canvas units = px of the desktop app). */
+const STORY_GAP = 24
+
+const STORY_BADGE: FrameComponent = {
+  id: "component-1",
+  component: "Badge",
+  frameId: TRIP_CARD_ID,
+  cardTitle: TRIP.title,
+  x: TRIP_RECT.w - TRIP_INSET - NEW_FAIRBNB_BADGE_SIZE.w,
+  y: TRIP_INSET,
+  ...NEW_FAIRBNB_BADGE,
+  library: "fairbnb",
+}
+
+const STORY_BUTTON: FrameComponent = {
+  id: "component-2",
+  component: "Button",
+  frameId: TRIP_CARD_ID,
+  cardTitle: TRIP.title,
+  x: TRIP_RECT.w - TRIP_INSET - NEW_FAIRBNB_BUTTON_SIZE.w,
+  y: TRIP_RECT.h - TRIP_INSET - NEW_FAIRBNB_BUTTON_SIZE.h,
+  ...NEW_FAIRBNB_BUTTON,
+  library: "fairbnb",
+}
+
+const STORY = {
+  /** After "Your components, 1:1": the badge and the Reserve button in the card. */
+  components: { components: [STORY_BADGE, STORY_BUTTON] },
+  /** After "Controls, not prompts": more room above the nights; the button moved down with the card's bottom. */
+  spaced: {
+    components: [STORY_BADGE, { ...STORY_BUTTON, y: STORY_BUTTON.y + STORY_GAP }],
+    numeralGap: STORY_GAP,
+  },
+  /** After "Canvas to code in one shot": all of it built into the codebase. */
+  built: {
+    components: [STORY_BADGE, { ...STORY_BUTTON, y: STORY_BUTTON.y + STORY_GAP }],
+    numeralGap: STORY_GAP,
+    built: true,
+  },
+} satisfies Record<string, HeroSeed>
+
+/** Where to drop a fresh instance (its centre lands on the drop point) so it ends up at `c`'s spot. */
+function dropAimOf(c: FrameComponent, size: { w: number; h: number }) {
+  return { fx: (c.x + size.w / 2) / TRIP_RECT.w, fy: (c.y + size.h / 2) / TRIP_RECT.h }
+}
+
+/** The trip card in the live app. */
+const liveTripCard = (api: ScriptApi) => () =>
+  Array.from(api.stage.querySelectorAll(`${PORTAL_SCREEN} [data-anim="block"]`)).find((el) =>
+    el.textContent?.includes(TRIP.title),
+  )
+
+const CAPTURE_BUTTON = 'button[aria-label="Capture a selection to the canvas (⌘S)"]'
+
 /**
  * 1. Live product on canvas; key moment: the captured trip card on the canvas, selected and
- * editable. The canvas holds only the Codebase frame, so the card gliding in after the capture is
- * the one thing that changes.
+ * editable. In Build Mode the cursor goes straight to Capture (resting on it a moment), then takes
+ * the trip card. The canvas holds only the Codebase frame, so the card gliding in after the capture
+ * is the one thing that changes.
  */
 const captureScript: DemoScript = async (api) => {
-  await captureInBuildMode(api)
+  await scene(api, "capture", async () => {
+    await api.find(PORTAL_SCREEN)
+    await api.wait(400)
+    await api.moveTo(CAPTURE_BUTTON)
+    await api.wait(300)
+    await api.click(CAPTURE_BUTTON)
+    await api.wait(250)
+    // Aim at the card itself, clear of its title, dates and numeral, so Area capture outlines and
+    // takes the whole card rather than one of its children.
+    const spot = clearSpotOf(liveTripCard(api)())
+    await api.moveTo(liveTripCard(api), spot)
+    await api.wait(300)
+    await api.click(liveTripCard(api), spot)
+    await api.wait(900)
+    await api.click('button[aria-label="Exit area capture"]')
+    await api.wait(250)
+  })
   await scene(api, "back to canvas", async () => {
     await api.click(BACK_TO_CANVAS)
     await api.until(() => !api.exists("[data-portal-screen]"), 4000)
@@ -235,36 +325,12 @@ const captureScript: DemoScript = async (api) => {
   })
 }
 
-/**
- * 2. Controls, not prompts; key moment: the Check-in Banner with rounded corners, made by dragging
- * its radius thumb on the canvas, while the settings panel's Corner radius follows.
- */
-const visualEditsScript: DemoScript = async (api) => {
-  await scene(api, "round the corners", async () => {
-    await zoomToFill(api, CHECK_IN_BANNER)
-    await api.click(CHECK_IN_BANNER, { fx: 0.8, fy: 0.5 })
-    await api.find(RADIUS_THUMB)
-    await api.wait(600)
-    // Drag the top-left thumb diagonally inward: the radius grows by the distance travelled.
-    const banner = api.boxOf(CHECK_IN_BANNER)
-    const thumb = api.boxOf(RADIUS_THUMB)
-    if (banner && thumb) {
-      const inward = Math.min(banner.width, banner.height) * 0.16
-      const to = { x: thumb.left + thumb.width / 2 + inward, y: thumb.top + thumb.height / 2 + inward }
-      await api.drag(RADIUS_THUMB, to, { duration: 1100 })
-    }
-    await api.wait(400)
-    // Point at the panel's Corner radius, which followed the drag.
-    if (api.exists(CORNER_RADIUS_FIELD)) await api.moveTo(CORNER_RADIUS_FIELD, { fx: 0.5, fy: 1, dy: 14, duration: 700 })
-    await api.wait(300)
-  })
-}
-
 /* "Your components, 1:1": the Components library holds the Fairbnb app's own components. */
 const COMPONENTS_RAIL = '[data-cursor-id="sidebar-components"]'
 const LIBRARY_BADGE = '[data-cursor-id="library-Badge"]'
+const LIBRARY_BUTTON = '[data-cursor-id="library-Button"]'
 const COMPONENT_SETTINGS = '[data-cursor-id="component-settings"]'
-const DROPPED_BADGE = "[data-frame-component]"
+const droppedInstance = (id: string) => `[data-frame-component="${id}"]`
 /** Share of the canvas's width the trip card takes here: it sits clear of the open library and the settings panel. */
 const COMPONENTS_CARD_SHARE = 0.32
 /** Where the trip card is centred across the canvas: between the library (left) and the settings panel (right). */
@@ -290,9 +356,10 @@ async function zoomToShare(api: ScriptApi, target: string, share: number, fx: nu
 }
 
 /**
- * Your components, 1:1; key moment: a real instance of the Fairbnb Badge ("Guest favorite") in
- * the trip card's frame, selected, with its design-system props in the settings panel. The
- * library shows the app's own components (componentLibrary "fairbnb"), not generic defaults.
+ * 2. Your components, 1:1; key moment: real instances of the Fairbnb Badge ("Guest favorite", top
+ * right) and Button ("Reserve", bottom right) in the captured trip card, the Button selected with
+ * its design-system props in the settings panel. The library shows the app's own components
+ * (componentLibrary "fairbnb"), not generic defaults; only the card is on the canvas.
  */
 const componentsScript: DemoScript = async (api) => {
   await scene(api, "the card", async () => {
@@ -304,29 +371,82 @@ const componentsScript: DemoScript = async (api) => {
     await api.find(LIBRARY_BADGE)
     await api.wait(700)
   })
-  await scene(api, "drag it in", async () => {
-    // Into the card's top-right corner, where its text leaves room.
-    await api.drag(LIBRARY_BADGE, TRIP_CARD, { from: { fx: 0.5, fy: 0.65 }, to: { fx: 0.82, fy: 0.24 }, duration: 1400 })
+  await scene(api, "the badge, top right", async () => {
+    await api.drag(LIBRARY_BADGE, TRIP_CARD, {
+      from: { fx: 0.5, fy: 0.65 },
+      to: dropAimOf(STORY_BADGE, NEW_FAIRBNB_BADGE_SIZE),
+      duration: 1300,
+    })
     await api.find(COMPONENT_SETTINGS, 3000)
+    await api.wait(600)
+  })
+  await scene(api, "the reserve button, bottom right", async () => {
+    await api.drag(LIBRARY_BUTTON, TRIP_CARD, {
+      from: { fx: 0.5, fy: 0.65 },
+      to: dropAimOf(STORY_BUTTON, NEW_FAIRBNB_BUTTON_SIZE),
+      duration: 1300,
+    })
+    await api.find(droppedInstance(STORY_BUTTON.id), 3000)
     await api.wait(500)
-    // Rest just below the new instance, so it and its settings read clearly.
-    await api.moveTo(DROPPED_BADGE, { fx: 0.5, fy: 1, dy: 28, duration: 700 })
+    // Rest just below the new Button, so it and its settings read clearly.
+    await api.moveTo(droppedInstance(STORY_BUTTON.id), { fx: 0.5, fy: 1, dy: 28, duration: 700 })
+  })
+}
+
+/** The trip card's nights numeral, a layer inside its frame. */
+const NIGHTS_LAYER = `${TRIP_CARD} [data-layer="nights"]`
+/** The layer panel's Margin top field, and the icon that scrubs it. */
+const MARGIN_TOP_FIELD = '[data-cursor-id="margin-top"]'
+const MARGIN_TOP_SCRUB = '[data-cursor-id="margin-top-scrub"]'
+/** The settings panel's layout width (w-[326px]): its drawn width over this is the screen's scale. */
+const PANEL_WIDTH = 326
+
+/**
+ * 3. Controls, not prompts; key moment: the edited trip card (badge and Reserve button in place)
+ * with more room between its dates and its nights. The nights numeral is selected and its top
+ * margin scrubbed up in the settings panel: the value counts up, the margin tints above the
+ * numeral and the card grows with it, live.
+ */
+const visualEditsScript: DemoScript = async (api) => {
+  await scene(api, "select the nights", async () => {
+    await zoomToFill(api, TRIP_CARD)
+    await api.wait(300)
+    // On the "3" itself.
+    await api.click(NIGHTS_LAYER, { fx: 0.2, fy: 0.55 })
+    await api.find(MARGIN_TOP_SCRUB)
+    await api.wait(600)
+  })
+  await scene(api, "scrub the margin", async () => {
+    await api.moveTo(MARGIN_TOP_FIELD, { fx: 0.5, fy: 0.5, duration: 700 })
+    await api.wait(250)
+    // Drag the margin icon right by exactly STORY_GAP units (MARGIN_SCRUB_PX layout px each, drawn at
+    // the screen's scale), a little extra so the rounding lands on it.
+    const panel = api.boxOf(() => api.stage.querySelector(MARGIN_TOP_FIELD)?.closest("aside"))
+    const scrub = api.boxOf(MARGIN_TOP_SCRUB)
+    if (panel && scrub) {
+      const scale = panel.width / PANEL_WIDTH
+      const distance = (STORY_GAP + 0.3) * MARGIN_SCRUB_PX * scale
+      const y = scrub.top + scrub.height / 2
+      await api.drag(MARGIN_TOP_SCRUB, { x: scrub.left + scrub.width / 2 + distance, y }, { duration: 1300 })
+    }
+    await api.wait(500)
+    // Rest beside the spaced-out card.
+    await api.moveTo(NIGHTS_LAYER, { fx: 1.6, fy: 0.2, duration: 700 })
   })
 }
 
 /**
- * 4. Canvas to code in one shot; key moment: in Build Mode, the trip card in the live app with the
- * "Check in" badge exactly as it was designed into its frame on the canvas. The frame is selected
- * and sent with its settings panel's "Add to Build Chat", which opens Build Mode with the frame
- * attached to the agent's composer; then it's built.
+ * 4. Canvas to code in one shot; key moment: in Build Mode, the trip card in the live app exactly
+ * as designed on the canvas: the Guest favorite badge, the Reserve button and the wider gap above
+ * the nights. The edited card's frame is selected and sent with its settings panel's "Add to Build
+ * Chat", which opens Build Mode with the frame attached; the agent is asked to update the card.
  */
 const buildScript: DemoScript = async (api) => {
-  await scene(api, "the designed frame", async () => {
-    // The trip card's frame on the canvas, with the badge designed into it.
+  await scene(api, "the edited card", async () => {
     await zoomToFill(api, TRIP_CARD)
-    await api.wait(600)
-    // Its right side is the card itself (its text hugs the left; the badge sits higher up).
-    await api.click(TRIP_CARD, { fx: 0.85, fy: 0.6 })
+    await api.wait(500)
+    // Its right side is the card itself, between the badge (top) and the Reserve button (bottom).
+    await api.click(TRIP_CARD, { fx: 0.85, fy: 0.45 })
     await api.find(ADD_TO_BUILD_CHAT)
     await api.wait(500)
   })
@@ -336,18 +456,18 @@ const buildScript: DemoScript = async (api) => {
     await api.find(ATTACHED_FRAME)
     await api.wait(700)
   })
-  await scene(api, "build", async () => {
+  await scene(api, "update the card", async () => {
     await api.click(PORTAL_FIELD)
-    await api.type(PORTAL_BUILD_FRAME_PROMPT, { into: PORTAL_FIELD })
+    await api.type(PORTAL_UPDATE_CARD_PROMPT, { into: PORTAL_FIELD })
     await api.wait(250)
     await api.click(portalSend(api))
-    await api.until(() => textOf(api, PORTAL_MESSAGES).includes(BUILD_DONE), 15000)
+    await api.until(() => textOf(api, PORTAL_MESSAGES).includes(UPDATE_DONE), 15000)
   })
   await scene(api, "1:1 in the live app", async () => {
-    // The built badge swaps in on the trip card with a blue flash.
-    await api.find(BUILT_BADGE, 6000)
-    await api.wait(400)
-    await api.moveTo(BUILT_BADGE, { fx: 0.5, fy: 2.2, duration: 800 })
+    // The built badge and button swap in with a blue flash while the card eases taller.
+    await api.find(BUILT_RESERVE, 6000)
+    await api.wait(700)
+    await api.moveTo(BUILT_RESERVE, { fx: 0.5, fy: 2.4, duration: 800 })
   })
 }
 
@@ -358,8 +478,8 @@ const createPreviewLink = (api: ScriptApi) => () =>
   )
 
 /**
- * 5. Collaborate and ship; key moment: the Preview URL window, published, over the Codebase frame
- * running the built change (the real thing being shared). Its link is copied: the "Copied Preview
+ * 6. Collaborate and ship; key moment: the Preview URL window, published, over the Codebase frame
+ * and the built trip card (the real thing being shared). Its link is copied: the "Copied Preview
  * Link" box slides up at the bottom right, stays a moment, and slides back down.
  */
 const shareScript: DemoScript = async (api) => {
@@ -381,51 +501,24 @@ const shareScript: DemoScript = async (api) => {
   })
 }
 
-const VIEWPORT_MENU = 'button[aria-label="Viewport"]'
-const viewportOption = (id: string) => `[data-cursor-id="viewport-${id}"]`
-/** The live app's screen at a viewport (see AirbnbDevice in portal-view). */
-const screenAt = (viewport: string) => `[data-portal-screen][data-viewport="${viewport}"]`
-
-/** A button in the live app at `viewport` whose text is `label`. */
-const appButton = (api: ScriptApi, viewport: string, label: string) => () =>
-  Array.from(api.stage.querySelectorAll(`${screenAt(viewport)} button`)).find((el) => el.textContent?.trim() === label)
-
-/** Switch the Portal's preview to `viewport` through its Viewport menu. */
-async function switchViewport(api: ScriptApi, viewport: string) {
-  await api.click(VIEWPORT_MENU)
-  await api.find(viewportOption(viewport))
-  await api.wait(450)
-  await api.click(viewportOption(viewport))
-  await api.find(screenAt(viewport))
-  await api.wait(700)
-}
-
 /**
- * 3. Test the real thing; key moment: the live app on a phone, a stay just saved to the wishlist.
- * In Build Mode the app is clicked through on desktop, then the Viewport menu takes it to tablet
- * and mobile, where it reflows to each breakpoint's own layout and stays live.
+ * 5. Test the real thing; key moment: the built Reserve button, clicked in the live app, turned
+ * into "Reserved" with a check popping in: real components, really interactive.
  */
 const testScript: DemoScript = async (api) => {
-  await scene(api, "desktop", async () => {
-    await api.find(screenAt("desktop"))
-    await api.wait(500)
-    // Real components: pick a category in the live app.
-    await api.click(appButton(api, "desktop", "Cabins"))
+  await scene(api, "the built card", async () => {
+    await api.find(PORTAL_SCREEN)
+    // The built badge and button swap in once the app has settled.
+    await api.find(BUILT_RESERVE, 6000)
     await api.wait(700)
+    await api.moveTo(BUILT_RESERVE, { duration: 900 })
+    await api.wait(350)
   })
-  await scene(api, "tablet", async () => {
-    await switchViewport(api, "tablet")
-    await api.click(appButton(api, "tablet", "Arctic"))
-    await api.wait(800)
-  })
-  await scene(api, "mobile", async () => {
-    await switchViewport(api, "mobile")
-    await api.click(appButton(api, "mobile", "Beachfront"))
-    await api.wait(500)
-    // Save the first stay: its heart fills with the brand plum.
-    await api.click(`${screenAt("mobile")} [data-wishlist-heart="${LISTINGS[0].id}"]`)
-    await api.wait(400)
-    await api.moveTo(`${screenAt("mobile")} [data-wishlist-heart="${LISTINGS[0].id}"]`, { fx: -1.5, fy: 2.5, duration: 500 })
+  await scene(api, "reserve", async () => {
+    await api.click(BUILT_RESERVE)
+    await api.wait(1100)
+    // Rest just below it, so "Reserved" reads clearly.
+    await api.moveTo(BUILT_RESERVE, { fx: 0.5, fy: 2.4, duration: 600 })
   })
 }
 
@@ -444,7 +537,14 @@ type ClipConfig = {
   portalShowUrl?: boolean
   /** The design system in the Components library (see HeroScreen's `componentLibrary`). Default "default". */
   componentLibrary?: ComponentLibrary
+  /** The Codebase frame is on the canvas (see HeroScreen's `showCodebase`). Default on. */
+  showCodebase?: boolean
+  /** The trip card as the previous step of the story left it (see STORY and HeroScreen's `seed`). */
+  seed?: HeroSeed
 }
+
+/** The story's clips show the trip card alone. */
+const TRIP_ONLY = [TRIP_CARD_ID]
 
 const CLIPS: Record<FeatureClipId, ClipConfig> = {
   // Opens on the canvas, around the Codebase frame.
@@ -453,19 +553,53 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
   capture: {
     script: captureScript,
     start: "portal",
-    elementIds: ["card-upcoming-trip"],
+    elementIds: TRIP_ONLY,
     canvasEntrance: true,
     quickEntrance: true,
   },
-  "visual-edits": { script: visualEditsScript, start: "canvas" },
-  // The library holds the Fairbnb app's own components, so the dropped Badge is the app's.
-  components: { script: componentsScript, start: "canvas", componentLibrary: "fairbnb" },
-  // Opens in Build Mode, on the live app; its browser window has no address in the title bar.
-  test: { script: testScript, start: "portal", portalShowUrl: false },
-  // The trip card's frame carries the designed "Check in" badge: that's what gets built.
-  build: { script: buildScript, start: "designed" },
-  // Built into the code, so there's a real change to share.
-  share: { script: shareScript, start: "built" },
+  // The captured card alone; the library holds the Fairbnb app's own components.
+  components: {
+    script: componentsScript,
+    start: "canvas",
+    elementIds: TRIP_ONLY,
+    showCodebase: false,
+    componentLibrary: "fairbnb",
+  },
+  // The card with its badge and Reserve button.
+  "visual-edits": {
+    script: visualEditsScript,
+    start: "canvas",
+    elementIds: TRIP_ONLY,
+    showCodebase: false,
+    componentLibrary: "fairbnb",
+    seed: STORY.components,
+  },
+  // The completely edited card: that's what gets built.
+  build: {
+    script: buildScript,
+    start: "canvas",
+    elementIds: TRIP_ONLY,
+    showCodebase: false,
+    componentLibrary: "fairbnb",
+    seed: STORY.spaced,
+  },
+  // Opens in Build Mode on the live app with the card built; no address in the title bar.
+  test: {
+    script: testScript,
+    start: "portal",
+    portalShowUrl: false,
+    elementIds: TRIP_ONLY,
+    componentLibrary: "fairbnb",
+    seed: STORY.built,
+  },
+  // Built into the code, so there's a real change to share: the Codebase frame and the card.
+  share: {
+    script: shareScript,
+    start: "canvas",
+    elementIds: TRIP_ONLY,
+    componentLibrary: "fairbnb",
+    seed: STORY.built,
+  },
 }
 
 /** Same tempo as the hero demo (scripted times × 0.85). */
@@ -506,6 +640,8 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
     quickEntrance = false,
     portalShowUrl = true,
     componentLibrary,
+    showCodebase = true,
+    seed,
   } = CLIPS[clip]
 
   useEffect(() => {
@@ -572,6 +708,8 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
             quickEntrance={quickEntrance}
             elementIds={elementIds}
             componentLibrary={componentLibrary}
+            showCodebase={showCodebase}
+            seed={seed}
           />
         </ScriptedStage>
       </ScaledScreen>

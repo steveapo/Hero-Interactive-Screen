@@ -43,11 +43,17 @@ const SELECT_BLUE = "#2f6bf6"
 export const CQW = CODEBASE_WIDTH / 100
 
 /** Library components that can be dragged onto a frame (the others are previews only). */
-export const INSERTABLE_COMPONENTS = ["Badge"] as const
+export const INSERTABLE_COMPONENTS = ["Badge", "Button"] as const
 export type InsertableComponent = (typeof INSERTABLE_COMPONENTS)[number]
 
-export function isInsertable(name: string): name is InsertableComponent {
-  return (INSERTABLE_COMPONENTS as readonly string[]).includes(name)
+/** Insertable per library: the Button (Fairbnb's Reserve) only from the Fairbnb library. */
+const INSERTABLE_IN: Record<ComponentLibrary, readonly InsertableComponent[]> = {
+  default: ["Badge"],
+  fairbnb: ["Badge", "Button"],
+}
+
+export function isInsertable(name: string, library: ComponentLibrary = "default"): name is InsertableComponent {
+  return (INSERTABLE_IN[library] as readonly string[]).includes(name)
 }
 
 /**
@@ -56,8 +62,8 @@ export function isInsertable(name: string): name is InsertableComponent {
  */
 export type ComponentLibrary = "default" | "fairbnb"
 
-/** "favorite" / "plum" / "ink" are the Fairbnb Badge's variants; the others the default library's. */
-export type BadgeTone = "neutral" | "lime" | "red" | "outline" | "favorite" | "plum" | "ink"
+/** "favorite" / "plum" / "ink" are the Fairbnb Badge's variants, "reserve" its Button's; the others the default library's. */
+export type BadgeTone = "neutral" | "lime" | "red" | "outline" | "favorite" | "plum" | "ink" | "reserve"
 export type BadgeSize = "sm" | "md" | "lg"
 
 /** An instance of a library component inside a frame. */
@@ -99,6 +105,22 @@ export const NEW_FAIRBNB_BADGE: Pick<FrameComponent, "label" | "tone" | "size"> 
 /** Rough canvas-unit size of a fresh Fairbnb Badge (its label is longer). */
 export const NEW_FAIRBNB_BADGE_SIZE = { w: 9 * CQW, h: 2 * CQW }
 
+/** A fresh Fairbnb Button: the app's plum "Reserve" call to action. */
+export const NEW_FAIRBNB_BUTTON: Pick<FrameComponent, "label" | "tone" | "size"> = {
+  label: "Reserve",
+  tone: "reserve",
+  size: "md",
+}
+
+/** Canvas-unit size of a fresh Fairbnb Button (see BUTTON_SIZE_CLASS: 2.6cqw tall). */
+export const NEW_FAIRBNB_BUTTON_SIZE = { w: 7.4 * CQW, h: 2.6 * CQW }
+
+/** A fresh `component` from `library` and its rough size, to centre it on the drop point. */
+export function newComponentOf(library: ComponentLibrary, component: InsertableComponent = "Badge") {
+  if (component === "Button") return { instance: NEW_FAIRBNB_BUTTON, size: NEW_FAIRBNB_BUTTON_SIZE }
+  return newBadgeOf(library)
+}
+
 /** A fresh Badge from `library` and its rough size, to centre it on the drop point. */
 export function newBadgeOf(library: ComponentLibrary) {
   return library === "fairbnb"
@@ -109,11 +131,13 @@ export function newBadgeOf(library: ComponentLibrary) {
 /**
  * `variant` = the design-system variant name shown in Component States; `fillToken` / `borderToken`
  * name the colour tokens behind TONE_CLASS (null border = transparent); `text` = the label colour.
- * `library` = the design system the variant belongs to.
+ * `library` = the design system the variant belongs to; `component` = the component it's a variant of
+ * (default "Badge").
  */
 export const BADGE_TONES: {
   id: BadgeTone
   library: ComponentLibrary
+  component?: InsertableComponent
   label: string
   variant: string
   swatch: string
@@ -137,6 +161,17 @@ export const BADGE_TONES: {
   { id: "favorite", library: "fairbnb", label: "Guest favorite", variant: "guest-favorite", swatch: "#ffffff", fillToken: "white", text: "#222222", border: null },
   { id: "plum", library: "fairbnb", label: "Plum", variant: "brand", swatch: "#8e4585", fillToken: "brand-plum", text: "#ffffff", border: null },
   { id: "ink", library: "fairbnb", label: "Ink", variant: "dark", swatch: "#222222", fillToken: "ink", text: "#ffffff", border: null },
+  {
+    id: "reserve",
+    library: "fairbnb",
+    component: "Button",
+    label: "Reserve",
+    variant: "primary",
+    swatch: "#8e4585",
+    fillToken: "brand-gradient",
+    text: "#ffffff",
+    border: null,
+  },
 ]
 
 /** Spacing / size tokens of the design-system Badge (components/ui/badge: h-5 px-2 py-0.5 gap-1 border). */
@@ -157,6 +192,8 @@ const TONE_CLASS: Record<BadgeTone, string> = {
   favorite: "border-transparent bg-white font-semibold text-[#222222] shadow-[0_0.1cqw_0.5cqw_rgba(0,0,0,0.18)]",
   plum: "border-transparent bg-[#8e4585] font-semibold text-white",
   ink: "border-transparent bg-[#222222] font-semibold text-white",
+  // A Button tone (see FrameButton); listed for completeness.
+  reserve: "border-transparent bg-[#8e4585] font-semibold text-white",
 }
 
 /** Sizes in cqw of the 1440-wide desktop screen (lg ≈ 37px tall at full size). */
@@ -168,17 +205,19 @@ const SIZE_CLASS: Record<BadgeSize, string> = {
 
 /**
  * The library's Badge (components/ui/badge), sized in cqw. `done` is the checked-in state the built
- * badge toggles to in the live app once the Portal Agent has made it functional.
+ * badge toggles to in the live app once the Portal Agent has made it functional. A Button instance
+ * renders as the Fairbnb Button instead (see FrameButton).
  */
 export function FrameBadge({
   instance,
   done = false,
   className,
 }: {
-  instance: Pick<FrameComponent, "label" | "tone" | "size">
+  instance: Pick<FrameComponent, "label" | "tone" | "size"> & { component?: InsertableComponent }
   done?: boolean
   className?: string
 }) {
+  if (instance.component === "Button") return <FrameButton instance={instance} done={done} className={className} />
   return (
     <Badge
       variant={instance.tone === "outline" ? "outline" : "default"}
@@ -198,6 +237,52 @@ export function FrameBadge({
       )}
       <span>{done ? "Checked in" : instance.label || "Badge"}</span>
     </Badge>
+  )
+}
+
+/** Fairbnb Button sizes, in cqw of the 1440-wide desktop screen. */
+const BUTTON_SIZE_CLASS: Record<BadgeSize, string> = {
+  sm: "h-[2.1cqw] px-[1.2cqw] text-[0.85cqw]",
+  md: "h-[2.6cqw] px-[1.6cqw] text-[1cqw]",
+  lg: "h-[3.1cqw] px-[2cqw] text-[1.2cqw]",
+}
+
+/**
+ * The Fairbnb Button (its plum gradient call to action), sized in cqw. `done` is its reserved
+ * state in the live app: it turns ink, and a check pops in beside "Reserved". Keyed by the state,
+ * so the pop replays each time it changes.
+ */
+export function FrameButton({
+  instance,
+  done = false,
+  className,
+}: {
+  instance: Pick<FrameComponent, "label" | "size">
+  done?: boolean
+  className?: string
+}) {
+  return (
+    <span
+      key={done ? "done" : "idle"}
+      className={cn(
+        "flex items-center justify-center gap-[0.5em] whitespace-nowrap rounded-[0.6cqw] font-semibold leading-none tracking-tight text-white",
+        BUTTON_SIZE_CLASS[instance.size],
+        done
+          ? "bg-[#222222] pl-[0.9em] animate-in zoom-in-90 duration-300 ease-[cubic-bezier(0.34,1.56,0.64,1)]"
+          : "bg-[linear-gradient(90deg,#8e4585,#b0569f)] shadow-[0_0.2cqw_0.6cqw_rgba(142,69,133,0.35)]",
+        className,
+      )}
+    >
+      {done && (
+        <span
+          aria-hidden="true"
+          className="flex size-[1.4em] shrink-0 items-center justify-center rounded-full bg-[#46a35a] text-white animate-in zoom-in-0 spin-in-[-30deg] delay-100 duration-300 fill-mode-both"
+        >
+          <Check className="size-[0.9em]" strokeWidth={3.5} />
+        </span>
+      )}
+      <span>{done ? "Reserved" : instance.label || "Button"}</span>
+    </span>
   )
 }
 
@@ -293,11 +378,13 @@ export function ComponentDragGhost({
   y,
   zoom,
   library = "default",
+  component = "Badge",
 }: {
   x: number
   y: number
   zoom: number
   library?: ComponentLibrary
+  component?: InsertableComponent
 }) {
   return (
     <div
@@ -307,7 +394,7 @@ export function ComponentDragGhost({
     >
       <div className="@container absolute left-0 top-0" style={{ width: CODEBASE_WIDTH }}>
         <div className="w-fit -translate-x-1/2 -translate-y-1/2 opacity-90 drop-shadow-[0_8px_16px_rgba(17,17,16,0.25)]">
-          <FrameBadge instance={newBadgeOf(library).instance} />
+          <FrameBadge instance={{ ...newComponentOf(library, component).instance, component }} />
         </div>
       </div>
     </div>
@@ -322,8 +409,10 @@ export function ComponentSettingsPanel({
   instance: FrameComponent
   onChange: (patch: Partial<FrameComponent>) => void
 }) {
-  /** The variants of the instance's own design system. */
-  const tones = BADGE_TONES.filter((t) => t.library === (instance.library ?? "default"))
+  /** The variants of the instance's own design system and component. */
+  const tones = BADGE_TONES.filter(
+    (t) => t.library === (instance.library ?? "default") && (t.component ?? "Badge") === instance.component,
+  )
   const tone = tones.find((t) => t.id === instance.tone) ?? tones[0]
   const [layout, setLayout] = useState<LayoutMode>("row")
   const [wrap, setWrap] = useState(false)
@@ -470,7 +559,7 @@ export function ComponentSettingsPanel({
           <PropField
             label={<Scan className="size-3.5" strokeWidth={1.25} />}
             name="Corner radius"
-            value={measured ? px(measured.h / 2) : "0px"}
+            value={measured ? px(instance.component === "Button" ? 0.6 * CQW : measured.h / 2) : "0px"}
             trailing="variable"
           />
         </Row>
@@ -713,20 +802,22 @@ export function builtComponentsChange(components: FrameComponent[]): ChangedFile
 
   context(`import { cn } from "./utils";`)
   add(`import { Badge } from "@/components/ui/badge";`)
+  if (components.some((c) => c.component === "Button")) add(`import { Button } from "@/components/ui/button";`)
   left = 213
-  right = 214
+  right = 214 + (components.some((c) => c.component === "Button") ? 1 : 0)
   context(`        <div data-anim="title">`)
   context(`          <p className="text-[1.6cqw] font-semibold tracking-tight text-[#222222]">{trip.title}</p>`)
   context(`        </div>`)
   for (const c of components) {
+    const tag = c.component === "Button" ? "Button" : "Badge"
     add(`        {trip.title === "${c.cardTitle}" && (`)
-    add(`          <Badge`)
-    add(`            tone="${c.tone}"`)
+    add(`          <${tag}`)
+    add(`            ${tag === "Button" ? "variant" : "tone"}="${tag === "Button" ? "primary" : c.tone}"`)
     add(`            size="${c.size}"`)
     add(`            className="absolute left-[${(c.x / CQW).toFixed(1)}cqw] top-[${(c.y / CQW).toFixed(1)}cqw]"`)
     add(`          >`)
     add(`            ${c.label}`)
-    add(`          </Badge>`)
+    add(`          </${tag}>`)
     add(`        )}`)
   }
   const added = rows.filter(([l, r]) => l === null && r?.kind === "add").length

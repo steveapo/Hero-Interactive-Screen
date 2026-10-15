@@ -128,9 +128,15 @@ export const PortalView = memo(function PortalView({
   onBuildFrames,
   showUrl = true,
   initialAttached,
+  builtNumeralGap = 0,
 }: {
   onClose: () => void
   closing?: boolean
+  /**
+   * Extra space between the trip card's dates and its nights built into the codebase (cqw): the
+   * card grows to fit it in the live app, easing in once the app has settled. 0: none.
+   */
+  builtNumeralGap?: number
   /**
    * Canvas frames sent here by "Add to Build Chat": the agent chat opens on a fresh chat with them
    * attached to the composer. Only read on mount.
@@ -262,6 +268,19 @@ export const PortalView = memo(function PortalView({
   }
 
   const loaded = phase === "loaded"
+
+  /**
+   * The built gap shows once the app has settled (like the built components), per load: a reload
+   * plays it again. Keyed by the load and the gap, so a new build eases in the same way.
+   */
+  const gapKey = `${loadId}:${builtNumeralGap}`
+  const [gapShownFor, setGapShownFor] = useState<string | null>(null)
+  useEffect(() => {
+    if (!loaded || !builtNumeralGap) return
+    const timer = setTimeout(() => setGapShownFor(gapKey), REPLACE_AFTER_MS)
+    return () => clearTimeout(timer)
+  }, [loaded, builtNumeralGap, gapKey])
+  const shownNumeralGap = gapShownFor === gapKey ? builtNumeralGap : 0
 
   return (
     <div
@@ -396,6 +415,7 @@ export const PortalView = memo(function PortalView({
                   viewport={viewport}
                   switched={viewportSwitched}
                   showUrl={showUrl}
+                  tripNumeralGap={shownNumeralGap}
                 />
               </div>
             </div>
@@ -750,9 +770,13 @@ function BuiltBadge({
   const ref = useRef<HTMLDivElement>(null)
   /** The badge's resting width (cqw) and which side it's pinned by; null until measured. */
   const [slot, setSlot] = useState<{ widthCqw: number; pinRight: boolean } | null>(null)
+  /** A built Button is the card's real Reserve action: clicking it reserves the stay (again: undoes it). */
+  const isButton = c.component === "Button"
+  const [reserved, setReserved] = useState(false)
+  const pressed = isButton ? reserved : done
 
   useLayoutEffect(() => {
-    if (slot || done) return
+    if (slot || pressed) return
     const el = ref.current
     const screen = el?.closest<HTMLElement>("[data-portal-screen]")
     if (!el || !screen || !el.offsetWidth || !screen.clientWidth) return
@@ -760,7 +784,7 @@ function BuiltBadge({
       widthCqw: el.offsetWidth / (screen.clientWidth / 100),
       pinRight: el.offsetLeft + el.offsetWidth / 2 > card.left + card.width / 2,
     })
-  }, [slot, done, card.left, card.width])
+  }, [slot, pressed, card.left, card.width])
 
   return (
     <div
@@ -775,7 +799,18 @@ function BuiltBadge({
     >
       {/* Pinned right: a wider badge overflows to the left (flex-end), into the card. */}
       <div className={cn("flex", slot?.pinRight ? "justify-end" : "justify-start")}>
-        {functional ? (
+        {isButton ? (
+          <button
+            type="button"
+            data-cursor-id="built-reserve"
+            aria-label={reserved ? `Cancel reservation at ${title}` : `Reserve ${title}`}
+            aria-pressed={reserved}
+            onClick={() => setReserved((r) => !r)}
+            className="pointer-events-auto block shrink-0 cursor-pointer transition-transform active:scale-95"
+          >
+            <FrameBadge instance={c} done={reserved} />
+          </button>
+        ) : functional ? (
           <button
             type="button"
             aria-label={done ? `Undo check-in at ${title}` : `Check in at ${title}`}
@@ -855,6 +890,7 @@ function AirbnbDevice({
   viewport = "desktop",
   switched = false,
   showUrl = true,
+  tripNumeralGap = 0,
 }: {
   loaded: boolean
   skipIntro?: boolean
@@ -863,6 +899,8 @@ function AirbnbDevice({
   switched?: boolean
   /** The browser window's title bar shows the address. */
   showUrl?: boolean
+  /** Built extra space between the trip card's dates and nights (cqw; desktop layouts). */
+  tripNumeralGap?: number
 }) {
   const handheld = HANDHELD_SCREENS[viewport]
   if (handheld) {
@@ -938,11 +976,11 @@ function AirbnbDevice({
           {appShare < 1 ? (
             // A wider screen than the app's layout: the layout keeps its width, centred.
             <div className="@container mx-auto h-full" style={{ width: `${appShare * 100}%` }}>
-              <AirbnbScreen introSpeed={loaded && !skipIntro ? 1 : 1000} />
+              <AirbnbScreen introSpeed={loaded && !skipIntro ? 1 : 1000} tripNumeralGap={tripNumeralGap} />
             </div>
           ) : (
             /* skipIntro: the finished screen straight away (the intro played instantly) */
-            <AirbnbScreen introSpeed={loaded && !skipIntro ? 1 : 1000} />
+            <AirbnbScreen introSpeed={loaded && !skipIntro ? 1 : 1000} tripNumeralGap={tripNumeralGap} />
           )}
         </div>
       </div>

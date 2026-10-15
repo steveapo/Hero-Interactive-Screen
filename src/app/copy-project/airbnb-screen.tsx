@@ -295,9 +295,21 @@ export function SectionHead({ title, action }: { title: string; action: string }
 
 /**
  * The upcoming stay: a white card with the home's name, where and when, and the nights
- * as the hero numeral. It fills its (positioned) host.
+ * as the hero numeral. It fills its (positioned) host. `numeralGap` (cqw) is extra space between
+ * the dates and the nights (the numeral's top margin); the host grows by as much to fit it.
  */
-export function TripCard({ trip = TRIP, order = 0 }: { trip?: Trip; order?: number }) {
+export function TripCard({
+  trip = TRIP,
+  order = 0,
+  numeralGap = 0,
+  animateGap = false,
+}: {
+  trip?: Trip;
+  order?: number;
+  numeralGap?: number;
+  /** The gap eases into place when it changes (the live app; the canvas follows a drag instead). */
+  animateGap?: boolean;
+}) {
   return (
     <div
       data-anim="block"
@@ -316,15 +328,33 @@ export function TripCard({ trip = TRIP, order = 0 }: { trip?: Trip; order?: numb
           </p>
         ))}
       </div>
-      <NightsNumeral nights={trip.nights} />
+      <NightsNumeral nights={trip.nights} marginTop={numeralGap} animate={animateGap} />
     </div>
   );
 }
 
-/** The trip's hero numeral: the nights, rolling up out of a mask in the intro. */
-export function NightsNumeral({ nights }: { nights: number }) {
+/**
+ * The trip's hero numeral: the nights, rolling up out of a mask in the intro. `data-layer` names it
+ * as a layer the canvas can select inside the card's frame; `marginTop` is in cqw.
+ */
+export function NightsNumeral({
+  nights,
+  marginTop = 0,
+  animate = false,
+}: {
+  nights: number;
+  marginTop?: number;
+  animate?: boolean;
+}) {
   return (
-    <div className="flex items-end gap-[0.5cqw] self-start text-[#222222]">
+    <div
+      data-layer="nights"
+      className={cn(
+        "flex items-end gap-[0.5cqw] self-start text-[#222222]",
+        animate && "transition-[margin] duration-500 ease-out",
+      )}
+      style={marginTop ? { marginTop: cqw(marginTop) } : undefined}
+    >
       <span className="overflow-hidden">
         <span data-anim="numeral" className="block text-[4.6cqw] leading-[0.82] font-semibold tracking-[-0.05em]">
           {nights}
@@ -538,11 +568,14 @@ export function MapButton() {
 export const AirbnbScreen = memo(function AirbnbScreen({
   introSpeed = 1,
   onIntroDone,
+  tripNumeralGap = 0,
 }: {
   /** Playback rate of the opening animation: 0.5 = half speed. */
   introSpeed?: number;
   /** Called once the opening animation has finished. */
   onIntroDone?: () => void;
+  /** Extra space between the trip's dates and its nights (cqw); the trip row grows to fit it. */
+  tripNumeralGap?: number;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const [category, setCategory] = useState(0);
@@ -564,12 +597,16 @@ export const AirbnbScreen = memo(function AirbnbScreen({
       <main className="relative min-h-0 flex-1 overflow-hidden px-[4cqw]" style={{ paddingTop: cqw(LAYOUT.contentTop) }}>
         <SectionHead title="Your upcoming trip" action="All trips" />
         <div
-          className="flex"
-          style={{ gap: cqw(LAYOUT.columnGap), marginTop: cqw(LAYOUT.sectionHeadGap), height: cqw(LAYOUT.tripRow) }}
+          className="flex transition-[height] duration-500 ease-out"
+          style={{
+            gap: cqw(LAYOUT.columnGap),
+            marginTop: cqw(LAYOUT.sectionHeadGap),
+            height: cqw(LAYOUT.tripRow + tripNumeralGap),
+          }}
         >
           {/* Each card sits in its own positioned host: the Portal builds components onto it there. */}
           <div data-anim="trip" className="relative h-full shrink-0" style={{ width: cqw(TRIP_CARD_WIDTH) }}>
-            <TripCard />
+            <TripCard numeralGap={tripNumeralGap} animateGap />
           </div>
           <div className="relative h-full shrink-0" style={{ width: cqw(CHECK_IN_WIDTH) }}>
             <CheckInTile />

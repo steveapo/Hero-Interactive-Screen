@@ -5,6 +5,8 @@ import { flushSync } from "react-dom"
 import { ArrowLeft, Check, Ellipsis, SquarePen, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { screenScale } from "@/lib/screen-scale"
+import { TripCard } from "@/app/copy-project/airbnb-screen"
+import { INK, RAUSCH } from "@/app/copy-project/airbnb-data"
 import { COMPONENT_PULL_REQUEST, PULL_REQUEST, type PullRequest } from "./agent-script"
 import { AgentsPopover } from "./agents-popover"
 import { BuildAgentComposer, COMPOSER_HEIGHT, COMPOSER_WIDTH } from "./build-agent-composer"
@@ -18,13 +20,15 @@ import { CodebaseSettingsPanel } from "./codebase-settings-panel"
 import { trackDrag, useMeasuredRect, type CanvasRect } from "./drag"
 import { FrameSettingsPanel } from "./frame-settings-panel"
 import { GithubButton } from "./github-popover"
+import { LayerSettingsPanel } from "./layer-settings-panel"
 import { LeftSidebar } from "./left-sidebar"
 import {
   builtComponentsChange,
   ComponentDragGhost,
   ComponentSettingsPanel,
+  CQW,
   FrameComponentsLayer,
-  newBadgeOf,
+  newComponentOf,
   type ComponentLibrary,
   type FrameComponent,
   type InsertableComponent,
@@ -181,6 +185,31 @@ type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number 
  */
 export type HeroStart = "portal" | "canvas" | "designed" | "built" | "wired"
 
+/** The trip card's frame: the one card whose nights numeral can be selected as a layer and spaced. */
+export const TRIP_CARD_ID = "card-upcoming-trip"
+/** The trip card's natural (unspaced) size, in canvas units. */
+const TRIP_CARD_RECT = AIRBNB_ELEMENTS.find((el) => el.id === TRIP_CARD_ID)!.rect
+/** The nights numeral's font size, in canvas units (4.6cqw, see NightsNumeral). */
+const NIGHTS_FONT_SIZE = 4.6 * CQW
+/** The nights layer, hovered: a selection-blue outline (its width set per zoom in --layer-line). */
+const NIGHTS_LAYER_HOVER = "[&_[data-layer=nights]:hover]:[outline:var(--layer-line)_solid_#2f6bf6]"
+/** The nights layer, selected: outlined, with its top margin (--layer-margin) tinted above it. */
+const NIGHTS_LAYER_SELECTED =
+  "[&_[data-layer=nights]]:[outline:var(--layer-line)_solid_#2f6bf6] [&_[data-layer=nights]]:relative [&_[data-layer=nights]]:before:absolute [&_[data-layer=nights]]:before:inset-x-0 [&_[data-layer=nights]]:before:bottom-full [&_[data-layer=nights]]:before:h-(--layer-margin) [&_[data-layer=nights]]:before:bg-[#f59e0b]/25"
+
+/**
+ * Edits already made to the trip card when the screen opens (the feature cards' story, where each
+ * clip opens on the previous one's result). Only read on mount.
+ */
+export type HeroSeed = {
+  /** Library components already in its frame (they replace the start's own seeded badge). */
+  components?: FrameComponent[]
+  /** Extra space above its nights numeral (its top margin), in canvas units: the card grows by as much. */
+  numeralGap?: number
+  /** Those edits are already built into the codebase (they show in the live app). */
+  built?: boolean
+}
+
 /**
  * Load-in intro for a screen that opens on the canvas. While `phase` is "waiting" the screen is
  * an empty canvas; once it's "play", each part comes in at its time (ms after that):
@@ -267,8 +296,17 @@ export function HeroScreen({
   componentLibrary = "default",
   layersOpen = false,
   initialSelectedId,
+  showCodebase = true,
+  seed,
 }: {
   className?: string
+  /**
+   * The Codebase frame is on the canvas. Off: only the app element frames (see `elementIds`), and
+   * the canvas opens centred on the first of them. Only read on mount.
+   */
+  showCodebase?: boolean
+  /** Edits already made to the trip card (see HeroSeed). Only read on mount. */
+  seed?: HeroSeed
   /** The left sidebar opens with its Layers panel showing. Only read on mount. */
   layersOpen?: boolean
   /**
@@ -345,8 +383,10 @@ export function HeroScreen({
     elementIds ? AIRBNB_ELEMENTS.filter((el) => elementIds.includes(el.id)) : AIRBNB_ELEMENTS,
   )
   /** Library components already in frames when the screen opens. */
-  const [seededComponents] = useState<FrameComponent[]>(() =>
-    start === "designed" || start === "built" || start === "wired" ? [designedCheckInBadge()] : [],
+  const [seededComponents] = useState<FrameComponent[]>(
+    () =>
+      seed?.components ??
+      (start === "designed" || start === "built" || start === "wired" ? [designedCheckInBadge()] : []),
   )
   const [tool, setTool] = useState<Tool>("select")
   const [codebaseSelected, setCodebaseSelected] = useState(false)
@@ -357,12 +397,26 @@ export function HeroScreen({
   const [agentOpen, setAgentOpen] = useState(false)
   /** Simulated Build Agents: sessions per selection, the variants they generate, their cursors. */
   const agents = useBuildAgents(
-    start === "built"
-      ? seededComponents
-      : start === "wired"
-        ? seededComponents.map((c) => ({ ...c, functional: true }))
-        : [],
+    seed
+      ? seed.built
+        ? seededComponents
+        : []
+      : start === "built"
+        ? seededComponents
+        : start === "wired"
+          ? seededComponents.map((c) => ({ ...c, functional: true }))
+          : [],
   )
+  /**
+   * Extra space above the trip card's nights numeral (its top margin, canvas units), edited from
+   * the layer's settings panel; the card's frame grows by as much (see changeNumeralGap).
+   */
+  const [numeralGap, setNumeralGap] = useState(() => seed?.numeralGap ?? 0)
+  const numeralGapRef = useRef(numeralGap)
+  /** That gap as built into the codebase (canvas units): the live app's card grows by it. */
+  const [builtNumeralGap, setBuiltNumeralGap] = useState(() => (seed?.built ? (seed.numeralGap ?? 0) : 0))
+  /** A layer selected inside a frame (the trip card's nights numeral), with its own settings panel. */
+  const [selectedLayer, setSelectedLayer] = useState<"nights" | null>(null)
   /** Where each generating agent's cursor sits, in canvas units (measured from the piece it edits). */
   const [cursorAt, setCursorAt] = useState<Record<number, { x: number; y: number }>>({})
   /** "Choose where to build" is on for this agent session: clicking one of its variants builds it. */
@@ -393,8 +447,8 @@ export function HeroScreen({
   const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null)
   const selectedComponent = frameComponents.find((c) => c.id === selectedComponentId)
   const nextComponentId = useRef(seededComponents.length + 1)
-  /** A library component being dragged out of the sidebar: the ghost's spot, in root px. */
-  const [libraryDrag, setLibraryDrag] = useState<{ x: number; y: number } | null>(null)
+  /** A library component being dragged out of the sidebar: the ghost's spot, in root px, and which one. */
+  const [libraryDrag, setLibraryDrag] = useState<{ x: number; y: number; component: InsertableComponent } | null>(null)
   /** The pull request was merged: the canvas closes (end of the story). */
   const [canvasClosed, setCanvasClosed] = useState(false)
   const closeCanvas = useCallback(() => setCanvasClosed(true), [])
@@ -481,14 +535,25 @@ export function HeroScreen({
     }, PORTAL_EXIT_MS)
   }, [opensInPortal, canvasEntrance])
   useEffect(() => () => clearTimeout(closeTimerRef.current), [])
-  const [camera, setCamera] = useState<Camera>(initialCamera)
+  // Without the Codebase frame, the canvas opens centred on the first app element frame instead.
+  const [camera, setCamera] = useState<Camera>(() => {
+    const focus = showCodebase ? undefined : canvasElements[0]?.rect
+    const opening = initialCamera()
+    return focus ? { ...opening, x: -focus.x * opening.zoom, y: -focus.y * opening.zoom } : opening
+  })
   const [panning, setPanning] = useState(false)
   /** Select-tool selection box, in screen px relative to the hero root. */
   const [marquee, setMarquee] = useState<Marquee | null>(null)
   /** Frame positions/sizes in canvas units (centre-based); the Codebase frame starts at the origin. */
   const [codebaseRect, setCodebaseRect] = useState<CanvasRect>({ x: 0, y: 0, w: CODEBASE_WIDTH, h: CODEBASE_HEIGHT })
+  // A seeded numeral gap opens with the trip card's frame already grown by it (its top edge stays put).
   const [elementRects, setElementRects] = useState<Record<string, CanvasRect>>(() =>
-    Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.rect])),
+    Object.fromEntries(
+      AIRBNB_ELEMENTS.map((el) => [
+        el.id,
+        el.id === TRIP_CARD_ID && numeralGap ? { ...el.rect, y: el.rect.y + numeralGap / 2, h: el.rect.h + numeralGap } : el.rect,
+      ]),
+    ),
   )
   /** Corner radius per Fairbnb element frame, in canvas units (null = square); editable via the radius thumbs. */
   const [elementRadii, setElementRadii] = useState<Record<string, number | null>>(() =>
@@ -507,12 +572,36 @@ export function HeroScreen({
     () => canvasElements.filter((el) => !el.exploration).map((el) => ({ id: el.id, name: elementNames[el.id] })),
     [canvasElements, elementNames],
   )
-  /** The Portal Agent builds the attached frames into the codebase, with the components designed into them. */
+  /**
+   * The Portal Agent builds the attached frames into the codebase, with the components designed
+   * into them (and, for the trip card, the space designed above its nights).
+   */
   const { buildFrames } = agents
   const buildFramesFromPortal = useCallback(
-    (frameIds: string[]) => buildFrames(frameIds, frameComponents),
-    [buildFrames, frameComponents],
+    (frameIds: string[]) => {
+      buildFrames(frameIds, frameComponents)
+      if (frameIds.includes(TRIP_CARD_ID)) setBuiltNumeralGap(numeralGap)
+    },
+    [buildFrames, frameComponents, numeralGap],
   )
+  /**
+   * Change the space above the trip card's nights (its numeral's top margin, canvas units): the
+   * card's frame grows or shrinks by the difference, its top edge staying put, and the components
+   * in its lower half (a bottom-right Reserve button) move down with the bottom edge.
+   */
+  const changeNumeralGap = useCallback((next: number) => {
+    const delta = next - numeralGapRef.current
+    if (!delta) return
+    numeralGapRef.current = next
+    setNumeralGap(next)
+    setElementRects((current) => {
+      const r = current[TRIP_CARD_ID]
+      return r ? { ...current, [TRIP_CARD_ID]: { ...r, y: r.y + delta / 2, h: r.h + delta } } : current
+    })
+    setFrameComponents((list) =>
+      list.map((c) => (c.frameId === TRIP_CARD_ID && c.y > TRIP_CARD_RECT.h / 2 ? { ...c, y: c.y + delta } : c)),
+    )
+  }, [])
   const canvasRef = useRef<HTMLDivElement>(null)
   /**
    * The canvas's width over REFERENCE_CANVAS_WIDTH (see Bounds). Measured before the first paint
@@ -606,6 +695,11 @@ export function HeroScreen({
     setPortalAttach([activeElementId])
     openPortal()
   }, [activeElementId, openPortal])
+  /** "Add to Build Chat" on a layer inside the trip card: the card's frame is what gets attached. */
+  const addTripCardToChat = useCallback(() => {
+    setPortalAttach([TRIP_CARD_ID])
+    openPortal()
+  }, [openPortal])
   /** A single selected drawn frame / text (its settings panel shows). */
   const activeDrawn =
     !codebaseSelected && selectedIds.length === 1 ? drawnElements.find((el) => el.id === selectedIds[0]) : undefined
@@ -618,7 +712,7 @@ export function HeroScreen({
     () =>
       frameBounds(
         [
-          codebaseRect,
+          ...(showCodebase ? [codebaseRect] : []),
           ...canvasElements.filter((el) => !el.exploration).map((el) => elementRects[el.id]),
           ...drawnElements.map(elementRect),
           ...agents.variants.map((v) => v.rect),
@@ -626,7 +720,7 @@ export function HeroScreen({
         fit,
         maxZoom,
       ),
-    [codebaseRect, canvasElements, elementRects, drawnElements, agents.variants, fit, maxZoom],
+    [showCodebase, codebaseRect, canvasElements, elementRects, drawnElements, agents.variants, fit, maxZoom],
   )
   /** What the Share button compares against its last publish (memoized: same values, same array). */
   const shareChanges = useMemo(
@@ -645,12 +739,14 @@ export function HeroScreen({
     setCodebaseSelected(true)
     setSelectedIds([])
     setSelectedComponentId(null)
+    setSelectedLayer(null)
     setAgentOpen(false)
   }
 
   /** Select a frame; with Shift, add it to (or remove it from) the selection instead. */
   function selectElement(id: string, additive = false) {
     setSelectedComponentId(null)
+    setSelectedLayer(null)
     if (additive) {
       setAgentOpen(false)
       setCodebaseSelected(false)
@@ -661,6 +757,21 @@ export function HeroScreen({
     setAgentOpen(false)
     setSelectedIds([id])
     setCodebaseSelected(false)
+  }
+
+  /** Select the trip card's nights numeral, a layer inside its frame: its own settings panel shows. */
+  function selectNightsLayer() {
+    setSelectedLayer("nights")
+    setSelectedIds([])
+    setSelectedComponentId(null)
+    setCodebaseSelected(false)
+    setAgentOpen(false)
+    setPickSession(null)
+  }
+
+  /** Whether a press landed on the trip card's nights numeral (inside its frame's artwork). */
+  function onNightsLayer(e: React.PointerEvent) {
+    return e.target instanceof Element && e.target.closest('[data-layer="nights"]') !== null
   }
 
   /**
@@ -782,7 +893,7 @@ export function HeroScreen({
       e,
       (dx, dy) => {
         last = { clientX: startX + dx * start.k, clientY: startY + dy * start.k }
-        setLibraryDrag({ x: start.x + dx, y: start.y + dy })
+        setLibraryDrag({ x: start.x + dx, y: start.y + dy, component })
       },
       () => {
         setLibraryDrag(null)
@@ -821,7 +932,7 @@ export function HeroScreen({
     if (!target || !cardTitle) return
     const r = elementRects[target.id]
     const id = `component-${nextComponentId.current++}`
-    const fresh = newBadgeOf(componentLibrary)
+    const fresh = newComponentOf(componentLibrary, component)
     setFrameComponents((list) => [
       ...list,
       {
@@ -837,6 +948,7 @@ export function HeroScreen({
     ])
     setSelectedComponentId(id)
     setSelectedIds([])
+    setSelectedLayer(null)
     setCodebaseSelected(false)
     setAgentOpen(false)
   }
@@ -845,6 +957,7 @@ export function HeroScreen({
   function pressComponent(e: React.PointerEvent, id: string) {
     setSelectedComponentId(id)
     setSelectedIds([])
+    setSelectedLayer(null)
     setCodebaseSelected(false)
     setAgentOpen(false)
     setPickSession(null)
@@ -1224,6 +1337,7 @@ export function HeroScreen({
           setCodebaseSelected(false)
           setSelectedIds([])
           setSelectedComponentId(null)
+          setSelectedLayer(null)
           setAgentOpen(false)
           setPickSession(null)
           if (e.button === 0 && tool === "select" && e.shiftKey) {
@@ -1247,18 +1361,22 @@ export function HeroScreen({
         onPointerUp={endPan}
         onPointerCancel={endPan}
       >
-        <CodebaseFrame
-          selected={codebaseSelected}
-          onSelect={selectCodebase}
-          onMoveStart={(e) => startMove(e, "codebase")}
-          onOpen={openPortal}
-          covered={canvasCovered}
-          zoom={camera.zoom}
-          offsetX={camera.x + codebaseRect.x * camera.zoom}
-          offsetY={camera.y + codebaseRect.y * camera.zoom}
-          appear={hasIntro ? (codebaseIn ? "in" : "hidden") : undefined}
-        />
-        {canvasElements.map((el) => (
+        {showCodebase && (
+          <CodebaseFrame
+            selected={codebaseSelected}
+            onSelect={selectCodebase}
+            onMoveStart={(e) => startMove(e, "codebase")}
+            onOpen={openPortal}
+            covered={canvasCovered}
+            zoom={camera.zoom}
+            offsetX={camera.x + codebaseRect.x * camera.zoom}
+            offsetY={camera.y + codebaseRect.y * camera.zoom}
+            appear={hasIntro ? (codebaseIn ? "in" : "hidden") : undefined}
+          />
+        )}
+        {canvasElements.map((el) => {
+          const isTrip = el.id === TRIP_CARD_ID
+          return (
           <DesignFrame
             // Remount on each reveal so the entrance animation replays.
             key={`${el.id}-${revealId}`}
@@ -1266,7 +1384,8 @@ export function HeroScreen({
             label={elementNames[el.id]}
             onRename={(name) => setElementNames((current) => ({ ...current, [el.id]: name }))}
             rect={elementRects[el.id]}
-            naturalSize={el.rect}
+            // The trip card's artwork grows with the space above its nights.
+            naturalSize={isTrip ? { w: el.rect.w, h: el.rect.h + numeralGap } : el.rect}
             fill={elementFills[el.id]}
             repaint={elementFills[el.id] !== el.fill ? elementFills[el.id] : null}
             radius={elementRadii[el.id]}
@@ -1274,8 +1393,12 @@ export function HeroScreen({
             bare={el.bare}
             labelOnSelect={el.labelOnSelect}
             selected={selectedIds.includes(el.id)}
-            onSelect={(e) => selectElement(el.id, e.shiftKey)}
-            onMoveStart={(e) => startMove(e, { elementId: el.id })}
+            // A press on the trip card's nights selects that layer instead (and doesn't move the card).
+            onSelect={(e) => (isTrip && onNightsLayer(e) ? selectNightsLayer() : selectElement(el.id, e.shiftKey))}
+            onMoveStart={(e) => {
+              if (isTrip && onNightsLayer(e)) return
+              startMove(e, { elementId: el.id })
+            }}
             onResizeStart={(e, corner) => startResize(e, corner, el.id)}
             onRadiusStart={(e, corner) => {
               const { w, h } = elementRects[el.id]
@@ -1292,9 +1415,26 @@ export function HeroScreen({
             offsetY={camera.y}
             entrance={entranceFor(elementRects[el.id])}
           >
-            {el.content}
+            {isTrip ? (
+              // The nights numeral is a selectable layer: outlined on hover and while selected, its
+              // top margin tinted while selected. Lines stay 1.5 screen px at any zoom.
+              <div
+                className={cn("size-full", NIGHTS_LAYER_HOVER, selectedLayer === "nights" && NIGHTS_LAYER_SELECTED)}
+                style={
+                  {
+                    "--layer-line": `${1.5 / camera.zoom}px`,
+                    "--layer-margin": `${numeralGap}px`,
+                  } as React.CSSProperties
+                }
+              >
+                <TripCard numeralGap={numeralGap / CQW} />
+              </div>
+            ) : (
+              el.content
+            )}
           </DesignFrame>
-        ))}
+          )
+        })}
         {/* Library components dropped into the frames, over them */}
         <FrameComponentsLayer
           components={frameComponents}
@@ -1604,7 +1744,13 @@ export function HeroScreen({
       />
 
       {libraryDrag && (
-        <ComponentDragGhost x={libraryDrag.x} y={libraryDrag.y} zoom={camera.zoom} library={componentLibrary} />
+        <ComponentDragGhost
+          x={libraryDrag.x}
+          y={libraryDrag.y}
+          zoom={camera.zoom}
+          library={componentLibrary}
+          component={libraryDrag.component}
+        />
       )}
 
       {/* Settings show for a single selection only */}
@@ -1616,6 +1762,28 @@ export function HeroScreen({
           onChange={(patch) =>
             setFrameComponents((list) => list.map((c) => (c.id === selectedComponent.id ? { ...c, ...patch } : c)))
           }
+        />
+      )}
+      {selectedLayer === "nights" && elementRects[TRIP_CARD_ID] && (
+        <LayerSettingsPanel
+          key="layer-settings:nights"
+          name="NightsNumeral"
+          // Bottom-left of the card, inside its 1.6cqw padding; the numeral (≈ 0.82 × its size tall).
+          x={elementRects[TRIP_CARD_ID].x - elementRects[TRIP_CARD_ID].w / 2 + 1.6 * CQW - (codebaseRect.x - codebaseRect.w / 2)}
+          y={
+            elementRects[TRIP_CARD_ID].y +
+            elementRects[TRIP_CARD_ID].h / 2 -
+            1.6 * CQW -
+            NIGHTS_FONT_SIZE * 0.82 -
+            (codebaseRect.y - codebaseRect.h / 2)
+          }
+          width={7.2 * CQW}
+          height={NIGHTS_FONT_SIZE * 0.82}
+          marginTop={numeralGap}
+          onMarginTopChange={changeNumeralGap}
+          fontSize={NIGHTS_FONT_SIZE}
+          colors={[INK, RAUSCH]}
+          onAddToChat={addTripCardToChat}
         />
       )}
       {activeElement && activeRect && (
@@ -1679,6 +1847,7 @@ export function HeroScreen({
           builtVariant={agents.builtVariant}
           builtComponents={agents.builtComponents}
           builtFills={agents.builtFills}
+          builtNumeralGap={builtNumeralGap / CQW}
           loadMs={portalLoadMs}
           autoPrompt={portalAutoPrompt}
           canvasFrames={portalFrames}
