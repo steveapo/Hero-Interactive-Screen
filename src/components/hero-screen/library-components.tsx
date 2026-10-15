@@ -332,7 +332,9 @@ export function FrameComponentsLayer({
               <div
                 data-frame-component={c.id}
                 data-cursor-id={`frame-component-${c.id}`}
-                className="pointer-events-auto relative w-fit cursor-default animate-in fade-in zoom-in-90 duration-300"
+                // flex, not block: the inline-flex Badge would otherwise sit on a line box (see
+                // BuiltBadge in portal-view), so it renders at exactly its spot, as in the live app.
+                className="pointer-events-auto relative flex w-fit cursor-default animate-in fade-in zoom-in-90 duration-300"
                 onPointerDown={(e) => {
                   e.stopPropagation()
                   onPress(e, c.id)
@@ -393,7 +395,7 @@ export function ComponentDragGhost({
       style={{ left: x, top: y, transform: `scale(${zoom})` }}
     >
       <div className="@container absolute left-0 top-0" style={{ width: CODEBASE_WIDTH }}>
-        <div className="w-fit -translate-x-1/2 -translate-y-1/2 opacity-90 drop-shadow-[0_8px_16px_rgba(17,17,16,0.25)]">
+        <div className="flex w-fit -translate-x-1/2 -translate-y-1/2 opacity-90 drop-shadow-[0_8px_16px_rgba(17,17,16,0.25)]">
           <FrameBadge instance={{ ...newComponentOf(library, component).instance, component }} />
         </div>
       </div>

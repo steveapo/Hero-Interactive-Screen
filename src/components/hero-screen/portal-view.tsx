@@ -797,7 +797,10 @@ function BuiltBadge({
         width: slot ? `${slot.widthCqw}cqw` : undefined,
       }}
     >
-      {/* Pinned right: a wider badge overflows to the left (flex-end), into the card. */}
+      {/* Pinned right: a wider badge overflows to the left (flex-end), into the card. Every wrapper
+          below is a flex box: the Badge is inline-flex, and in a block wrapper it would sit on a
+          line box at the app's 16px / 1.5 line height (far taller than the cqw-sized badge),
+          which pushes it down from where it was placed on the canvas. */}
       <div className={cn("flex", slot?.pinRight ? "justify-end" : "justify-start")}>
         {isButton ? (
           <button
@@ -806,7 +809,7 @@ function BuiltBadge({
             aria-label={reserved ? `Cancel reservation at ${title}` : `Reserve ${title}`}
             aria-pressed={reserved}
             onClick={() => setReserved((r) => !r)}
-            className="pointer-events-auto block shrink-0 cursor-pointer transition-transform active:scale-95"
+            className="pointer-events-auto flex shrink-0 cursor-pointer transition-transform active:scale-95"
           >
             <FrameBadge instance={c} done={reserved} />
           </button>
@@ -816,12 +819,12 @@ function BuiltBadge({
             aria-label={done ? `Undo check-in at ${title}` : `Check in at ${title}`}
             aria-pressed={done}
             onClick={onToggle}
-            className="pointer-events-auto block shrink-0 cursor-pointer transition-transform active:scale-95"
+            className="pointer-events-auto flex shrink-0 cursor-pointer transition-transform active:scale-95"
           >
             <FrameBadge instance={c} done={done} />
           </button>
         ) : (
-          <span className="block shrink-0">
+          <span className="flex shrink-0">
             <FrameBadge instance={c} />
           </span>
         )}
