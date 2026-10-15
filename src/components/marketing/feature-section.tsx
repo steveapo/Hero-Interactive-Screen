@@ -12,9 +12,9 @@ const LOGOS = ["moss", "apify", "E2B", "Prelude", "NCCER", "Deepnote"]
 const FEATURE_CARD =
   "grid items-center gap-8 rounded-[clamp(0.625rem,0.8vw,0.75rem)] border border-white/70 bg-[#f1efeb] p-[clamp(1rem,1.5vw,1.25rem)] shadow-[0_30px_80px_-30px_rgba(40,50,20,0.25)] lg:grid-cols-[1fr_2fr]"
 
-/** Frame around the mockups: a soft, light wash (no wallpaper) with a faint lime glow from the top. */
+/** Frame around the mockups: no background or padding, the screen sits straight on the card with a hairline ring and a soft shadow. */
 const MOCKUP_FRAME =
-  "relative overflow-hidden rounded-xl border border-black/5 bg-[#e6e3de] bg-[radial-gradient(ellipse_at_top,rgba(200,236,111,0.18)_0%,transparent_65%)]"
+  "relative overflow-hidden rounded-lg shadow-[0_0_0_1px_rgba(17,17,16,0.08),0_16px_40px_-20px_rgba(17,17,16,0.25)]"
 
 /**
  * Below the hero: a "Loved by" logo strip, the "Canvas and code, unified." headline, and a
@@ -325,11 +325,11 @@ function FeatureCopy({ title, className, children }: { title: string; className?
 
 /**
  * A feature card's clip (see FeatureClip): plays once when scrolled into view, stops on its key
- * moment and holds it as a still, in the same soft frame as the other mockups.
+ * moment and holds it as a still, straight on the card (no frame background).
  */
 function ClipMockup({ clip }: { clip: FeatureClipId }) {
   return (
-    <div className={cn(MOCKUP_FRAME, "p-[clamp(0.75rem,1.5vw,1rem)]")}>
+    <div className={MOCKUP_FRAME}>
       <FeatureClip clip={clip} />
     </div>
   )
