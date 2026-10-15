@@ -5,7 +5,8 @@ import { FileText, Layers, MessageCircleQuestionMark, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AIRBNB_ELEMENTS } from "./airbnb-elements"
 import { COMPONENT_PREVIEWS } from "./component-previews"
-import { isInsertable, type InsertableComponent } from "./library-components"
+import { FAIRBNB_COMPONENT_PREVIEWS } from "./fairbnb-component-previews"
+import { isInsertable, type ComponentLibrary, type InsertableComponent } from "./library-components"
 import { FrameGlyph } from "./planner-frame"
 
 export type RailPanel = "layers" | "components" | "help"
@@ -21,6 +22,7 @@ export const LeftSidebar = memo(function LeftSidebar({
   ref,
   onLibraryDragStart,
   names,
+  library = "default",
   className,
   style,
 }: {
@@ -28,6 +30,8 @@ export const LeftSidebar = memo(function LeftSidebar({
   onLibraryDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
   /** Current frame names by element id (renamed on the canvas); falls back to each element's own name. */
   names?: Record<string, string>
+  /** The design system the Components library shows (see ComponentLibrary). Default: "default". */
+  library?: ComponentLibrary
   /** Extra classes / style on the sidebar (e.g. a load-in entrance). */
   className?: string
   style?: React.CSSProperties
@@ -67,7 +71,7 @@ export const LeftSidebar = memo(function LeftSidebar({
       </nav>
 
       {panel === "layers" && <LayersPanel names={names} />}
-      {panel === "components" && <ComponentsPanel onDragStart={onLibraryDragStart} />}
+      {panel === "components" && <ComponentsPanel onDragStart={onLibraryDragStart} library={library} />}
     </aside>
   )
 })
@@ -128,11 +132,14 @@ function LayersPanel({ names }: { names?: Record<string, string> }) {
 
 function ComponentsPanel({
   onDragStart,
+  library,
 }: {
   onDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
+  library: ComponentLibrary
 }) {
   const [query, setQuery] = useState("")
-  const results = COMPONENT_PREVIEWS.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()))
+  const previews = library === "fairbnb" ? FAIRBNB_COMPONENT_PREVIEWS : COMPONENT_PREVIEWS
+  const results = previews.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()))
 
   return (
     <div className="flex w-[280px] flex-col">

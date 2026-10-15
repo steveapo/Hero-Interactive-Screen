@@ -50,7 +50,14 @@ export function isInsertable(name: string): name is InsertableComponent {
   return (INSERTABLE_COMPONENTS as readonly string[]).includes(name)
 }
 
-export type BadgeTone = "neutral" | "lime" | "red" | "outline"
+/**
+ * Which design system the Components library shows: "default" = the generic shadcn/ui set,
+ * "fairbnb" = the Fairbnb app's own components (see fairbnb-component-previews).
+ */
+export type ComponentLibrary = "default" | "fairbnb"
+
+/** "favorite" / "plum" / "ink" are the Fairbnb Badge's variants; the others the default library's. */
+export type BadgeTone = "neutral" | "lime" | "red" | "outline" | "favorite" | "plum" | "ink"
 export type BadgeSize = "sm" | "md" | "lg"
 
 /** An instance of a library component inside a frame. */
@@ -72,6 +79,8 @@ export type FrameComponent = {
    * in the live app it's a button that checks in, without a Portal Agent turn.
    */
   functional?: boolean
+  /** The library it came from (its variants in the settings panel). Omitted: "default". */
+  library?: ComponentLibrary
 }
 
 /** A fresh instance, as it comes out of the library (the Badge preview's look). */
@@ -80,12 +89,31 @@ export const NEW_BADGE: Pick<FrameComponent, "label" | "tone" | "size"> = { labe
 /** Rough canvas-unit size of a fresh Badge, to centre it on the drop point. */
 export const NEW_BADGE_SIZE = { w: 5 * CQW, h: 2 * CQW }
 
+/** A fresh Fairbnb Badge: the app's white "Guest favorite" pill. */
+export const NEW_FAIRBNB_BADGE: Pick<FrameComponent, "label" | "tone" | "size"> = {
+  label: "Guest favorite",
+  tone: "favorite",
+  size: "md",
+}
+
+/** Rough canvas-unit size of a fresh Fairbnb Badge (its label is longer). */
+export const NEW_FAIRBNB_BADGE_SIZE = { w: 9 * CQW, h: 2 * CQW }
+
+/** A fresh Badge from `library` and its rough size, to centre it on the drop point. */
+export function newBadgeOf(library: ComponentLibrary) {
+  return library === "fairbnb"
+    ? { instance: NEW_FAIRBNB_BADGE, size: NEW_FAIRBNB_BADGE_SIZE }
+    : { instance: NEW_BADGE, size: NEW_BADGE_SIZE }
+}
+
 /**
  * `variant` = the design-system variant name shown in Component States; `fillToken` / `borderToken`
  * name the colour tokens behind TONE_CLASS (null border = transparent); `text` = the label colour.
+ * `library` = the design system the variant belongs to.
  */
 export const BADGE_TONES: {
   id: BadgeTone
+  library: ComponentLibrary
   label: string
   variant: string
   swatch: string
@@ -93,11 +121,12 @@ export const BADGE_TONES: {
   text: string
   border: { token: string; color: string; opacity: number } | null
 }[] = [
-  { id: "neutral", label: "Neutral", variant: "default", swatch: "#111111", fillToken: "neutral-900", text: "#ffffff", border: null },
-  { id: "lime", label: "Lime", variant: "lime", swatch: "#c2ec66", fillToken: "lime-300", text: "#16210a", border: null },
-  { id: "red", label: "Red", variant: "destructive", swatch: "#e4321b", fillToken: "red-600", text: "#ffffff", border: null },
+  { id: "neutral", library: "default", label: "Neutral", variant: "default", swatch: "#111111", fillToken: "neutral-900", text: "#ffffff", border: null },
+  { id: "lime", library: "default", label: "Lime", variant: "lime", swatch: "#c2ec66", fillToken: "lime-300", text: "#16210a", border: null },
+  { id: "red", library: "default", label: "Red", variant: "destructive", swatch: "#e4321b", fillToken: "red-600", text: "#ffffff", border: null },
   {
     id: "outline",
+    library: "default",
     label: "Outline",
     variant: "outline",
     swatch: "#ffffff",
@@ -105,6 +134,9 @@ export const BADGE_TONES: {
     text: "#2f2f2f",
     border: { token: "black", color: "#000000", opacity: 20 },
   },
+  { id: "favorite", library: "fairbnb", label: "Guest favorite", variant: "guest-favorite", swatch: "#ffffff", fillToken: "white", text: "#222222", border: null },
+  { id: "plum", library: "fairbnb", label: "Plum", variant: "brand", swatch: "#8e4585", fillToken: "brand-plum", text: "#ffffff", border: null },
+  { id: "ink", library: "fairbnb", label: "Ink", variant: "dark", swatch: "#222222", fillToken: "ink", text: "#ffffff", border: null },
 ]
 
 /** Spacing / size tokens of the design-system Badge (components/ui/badge: h-5 px-2 py-0.5 gap-1 border). */
@@ -121,6 +153,10 @@ const TONE_CLASS: Record<BadgeTone, string> = {
   lime: "bg-[#c2ec66] text-[#16210a]",
   red: "bg-[#e4321b] text-white",
   outline: "border-black/20 bg-white text-[#2f2f2f]",
+  // Fairbnb: semibold labels in the app's ink, like its own pills.
+  favorite: "border-transparent bg-white font-semibold text-[#222222] shadow-[0_0.1cqw_0.5cqw_rgba(0,0,0,0.18)]",
+  plum: "border-transparent bg-[#8e4585] font-semibold text-white",
+  ink: "border-transparent bg-[#222222] font-semibold text-white",
 }
 
 /** Sizes in cqw of the 1440-wide desktop screen (lg ≈ 37px tall at full size). */
@@ -252,7 +288,17 @@ function ComponentEntrance({ entrance, children }: { entrance: CanvasEntrance | 
 }
 
 /** A library component following the pointer while it's dragged out of the sidebar (root px). */
-export function ComponentDragGhost({ x, y, zoom }: { x: number; y: number; zoom: number }) {
+export function ComponentDragGhost({
+  x,
+  y,
+  zoom,
+  library = "default",
+}: {
+  x: number
+  y: number
+  zoom: number
+  library?: ComponentLibrary
+}) {
   return (
     <div
       aria-hidden="true"
@@ -261,7 +307,7 @@ export function ComponentDragGhost({ x, y, zoom }: { x: number; y: number; zoom:
     >
       <div className="@container absolute left-0 top-0" style={{ width: CODEBASE_WIDTH }}>
         <div className="w-fit -translate-x-1/2 -translate-y-1/2 opacity-90 drop-shadow-[0_8px_16px_rgba(17,17,16,0.25)]">
-          <FrameBadge instance={NEW_BADGE} />
+          <FrameBadge instance={newBadgeOf(library).instance} />
         </div>
       </div>
     </div>
@@ -276,7 +322,9 @@ export function ComponentSettingsPanel({
   instance: FrameComponent
   onChange: (patch: Partial<FrameComponent>) => void
 }) {
-  const tone = BADGE_TONES.find((t) => t.id === instance.tone) ?? BADGE_TONES[0]
+  /** The variants of the instance's own design system. */
+  const tones = BADGE_TONES.filter((t) => t.library === (instance.library ?? "default"))
+  const tone = tones.find((t) => t.id === instance.tone) ?? tones[0]
   const [layout, setLayout] = useState<LayoutMode>("row")
   const [wrap, setWrap] = useState(false)
   // components/ui/badge sets overflow-hidden
@@ -331,7 +379,7 @@ export function ComponentSettingsPanel({
               onChange={(e) => onChange({ tone: e.target.value as BadgeTone })}
               className="h-full w-full min-w-0 cursor-pointer appearance-none bg-transparent pl-2 pr-6 outline-none"
             >
-              {BADGE_TONES.map((t) => (
+              {tones.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.variant}
                 </option>

@@ -24,8 +24,8 @@ import {
   ComponentDragGhost,
   ComponentSettingsPanel,
   FrameComponentsLayer,
-  NEW_BADGE,
-  NEW_BADGE_SIZE,
+  newBadgeOf,
+  type ComponentLibrary,
   type FrameComponent,
   type InsertableComponent,
 } from "./library-components"
@@ -259,8 +259,14 @@ export function HeroScreen({
   portalAutoPrompt = false,
   githubPrSheet = true,
   elementIds,
+  componentLibrary = "default",
 }: {
   className?: string
+  /**
+   * The design system the left sidebar's Components library shows, and what a dragged-out Badge
+   * looks like: "default" (generic shadcn/ui) or "fairbnb" (the Fairbnb app's own components).
+   */
+  componentLibrary?: ComponentLibrary
   /**
    * Only these app element frames are on the canvas (by id), for a calmer canvas where one frame
    * has to stand out (the "Live product on canvas" showcase). Omitted: all of them.
@@ -775,6 +781,7 @@ export function HeroScreen({
     if (!target || !cardTitle) return
     const r = elementRects[target.id]
     const id = `component-${nextComponentId.current++}`
+    const fresh = newBadgeOf(componentLibrary)
     setFrameComponents((list) => [
       ...list,
       {
@@ -782,9 +789,10 @@ export function HeroScreen({
         component,
         frameId: target.id,
         cardTitle,
-        x: Math.max(0, p.x - (r.x - r.w / 2) - NEW_BADGE_SIZE.w / 2),
-        y: Math.max(0, p.y - (r.y - r.h / 2) - NEW_BADGE_SIZE.h / 2),
-        ...NEW_BADGE,
+        x: Math.max(0, p.x - (r.x - r.w / 2) - fresh.size.w / 2),
+        y: Math.max(0, p.y - (r.y - r.h / 2) - fresh.size.h / 2),
+        ...fresh.instance,
+        library: componentLibrary,
       },
     ])
     setSelectedComponentId(id)
@@ -1538,11 +1546,14 @@ export function HeroScreen({
         ref={sidebarRef}
         onLibraryDragStart={onLibraryDragStart}
         names={elementNames}
+        library={componentLibrary}
         className={sidebarIntro.className}
         style={sidebarIntro.style}
       />
 
-      {libraryDrag && <ComponentDragGhost x={libraryDrag.x} y={libraryDrag.y} zoom={camera.zoom} />}
+      {libraryDrag && (
+        <ComponentDragGhost x={libraryDrag.x} y={libraryDrag.y} zoom={camera.zoom} library={componentLibrary} />
+      )}
 
       {/* Settings show for a single selection only */}
       {codebaseSelected && selectedIds.length === 0 && <CodebaseSettingsPanel onOpenBuildMode={openPortal} />}

@@ -98,15 +98,23 @@ export function LastMileSection() {
 
         <div className="mt-[clamp(2.5rem,5vw,4rem)] flex flex-col gap-[clamp(3rem,7vw,6rem)]">
           <div className={FEATURE_CARD}>
-            <FeatureCopy title="Controls, not prompts">
+            <FeatureCopy title="Your components, 1:1">
+              Drag them from your library or name them in a prompt. Real instances, real tokens, enforced on canvas
+              and in code.
+            </FeatureCopy>
+            <ClipMockup clip="components" />
+          </div>
+
+          <div className={cn(FEATURE_CARD, "lg:grid-cols-[2fr_1fr]")}>
+            <FeatureCopy title="Controls, not prompts" className="lg:order-2">
               A padding change shouldn&apos;t take a paragraph. Edit anything, on canvas or in code, with the visual
               controls you already know.
             </FeatureCopy>
             <ClipMockup clip="visual-edits" />
           </div>
 
-          <div className={cn(FEATURE_CARD, "lg:grid-cols-[2fr_1fr]")}>
-            <FeatureCopy title="Canvas to code in one shot" className="lg:order-2">
+          <div className={FEATURE_CARD}>
+            <FeatureCopy title="Canvas to code in one shot">
               Your changes build back as clean, scoped diffs with your design system enforced.
             </FeatureCopy>
             <ClipMockup clip="build" />

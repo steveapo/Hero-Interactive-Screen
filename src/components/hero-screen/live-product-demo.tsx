@@ -22,6 +22,7 @@ import {
   typePrompt,
 } from "./hero-demo-v1"
 import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
+import type { ComponentLibrary } from "./library-components"
 
 /*
  * The feature cards' clips. One panel = one idea, each its own scenario: a clip plays once when it
@@ -36,6 +37,9 @@ import { HeroScreen, WHEEL_ZOOM_SPEED, type HeroStart } from "./hero-screen"
  *                     selected, editable.
  *  2. "visual-edits"  Controls, not prompts: drag the Check-in Banner's corner-radius thumb on the
  *                     canvas → rounded corners, the panel's Corner radius following along.
+ *  2b. "components"   Your components, 1:1: open the Components library (the Fairbnb app's own
+ *                     components) and drag its Badge onto the trip card → a real "Guest favorite"
+ *                     instance, selected, its design-system props in the settings panel.
  *  3. "test"          Test the real thing: click through the live app in Build Mode while the
  *                     Viewport menu takes it from desktop to tablet to mobile → the phone layout.
  *  4. "build"         Canvas to code: the trip card's frame (with its designed badge) is added to
@@ -251,6 +255,60 @@ const visualEditsScript: DemoScript = async (api) => {
   })
 }
 
+/* "Your components, 1:1": the Components library holds the Fairbnb app's own components. */
+const COMPONENTS_RAIL = '[data-cursor-id="sidebar-components"]'
+const LIBRARY_BADGE = '[data-cursor-id="library-Badge"]'
+const COMPONENT_SETTINGS = '[data-cursor-id="component-settings"]'
+const DROPPED_BADGE = "[data-frame-component]"
+/** Share of the canvas's width the trip card takes here: it sits clear of the open library and the settings panel. */
+const COMPONENTS_CARD_SHARE = 0.32
+/** Where the trip card is centred across the canvas: between the library (left) and the settings panel (right). */
+const COMPONENTS_CARD_FX = 0.52
+
+/**
+ * Real canvas zoom, either way: ⌘-scroll over `target` by exactly the amount that takes it from
+ * its current share of the canvas's width to `share`, then pan it to `fx`.
+ */
+async function zoomToShare(api: ScriptApi, target: string, share: number, fx: number) {
+  await panToShow(api, [target], { fx: 0.5, fy: 0.5 })
+  const frame = api.boxOf(target)
+  const canvas = api.boxOf(CANVAS)
+  if (frame && canvas && canvas.width && frame.width) {
+    const current = frame.width / canvas.width
+    if (Math.abs(current / share - 1) > 0.05) {
+      await api.moveTo(target, { fx: 0.5, fy: 0.5 })
+      await api.wheel(0, -Math.log(share / current) / WHEEL_ZOOM_SPEED, { mods: { ctrl: true }, duration: 1000 })
+      await api.wait(200)
+    }
+  }
+  await panToShow(api, [target], { fx, fy: 0.5 })
+}
+
+/**
+ * Your components, 1:1; key moment: a real instance of the Fairbnb Badge ("Guest favorite") in
+ * the trip card's frame, selected, with its design-system props in the settings panel. The
+ * library shows the app's own components (componentLibrary "fairbnb"), not generic defaults.
+ */
+const componentsScript: DemoScript = async (api) => {
+  await scene(api, "the card", async () => {
+    await zoomToShare(api, TRIP_CARD, COMPONENTS_CARD_SHARE, COMPONENTS_CARD_FX)
+    await api.wait(300)
+  })
+  await scene(api, "open the library", async () => {
+    await api.click(COMPONENTS_RAIL)
+    await api.find(LIBRARY_BADGE)
+    await api.wait(700)
+  })
+  await scene(api, "drag it in", async () => {
+    // Into the card's top-right corner, where its text leaves room.
+    await api.drag(LIBRARY_BADGE, TRIP_CARD, { from: { fx: 0.5, fy: 0.65 }, to: { fx: 0.82, fy: 0.24 }, duration: 1400 })
+    await api.find(COMPONENT_SETTINGS, 3000)
+    await api.wait(500)
+    // Rest just below the new instance, so it and its settings read clearly.
+    await api.moveTo(DROPPED_BADGE, { fx: 0.5, fy: 1, dy: 28, duration: 700 })
+  })
+}
+
 /**
  * 4. Canvas to code in one shot; key moment: in Build Mode, the trip card in the live app with the
  * "Check in" badge exactly as it was designed into its frame on the canvas. The frame is added to
@@ -362,7 +420,7 @@ const testScript: DemoScript = async (api) => {
   })
 }
 
-export type FeatureClipId = "overview" | "capture" | "visual-edits" | "test" | "build" | "share"
+export type FeatureClipId = "overview" | "capture" | "visual-edits" | "components" | "test" | "build" | "share"
 
 type ClipConfig = {
   script: DemoScript
@@ -373,6 +431,8 @@ type ClipConfig = {
   canvasEntrance?: boolean
   /** The Portal's browser window shows the live app's address (see HeroScreen's `portalShowUrl`). Default on. */
   portalShowUrl?: boolean
+  /** The design system in the Components library (see HeroScreen's `componentLibrary`). Default "default". */
+  componentLibrary?: ComponentLibrary
 }
 
 const CLIPS: Record<FeatureClipId, ClipConfig> = {
@@ -381,6 +441,8 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
   // A calm canvas: just the Codebase frame, then the captured trip card gliding in beside it.
   capture: { script: captureScript, start: "portal", elementIds: ["card-upcoming-trip"], canvasEntrance: true },
   "visual-edits": { script: visualEditsScript, start: "canvas" },
+  // The library holds the Fairbnb app's own components, so the dropped Badge is the app's.
+  components: { script: componentsScript, start: "canvas", componentLibrary: "fairbnb" },
   // Opens in Build Mode, on the live app; its browser window has no address in the title bar.
   test: { script: testScript, start: "portal", portalShowUrl: false },
   // The trip card's frame carries the designed "Check in" badge: that's what gets built.
@@ -414,7 +476,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
   const ref = useRef<HTMLDivElement>(null)
   /** Fully scrolled into view (latched): the clip may start. */
   const [ready, setReady] = useState(false)
-  const { script, start, elementIds, canvasEntrance = false, portalShowUrl = true } = CLIPS[clip]
+  const { script, start, elementIds, canvasEntrance = false, portalShowUrl = true, componentLibrary } = CLIPS[clip]
 
   useEffect(() => {
     const el = ref.current
@@ -448,6 +510,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
             maxZoom={MAX_ZOOM}
             canvasEntrance={canvasEntrance}
             elementIds={elementIds}
+            componentLibrary={componentLibrary}
           />
         </ScriptedStage>
       </ScaledScreen>
