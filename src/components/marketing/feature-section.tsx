@@ -329,7 +329,7 @@ function FeatureCopy({ title, className, children }: { title: string; className?
  */
 function ClipMockup({ clip }: { clip: FeatureClipId }) {
   return (
-    <div className={MOCKUP_FRAME}>
+    <div className={cn(MOCKUP_FRAME, "my-[clamp(0.75rem,2vw,1.5rem)]")}>
       <FeatureClip clip={clip} />
     </div>
   )
