@@ -132,23 +132,26 @@ function MobileScreen({ category, onCategory, saved, onToggleSave, builtTrip }: 
         <div className="mt-[3.5cqw] flex flex-col gap-[3cqw]">
           <div
             data-trip-card
-            className="relative flex flex-col gap-[4.5cqw] rounded-[4cqw] border border-[#ebebeb] bg-white p-[5cqw] shadow-[0_1cqw_4cqw_rgba(0,0,0,0.08)]"
+            className="relative flex flex-col gap-[4cqw] rounded-[4cqw] border border-[#ebebeb] bg-white p-[5cqw] shadow-[0_1cqw_4cqw_rgba(0,0,0,0.08)]"
           >
-            <div className="flex items-end justify-between">
-              <div className="flex min-w-0 flex-col gap-[0.6cqw]">
-                <p className="text-[4.6cqw] font-semibold tracking-tight">{TRIP.title}</p>
-                {TRIP.lines.map((line) => (
-                  <p key={line} className="text-[3.4cqw] font-medium tracking-tight text-[#6a6a6a]">
-                    {line}
-                  </p>
-                ))}
+            {builtTrip ? (
+              // Built: the badge in the title row; under a hairline, the nights with Reserve
+              // filling the rest of the row.
+              <>
+                <div className="flex items-start justify-between gap-[3cqw]">
+                  <TripLines />
+                  {builtTrip.badge && <GuestBadge label={builtTrip.badge} className="shrink-0 text-[3cqw]" />}
+                </div>
+                <div className="flex items-center gap-[5cqw] border-t border-[#ebebeb] pt-[4cqw]">
+                  <Nights className="text-[11cqw]" unitClass="text-[2.6cqw]" />
+                  {builtTrip.reserve && <ReserveButton className="h-[11cqw] flex-1 rounded-[3cqw] text-[3.8cqw]" />}
+                </div>
+              </>
+            ) : (
+              <div className="flex items-end justify-between">
+                <TripLines />
+                <Nights className="text-[13cqw]" unitClass="text-[2.6cqw]" />
               </div>
-              <Nights className="text-[13cqw]" unitClass="text-[2.6cqw]" />
-            </div>
-            {/* Built: Reserve spans the card under its content on mobile */}
-            {builtTrip?.reserve && <ReserveButton className="h-[11cqw] w-full rounded-[3cqw] text-[3.8cqw]" />}
-            {builtTrip?.badge && (
-              <GuestBadge label={builtTrip.badge} className="absolute top-[5cqw] right-[5cqw] text-[3cqw]" />
             )}
           </div>
           <CheckInBanner className="h-[38cqw] rounded-[4cqw]" pad="p-[4.5cqw]" text="text-[4.4cqw]" small="text-[2.6cqw]" pill="text-[2.8cqw] px-[2.6cqw] py-[1.4cqw]" />
@@ -331,6 +334,20 @@ function TabletScreen({ category, onCategory, saved, onToggleSave, builtTrip }: 
 }
 
 /* --------------------------------- Shared --------------------------------- */
+
+/** The mobile trip card's title, place and dates. */
+function TripLines() {
+  return (
+    <div className="flex min-w-0 flex-col gap-[0.6cqw]">
+      <p className="text-[4.6cqw] font-semibold tracking-tight">{TRIP.title}</p>
+      {TRIP.lines.map((line) => (
+        <p key={line} className="text-[3.4cqw] font-medium tracking-tight text-[#6a6a6a]">
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
 
 /** The built Guest favorite badge on the trip card: the app's white pill. */
 function GuestBadge({ label, className }: { label: string; className: string }) {
