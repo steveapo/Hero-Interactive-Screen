@@ -18,8 +18,18 @@ const SETTLE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)"
 
 /** How far below its place a frame starts its flip by default (screen px). */
 const FLIP_RISE_PX = 36
-/** Perspective of the flip (px): lower = more dramatic depth. */
-const FLIP_PERSPECTIVE_PX = 1400
+/**
+ * Perspective of the flip (px): lower = more dramatic depth. Strong, so a frame lifted towards the
+ * viewer reads clearly larger before it settles down to its true size.
+ */
+const FLIP_PERSPECTIVE_PX = 900
+/**
+ * How far towards the viewer a frame starts (px along the z axis). Under FLIP_PERSPECTIVE_PX it
+ * starts ≈ 900 / (900 − 220) ≈ 1.3× its size, and comes down onto the screen as it lands.
+ */
+const FLIP_LIFT_PX = 220
+/** While in flight a frame stacks over the canvas's other frames (still under the bars and panels). */
+const FLIP_FLIGHT_Z = 12
 /** How far a frame is tipped up off the screen when it starts (degrees, about its bottom edge). */
 const FLIP_START_ANGLE_DEG = 30
 /**
@@ -29,12 +39,14 @@ const FLIP_START_ANGLE_DEG = 30
 const FLIP_EASING = "cubic-bezier(0.5, 0, 0.2, 1)"
 
 /**
- * A canvas frame comes up from below and lands on the screen: it starts tipped up off the screen
- * (rotated FLIP_START_ANGLE_DEG about its bottom edge, its top edge towards the viewer), `rise` px
- * lower than its place and transparent, then rises, fades in and tips back at once until it lies
- * flat in place. Uses `transform` only (positioning in these frames uses the `translate` property
- * and left / top), so it composes with them. `backwards` keeps the start frame applied during the
- * delay. `origin`: the hinge (default: the element's own bottom edge).
+ * A canvas frame comes up from below and lands on the screen: it starts lifted towards the viewer
+ * (FLIP_LIFT_PX, so it looks larger), tipped up off the screen (rotated FLIP_START_ANGLE_DEG about
+ * its bottom edge, its top edge towards the viewer), `rise` px lower than its place and
+ * transparent; then it rises, fades in, comes down and tips back at once until it lies flat in
+ * place at its true size. While in flight it stacks above the other frames. Uses `transform` only
+ * (positioning in these frames uses the `translate` property and left / top), so it composes with
+ * them. `backwards` keeps the start frame applied during the delay. `origin`: the hinge (default:
+ * the element's own bottom edge).
  */
 export function playFlipIn(
   el: HTMLElement,
@@ -50,12 +62,14 @@ export function playFlipIn(
   const flip = el.animate(
     [
       {
+        zIndex: FLIP_FLIGHT_Z,
         transformOrigin: origin,
-        transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(${rise}px) rotateX(-${FLIP_START_ANGLE_DEG}deg)`,
+        transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(${rise}px) translateZ(${FLIP_LIFT_PX}px) rotateX(-${FLIP_START_ANGLE_DEG}deg)`,
       },
       {
+        zIndex: FLIP_FLIGHT_Z,
         transformOrigin: origin,
-        transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(0px) rotateX(0deg)`,
+        transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(0px) translateZ(0px) rotateX(0deg)`,
       },
     ],
     { ...timing, easing: FLIP_EASING },

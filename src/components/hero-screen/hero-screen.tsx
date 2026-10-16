@@ -224,7 +224,7 @@ export type LoadIntro = {
   /**
    * "glide" (default, the stored v1 load-in): the bars come in first, the Codebase frame fades in,
    * the elements glide in around it in a clockwise sweep. "flip": the Codebase frame and then the
-   * elements (top first) each get a dashed placeholder drawn at their place, then come up from
+   * elements (all together) each get a dashed placeholder drawn at their place, then come up from
    * below and land on it; then the bars slide in from their
    * own edges (`chromeAt` after `elementsAt`); then at `panelsAt` the side panels move in (the
    * sidebar's `sidebarPanel` grows out of its rail, the selected frame's settings slide in from the
@@ -248,9 +248,7 @@ type IntroStep = "chrome" | "codebase" | "github" | "elements" | "panels" | "set
 /** Bars and tools come in one after another, this far apart (ms). */
 const CHROME_STAGGER_MS = 90
 
-/** "flip": the elements' flips start over this long, top of the canvas first (ms)… */
-const FLIP_SWEEP_MS = 1200
-/** …each flip taking this long (ms): slow, so each one reads as coming up and settling into place. */
+/** "flip": each element's flip takes this long (ms): slow, so each one reads as coming up and settling into place. */
 const FLIP_DURATION_MS = 1500
 /** "flip": how far below its place each element starts, rising into it as it lands (screen px). */
 const FLIP_DROP_PX = 140
@@ -1282,23 +1280,6 @@ export function HeroScreen({
   }
 
   /**
-   * "flip": when an element's turn comes in the load-in's sweep (ms after the elements step): from
-   * the top of the canvas downward, leaning slightly left to right. Its placeholder is drawn then;
-   * the element itself comes in PLACEHOLDER_LEAD_MS later.
-   */
-  function flipSweepDelay(rect: CanvasRect) {
-    const tops = canvasElements.map((el) => elementRects[el.id].y - elementRects[el.id].h / 2)
-    const lefts = canvasElements.map((el) => elementRects[el.id].x - elementRects[el.id].w / 2)
-    const minTop = Math.min(...tops)
-    const minLeft = Math.min(...lefts)
-    const spanY = Math.max(1, Math.max(...tops) - minTop)
-    const spanX = Math.max(1, Math.max(...lefts) - minLeft)
-    const fromTop = Math.min(1, Math.max(0, (rect.y - rect.h / 2 - minTop) / spanY))
-    const fromLeft = Math.min(1, Math.max(0, (rect.x - rect.w / 2 - minLeft) / spanX))
-    return Math.round((0.8 * fromTop + 0.2 * fromLeft) * FLIP_SWEEP_MS)
-  }
-
-  /**
    * Leaving the Portal reveals only the Codebase frame; everything else glides in from the side of
    * it that the element sits on: elements above the frame's top edge come from above (Status Bar,
    * Scrubber), below its bottom edge from below (events), otherwise from the left or right
@@ -1324,9 +1305,8 @@ export function HeroScreen({
     // The load-in may play the entrance faster (its delays and glides alike); leaving the Portal
     // always plays it at its own pace.
     const pace = loadIntro?.elementsTimeScale ?? 1
-    // "flip" load-in: each element comes up from below and lands on the screen; they start from the
-    // top of the canvas downward (with a slight lean from left to right), so the canvas fills in
-    // like cards being laid down one after another. Each lands on its dashed placeholder, drawn
+    // "flip" load-in: once the Codebase frame has landed, all the elements come up from below and
+    // land on the screen together, each onto its dashed placeholder, drawn
     // just before (see FlipPlaceholder).
     if (flipIntro) {
       // After the load-in, anything new is simply there (no flip when it mounts later).
@@ -1336,7 +1316,7 @@ export function HeroScreen({
         // Each comes up from well below its place as it lands.
         y: FLIP_DROP_PX,
         flip: true,
-        delay: flipSweepDelay(rect) + PLACEHOLDER_LEAD_MS,
+        delay: PLACEHOLDER_LEAD_MS,
         duration: FLIP_DURATION_MS,
       }
     }
@@ -1528,7 +1508,6 @@ export function HeroScreen({
           !introSteps.includes("settled") &&
           canvasElements.map((el) => {
             const r = elementRects[el.id]
-            const appearAt = flipSweepDelay(r)
             return (
               <FlipPlaceholder
                 key={`placeholder:${el.id}`}
@@ -1538,8 +1517,9 @@ export function HeroScreen({
                 height={r.h * camera.zoom}
                 radius={(elementRadii[el.id] ?? 0) * camera.zoom}
                 play={elementsIn}
-                appearAt={appearAt}
-                landAt={appearAt + PLACEHOLDER_LEAD_MS + FLIP_DURATION_MS}
+                // All drawn together, as the elements step starts.
+                appearAt={0}
+                landAt={PLACEHOLDER_LEAD_MS + FLIP_DURATION_MS}
               />
             )
           })}
