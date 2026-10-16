@@ -24,6 +24,7 @@ import { LayerSelectionOverlay } from "./layer-selection-overlay"
 import { LayerSettingsPanel } from "./layer-settings-panel"
 import { LeftSidebar, type RailPanel } from "./left-sidebar"
 import { PanelLoadInContext } from "./load-in"
+import { FlipPlaceholder, PLACEHOLDER_DRAW_MS } from "./flip-placeholder"
 import {
   builtComponentsChange,
   ComponentDragGhost,
@@ -252,6 +253,11 @@ const FLIP_SWEEP_MS = 1200
 const FLIP_DURATION_MS = 1500
 /** "flip": how far above its place each element starts, dropping into it as it flips (screen px). */
 const FLIP_DROP_PX = 140
+/**
+ * "flip": an element falls in this long after its dashed placeholder starts drawing (ms): the
+ * outline draws round (PLACEHOLDER_DRAW_MS), holds a beat, then the element comes down onto it.
+ */
+const PLACEHOLDER_LEAD_MS = PLACEHOLDER_DRAW_MS + 250
 /** "flip": the panel step's entrance is over this long after it starts (ms); later panels open normally. */
 const PANELS_SETTLE_MS = 2200
 
@@ -1274,6 +1280,23 @@ export function HeroScreen({
   }
 
   /**
+   * "flip": when an element's turn comes in the load-in's sweep (ms after the elements step): from
+   * the top of the canvas downward, leaning slightly left to right. Its placeholder is drawn then;
+   * the element itself falls in PLACEHOLDER_LEAD_MS later.
+   */
+  function flipSweepDelay(rect: CanvasRect) {
+    const tops = canvasElements.map((el) => elementRects[el.id].y - elementRects[el.id].h / 2)
+    const lefts = canvasElements.map((el) => elementRects[el.id].x - elementRects[el.id].w / 2)
+    const minTop = Math.min(...tops)
+    const minLeft = Math.min(...lefts)
+    const spanY = Math.max(1, Math.max(...tops) - minTop)
+    const spanX = Math.max(1, Math.max(...lefts) - minLeft)
+    const fromTop = Math.min(1, Math.max(0, (rect.y - rect.h / 2 - minTop) / spanY))
+    const fromLeft = Math.min(1, Math.max(0, (rect.x - rect.w / 2 - minLeft) / spanX))
+    return Math.round((0.8 * fromTop + 0.2 * fromLeft) * FLIP_SWEEP_MS)
+  }
+
+  /**
    * Leaving the Portal reveals only the Codebase frame; everything else glides in from the side of
    * it that the element sits on: elements above the frame's top edge come from above (Status Bar,
    * Scrubber), below its bottom edge from below (events), otherwise from the left or right
@@ -1301,24 +1324,17 @@ export function HeroScreen({
     const pace = loadIntro?.elementsTimeScale ?? 1
     // "flip" load-in: each element flips down onto the screen from above; the flips start from the
     // top of the canvas downward (with a slight lean from left to right), so the canvas fills in
-    // like cards being laid down one after another.
+    // like cards being laid down one after another. Each falls onto its dashed placeholder, drawn
+    // just before (see FlipPlaceholder).
     if (flipIntro) {
       // After the load-in, anything new is simply there (no flip when it mounts later).
       if (introSteps.includes("settled")) return null
-      const tops = canvasElements.map((el) => elementRects[el.id].y - elementRects[el.id].h / 2)
-      const lefts = canvasElements.map((el) => elementRects[el.id].x - elementRects[el.id].w / 2)
-      const minTop = Math.min(...tops)
-      const minLeft = Math.min(...lefts)
-      const spanY = Math.max(1, Math.max(...tops) - minTop)
-      const spanX = Math.max(1, Math.max(...lefts) - minLeft)
-      const fromTop = Math.min(1, Math.max(0, (rect.y - rect.h / 2 - minTop) / spanY))
-      const fromLeft = Math.min(1, Math.max(0, (rect.x - rect.w / 2 - minLeft) / spanX))
       return {
         x: 0,
         // Each comes down from well above its place as it lies down.
         y: -FLIP_DROP_PX,
         flip: true,
-        delay: Math.round((0.8 * fromTop + 0.2 * fromLeft) * FLIP_SWEEP_MS),
+        delay: flipSweepDelay(rect) + PLACEHOLDER_LEAD_MS,
         duration: FLIP_DURATION_MS,
       }
     }
@@ -1487,6 +1503,27 @@ export function HeroScreen({
             built={codebaseBuilt}
           />
         )}
+        {/* "flip" load-in: each element's flat dashed placeholder, drawn at its place just before it
+            falls in (beneath the elements). Mounted, hidden, from the start; gone once the load-in has settled. */}
+        {flipIntro &&
+          !introSteps.includes("settled") &&
+          canvasElements.map((el) => {
+            const r = elementRects[el.id]
+            const appearAt = flipSweepDelay(r)
+            return (
+              <FlipPlaceholder
+                key={`placeholder:${el.id}`}
+                left={camera.x + (r.x - r.w / 2) * camera.zoom}
+                top={camera.y + (r.y - r.h / 2) * camera.zoom}
+                width={r.w * camera.zoom}
+                height={r.h * camera.zoom}
+                radius={(elementRadii[el.id] ?? 0) * camera.zoom}
+                play={elementsIn}
+                appearAt={appearAt}
+                landAt={appearAt + PLACEHOLDER_LEAD_MS + FLIP_DURATION_MS}
+              />
+            )
+          })}
         {canvasElements.map((el) => {
           const isTrip = el.id === TRIP_CARD_ID
           return (

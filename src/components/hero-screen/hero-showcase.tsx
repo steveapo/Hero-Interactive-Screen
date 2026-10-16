@@ -71,7 +71,8 @@ const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_
  *   1. the Canvas window is drawn in: its outline traces once round it, then the window fills in
  *      inside the closed outline (DRAW_IN)
  *   2. the Codebase frame flips down onto the screen from above; once it has landed, the canvas
- *      elements follow, top of the canvas first, slowly
+ *      elements follow, top of the canvas first, slowly: each one's flat dashed placeholder is
+ *      drawn at its place, then the element drops onto it as it lies down
  *   3. as the last elements settle, the bars come in from their own edges (top bar from the top,
  *      the sidebar rail from the left, the zoom readout from the bottom)
  *   4. the two side panels move in (the Components library grows out of the sidebar rail, the trip
@@ -81,9 +82,11 @@ const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_
 const FLIP_INTRO = {
   codebaseAt: 1750,
   elementsAt: 2850,
-  chromeAt: 5300,
-  panelsAt: 6300,
-  githubAt: 7500,
+  // Each element's dashed placeholder draws first and the element falls onto it 750ms later, so
+  // the steps after the elements wait that much longer.
+  chromeAt: 6050,
+  panelsAt: 7050,
+  githubAt: 8250,
 }
 /** The window's draw-in (ms): the outline traces round; once it has closed, the window fills in. */
 const DRAW_IN = {
