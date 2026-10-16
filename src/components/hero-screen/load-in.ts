@@ -20,6 +20,8 @@ const SETTLE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)"
 const FLIP_RISE_PX = 36
 /** Perspective of the flip (px): lower = more dramatic depth. */
 const FLIP_PERSPECTIVE_PX = 1400
+/** How far a frame is tipped up off the screen when it starts (degrees, about its bottom edge). */
+const FLIP_START_ANGLE_DEG = 30
 /**
  * The flip's motion: it tips back slowly, gathers speed like something falling under its own
  * weight, and lands softly (no bounce: it can't pass through the screen).
@@ -27,9 +29,9 @@ const FLIP_PERSPECTIVE_PX = 1400
 const FLIP_EASING = "cubic-bezier(0.5, 0, 0.2, 1)"
 
 /**
- * A canvas frame comes up from below and lands on the screen: it starts standing straight up out of
- * the screen (rotated 90° about its bottom edge, its top edge towards the viewer, so it's edge-on
- * and invisible) and `rise` px lower than its place, then rises and tips back at once until it lies
+ * A canvas frame comes up from below and lands on the screen: it starts tipped up off the screen
+ * (rotated FLIP_START_ANGLE_DEG about its bottom edge, its top edge towards the viewer), `rise` px
+ * lower than its place and transparent, then rises, fades in and tips back at once until it lies
  * flat in place. Uses `transform` only (positioning in these frames uses the `translate` property
  * and left / top), so it composes with them. `backwards` keeps the start frame applied during the
  * delay. `origin`: the hinge (default: the element's own bottom edge).
@@ -49,7 +51,7 @@ export function playFlipIn(
     [
       {
         transformOrigin: origin,
-        transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(${rise}px) rotateX(-90deg)`,
+        transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(${rise}px) rotateX(-${FLIP_START_ANGLE_DEG}deg)`,
       },
       {
         transformOrigin: origin,
@@ -58,7 +60,7 @@ export function playFlipIn(
     ],
     { ...timing, easing: FLIP_EASING },
   )
-  // Edge-on at the start it's invisible anyway; the fade just keeps the first frames from flickering.
+  // It starts tilted but face-on, so it fades in over the first part of the motion.
   const fade = el.animate(
     [
       { opacity: 0, offset: 0 },
