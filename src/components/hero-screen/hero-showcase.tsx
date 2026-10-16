@@ -68,8 +68,7 @@ const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_
  * the start, and the load-in only starts PRELOAD_MS after mount (and once the fonts and wallpaper
  * have loaded), so each step has been loaded for well over a second before it shows. Each step
  * starts as the one before it lands:
- *   1. the Canvas window is drawn in: its outline traces once round it, then the window fills in
- *      inside the closed outline (DRAW_IN)
+ *   1. the Canvas window fades in, in place (WINDOW_FADE_MS)
  *   2. the Codebase frame's flat dashed placeholder is drawn all the way round, then the frame comes
  *      up from below and lands on it; once it has landed, the canvas elements glide in around it
  *      from their side of it, sweeping clockwise (the v1 directional move-in)
@@ -80,21 +79,18 @@ const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_
  * It's interactive throughout: whatever has come in can already be pressed, dragged and panned.
  */
 const FLIP_INTRO = {
-  // Its placeholder draws (0.5s), holds a beat, then the frame comes up and lands (≈2.1s in all).
-  codebaseAt: 1750,
+  // Once the window has faded in. Its placeholder draws (0.5s), holds a beat, then the frame comes
+  // up and lands (≈2.1s in all).
+  codebaseAt: 750,
   // Once the Codebase frame has landed. The elements glide in around it from their side of it,
   // sweeping clockwise (the v1 move-in, at its pace); the last one settles ≈2.3s after this.
-  elementsAt: 3850,
-  chromeAt: 6000,
-  panelsAt: 7000,
-  githubAt: 8200,
+  elementsAt: 2850,
+  chromeAt: 5000,
+  panelsAt: 6000,
+  githubAt: 7200,
 }
-/** The window's draw-in (ms): the outline traces round; once it has closed, the window fills in. */
-const DRAW_IN = {
-  outlineMs: 1000,
-  fillAt: 1000,
-  fillMs: 700,
-}
+/** The window's fade in (ms). */
+const WINDOW_FADE_MS = 700
 /** The "flip" load-in starts at least this long after mount (ms), with everything loaded by then. */
 const PRELOAD_MS = 1000
 /** Don't hold the load-in back more than this for the wallpaper (ms). */
@@ -132,8 +128,8 @@ export function HeroShowcase({
   className?: string
   /**
    * How the showcase loads in. "rise" (default, the stored v1): the Canvas window scales up into
-   * place and the canvas glides in (see INTRO). "flip": the window is drawn in and the canvas
-   * flips in, then its bars and panels (see FLIP_INTRO).
+   * place and the canvas glides in (see INTRO). "flip": the window fades in, the Codebase frame
+   * comes up and lands, the canvas glides in, then its bars and panels (see FLIP_INTRO).
    */
   introStyle?: "rise" | "flip"
   /**
@@ -279,7 +275,7 @@ export function HeroShowcase({
         onFocus={() => focus("main")}
         opening={intro}
         openDelay={introStyle === "flip" ? 0 : INTRO.canvasWindowAt}
-        drawIn={introStyle === "flip"}
+        fadeIn={introStyle === "flip"}
       >
         <div className="flex min-h-0 flex-1 flex-col bg-mi-canvas">
           <DensityScale scale={CANVAS_DENSITY}>
@@ -344,7 +340,7 @@ function DesktopWindow({
   opening,
   openDelay = 0,
   openDuration = WINDOW_OPEN_MS,
-  drawIn = false,
+  fadeIn = false,
   children,
 }: {
   title: string
@@ -360,12 +356,11 @@ function DesktopWindow({
   openDelay?: number
   /** How long the opening takes (ms). */
   openDuration?: number
-  /** The opening draws the window in (see DRAW_IN) instead of scaling it up. */
-  drawIn?: boolean
+  /** The opening only fades the window in, in place (WINDOW_FADE_MS), instead of scaling it up. */
+  fadeIn?: boolean
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const outlineRef = useRef<SVGSVGElement>(null)
   /** How far the window has been dragged from its placement, in layout px. */
   const [offset, setOffset] = useState({ x: 0, y: 0 })
 
@@ -374,54 +369,21 @@ function DesktopWindow({
   // offset (`transform`). Its first frame is hidden, so during the delay it's invisible and can't be
   // pressed. Runs in a layout effect: the frame that drops the "waiting" style never shows it early.
   //
-  // Drawn in instead: a light outline traces once round the window's edge (from its top-left
-  // corner, clockwise). Only once it has closed does the window fill in inside it: it fades up from
-  // nothing, shadow and all, in place, so there's no clip to come off and nothing jumps at the end.
-  // The outline fades into the window's own edge as it fills.
+  // Faded in instead: the window simply fades up from nothing, shadow and all, in place.
   useLayoutEffect(() => {
     const el = ref.current
     if (opening !== "play" || !el) return
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
-    if (drawIn) {
-      const outline = outlineRef.current
-      const rect = outline?.querySelector("rect")
-      const animations: Animation[] = []
-      if (outline && rect) {
-        animations.push(
-          rect.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], {
-            duration: DRAW_IN.outlineMs,
-            delay: openDelay,
-            easing: "cubic-bezier(0.45, 0, 0.25, 1)",
-            fill: "backwards",
-          }),
-          // Base style is hidden: it shows while the outline draws and the window fills in, then
-          // fades out over the second half of the fill.
-          outline.animate(
-            [
-              { opacity: 1, offset: 0 },
-              { opacity: 1, offset: (DRAW_IN.fillAt + DRAW_IN.fillMs * 0.4) / (DRAW_IN.fillAt + DRAW_IN.fillMs) },
-              { opacity: 0, offset: 1 },
-            ],
-            { duration: DRAW_IN.fillAt + DRAW_IN.fillMs, delay: openDelay, fill: "backwards" },
-          ),
-        )
-      }
-      animations.push(
-        el.animate(
-          [
-            { visibility: "hidden", opacity: 0, offset: 0 },
-            { visibility: "visible", opacity: 0, offset: 0.001 },
-            { visibility: "visible", opacity: 1, offset: 1 },
-          ],
-          {
-            duration: DRAW_IN.fillMs,
-            delay: openDelay + DRAW_IN.fillAt,
-            easing: "cubic-bezier(0.4, 0, 0.2, 1)",
-            fill: "backwards",
-          },
-        ),
+    if (fadeIn) {
+      const fade = el.animate(
+        [
+          { visibility: "hidden", opacity: 0, offset: 0 },
+          { visibility: "visible", opacity: 0, offset: 0.001 },
+          { visibility: "visible", opacity: 1, offset: 1 },
+        ],
+        { duration: WINDOW_FADE_MS, delay: openDelay, easing: "cubic-bezier(0.4, 0, 0.2, 1)", fill: "backwards" },
       )
-      return () => animations.forEach((a) => a.cancel())
+      return () => fade.cancel()
     }
     const animation = el.animate(
       [
@@ -461,7 +423,6 @@ function DesktopWindow({
   }
 
   return (
-    <>
     <div
       ref={ref}
       data-desktop-window={title}
@@ -484,29 +445,6 @@ function DesktopWindow({
         {children}
       </SafariChrome>
     </div>
-    {drawIn && (
-      // The draw-in's outline: over the window's edge (same placement and drag offset), hidden
-      // except while the opening plays. pathLength 1 lets the dash run 1 → 0 at any size.
-      <svg
-        ref={outlineRef}
-        aria-hidden="true"
-        className={cn("pointer-events-none absolute overflow-visible", placement)}
-        style={{ zIndex: 100, opacity: 0, transform: `translate(${offset.x}px, ${offset.y}px)` }}
-      >
-        <rect
-          width="100%"
-          height="100%"
-          rx={12}
-          fill="none"
-          stroke="rgba(255,255,255,0.9)"
-          strokeWidth={1.5}
-          pathLength={1}
-          strokeDasharray="1 1"
-          strokeDashoffset={0}
-        />
-      </svg>
-    )}
-    </>
   )
 }
 
