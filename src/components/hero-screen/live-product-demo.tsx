@@ -1,29 +1,23 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { RotateCcw } from "lucide-react"
 import { TRIP } from "@/app/copy-project/airbnb-data"
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
 import { cn } from "@/lib/utils"
-import { OVERVIEW_BUILD_PROMPT, PORTAL_TURNS, PORTAL_UPDATE_CARD_PROMPT } from "./agent-script"
+import { PORTAL_TURNS, PORTAL_UPDATE_CARD_PROMPT } from "./agent-script"
 import { AIRBNB_ELEMENTS } from "./airbnb-elements"
 import { CODEBASE, TRIP_CARD } from "./hero-demo"
+import { clearSpotOf, panToShow, PORTAL_FIELD, scene, textOf } from "./hero-demo-v1"
 import {
-  agentDone,
-  clearSpotOf,
-  COMPOSER,
-  ensureSent,
-  moveOverCanvas,
-  openChat,
-  panToShow,
-  PORTAL_FIELD,
-  PROMPT_FIELD,
-  scene,
-  textOf,
-  typePrompt,
-} from "./hero-demo-v1"
-import { HeroScreen, TRIP_CARD_ID, WHEEL_ZOOM_SPEED, type HeroSeed, type HeroStart } from "./hero-screen"
+  HeroScreen,
+  TRIP_CARD_ID,
+  WHEEL_ZOOM_SPEED,
+  type HeroSeed,
+  type HeroStart,
+  type LoadIntro,
+} from "./hero-screen"
 import { MARGIN_SCRUB_PX } from "./layer-settings-panel"
 import {
   CQW,
@@ -40,7 +34,8 @@ import {
  * stays there as a still (the screen is then the visitor's to play with; see ScriptedStage's
  * `holdLastFrame`).
  *
- * "overview" stands on its own. The others tell one story, in page order, about the trip card:
+ * "overview" stands on its own, and plays without a cursor (see OVERVIEW_INTRO). The others tell one
+ * story, in page order, about the trip card:
  * each clip opens on the result of the one before (see STORY and HeroSeed), so they read as steps.
  *  1. "capture"       Live product on canvas: in Build Mode, straight to Capture, then the trip card
  *                     → back on a calm canvas (just the Codebase frame), the captured card glides
@@ -69,21 +64,14 @@ const SHARE_COPY = '[data-cursor-id="share-copy"]'
 const COPIED_TOAST = '[data-cursor-id="copied-toast"]'
 
 /* Build Mode and its agent (the Portal). */
-const OPEN_BUILD_MODE = '[data-cursor-id="open-build-mode"]'
 const PORTAL_SCREEN = "[data-portal-screen]"
 const PORTAL_MESSAGES = '[data-cursor-id="portal-chat-messages"]'
-/** The settings panel's editable Fill hex (a selected app frame). */
-const FILL_HEX = 'input[aria-label="Fill hex"]'
-/** The trip card's new fill in the overview: a soft tint of the brand plum. */
-const OVERVIEW_FILL = "#f6e9f3"
 /** The selected frame's settings panel button that sends it to the Build Mode agent. */
 const ADD_TO_BUILD_CHAT = '[data-cursor-id="add-to-build-chat"]'
 /** A frame attached to the Build Mode agent's composer. */
 const ATTACHED_FRAME = '[data-cursor-id="portal-attached-frame"]'
 /** The built Reserve button on the trip card in the live app. */
 const BUILT_RESERVE = '[data-cursor-id="built-reserve"]'
-/** The trip card's built background in the live app (its flash, over the card). */
-const BUILT_FILL = '[data-cursor-id="built-fill"]'
 /** "Worked for …" of the update turn: shows once its reply is done. */
 const UPDATE_DONE = PORTAL_TURNS.find((t) => t.prompt === PORTAL_UPDATE_CARD_PROMPT)?.workedFor ?? "Worked for"
 
@@ -91,83 +79,21 @@ const UPDATE_DONE = PORTAL_TURNS.find((t) => t.prompt === PORTAL_UPDATE_CARD_PRO
 const portalSend = (api: ScriptApi) => () =>
   api.stage.querySelector(PORTAL_FIELD)?.closest("form")?.querySelector('button[type="submit"]')
 
-/** Select the Codebase frame and open it in Build Mode. */
-async function openBuildMode(api: ScriptApi) {
-  await api.click(CODEBASE, { fx: 0.5, fy: 0.35 })
-  await api.wait(350)
-  await api.click(OPEN_BUILD_MODE)
-  await api.find(PORTAL_SCREEN)
-}
-
 /**
- * Open the trip card frame's Build Agent chat: straight from its Build Agent button while it's
- * selected (its right side is the card itself, so nothing needs re-selecting), else by selecting it.
+ * 0. Everything in one place: no cursor, no clicks; the canvas populates itself (HeroScreen's
+ * "emerge" load-in). On an empty canvas the Codebase frame fades in and its live app boots; the
+ * app's frames then grow out of it and spread across the canvas; finally a Build Agent picks up the
+ * trip card. Key moment: codebase, canvas and agent, all in one place. Times in ms after the clip
+ * starts.
  */
-async function openTripCardAgent(api: ScriptApi) {
-  if (api.exists(PROMPT_FIELD)) return
-  const button = `${TRIP_CARD} button[aria-label="Build Agent"]`
-  if (!api.exists(button)) await api.click(TRIP_CARD, { fx: 0.85, fy: 0.5 })
-  const found = await api.find(button, 1500).then(
-    () => true,
-    (error) => {
-      if (api.aborted()) throw error
-      return false
-    },
-  )
-  if (found) {
-    await api.click(button)
-    await api.find(PROMPT_FIELD)
-    return
-  }
-  await openChat(api, TRIP_CARD)
-}
-
-/**
- * 0. Everything in one place; key moment: in Build Mode, the live app running from the code with
- * the trip card's new background. It gets there from the canvas, what a new user already knows: a
- * frame selected and given a new fill in the settings panel; then the canvas's Build Agent is
- * asked to update the app with it, and the Codebase frame is opened in Build Mode to show it.
- */
-const overviewScript: DemoScript = async (api) => {
-  await scene(api, "the canvas", async () => {
-    await api.wait(400)
-  })
-  await scene(api, "a visual edit", async () => {
-    await zoomToFill(api, TRIP_CARD)
-    // Its right side is the card itself (its text hugs the left), so this selects it.
-    await api.click(TRIP_CARD, { fx: 0.85, fy: 0.5 })
-    await api.find(FILL_HEX)
-    await api.wait(450)
-    await api.click(FILL_HEX)
-    await api.type(OVERVIEW_FILL, { into: FILL_HEX, replace: true })
-    await api.press("Enter", { on: FILL_HEX })
-    await api.wait(900)
-  })
-  await scene(api, "ask the build agent", async () => {
-    // The card is still selected: open its Build Agent, ask it to update the app, wait for the build.
-    await openTripCardAgent(api)
-    await typePrompt(api, TRIP_CARD, OVERVIEW_BUILD_PROMPT)
-    await api.wait(250)
-    await api.click(`${COMPOSER} button[type="submit"]`)
-    await ensureSent(api, TRIP_CARD, OVERVIEW_BUILD_PROMPT)
-    // The chat closes while it builds (the frame's badge spins); reopen it to read the summary.
-    await agentDone(api, 20000)
-    await api.wait(300)
-    await openTripCardAgent(api)
-    await api.wait(2000)
-    if (api.exists(PROMPT_FIELD)) await api.press("Escape", { on: PROMPT_FIELD })
-    await api.wait(300)
-  })
-  await scene(api, "into the codebase", async () => {
-    await zoomOutTo(api, CODEBASE, CODEBASE_SHARE)
-    await api.wait(300)
-    await openBuildMode(api)
-    // The trip card repaints with the built background, with a blue flash.
-    await api.find(BUILT_FILL, 6000)
-    await api.wait(400)
-    // Rest beside the updated card.
-    await api.moveTo(BUILT_FILL, { fx: 0.5, fy: 1, dy: 40, duration: 800 })
-  })
+const OVERVIEW_INTRO: Omit<LoadIntro, "phase"> = {
+  style: "emerge",
+  chromeAt: 0,
+  githubAt: 0,
+  codebaseAt: 200,
+  elementsAt: 2200,
+  agentAt: 4900,
+  agentOn: TRIP_CARD_ID,
 }
 
 /** Share of the canvas (its larger dimension) the captured card fills once zoomed in. */
@@ -200,27 +126,6 @@ async function zoomToFill(api: ScriptApi, target: string) {
     await api.wait(200)
   }
   await panToShow(api, [target], { fx: FOCUS_FX, fy: 0.5 })
-}
-
-/** Share of the canvas's width the Codebase frame takes once zoomed back out to it. */
-const CODEBASE_SHARE = 0.55
-
-/**
- * Zoom back out (⌘-scroll over the canvas) until `target` takes `share` of the canvas's width, by
- * exactly that amount (zoom × exp(−deltaY × WHEEL_ZOOM_SPEED)), then centre it.
- */
-async function zoomOutTo(api: ScriptApi, target: string, share: number) {
-  await moveOverCanvas(api)
-  const frame = api.boxOf(target)
-  const canvas = api.boxOf(CANVAS)
-  if (frame && canvas && canvas.width) {
-    const current = frame.width / canvas.width
-    if (current > share) {
-      await api.wheel(0, Math.log(current / share) / WHEEL_ZOOM_SPEED, { mods: { ctrl: true }, duration: 900 })
-      await api.wait(200)
-    }
-  }
-  await panToShow(api, [target], { fx: 0.45, fy: 0.5 })
 }
 
 /* ------------------------------- The story -------------------------------- */
@@ -568,7 +473,10 @@ async function switchViewport(api: ScriptApi, viewport: string) {
 export type FeatureClipId = "overview" | "capture" | "visual-edits" | "components" | "test" | "build" | "share"
 
 type ClipConfig = {
-  script: DemoScript
+  /** The cursor's script. Omitted: no cursor; the screen plays its `loadIntro` on its own. */
+  script?: DemoScript
+  /** The screen's load-in, played once the clip starts (see HeroScreen's `loadIntro`). */
+  loadIntro?: Omit<LoadIntro, "phase">
   start: HeroStart
   /** Only these app frames are on the canvas (see HeroScreen's `elementIds`). Omitted: all. */
   elementIds?: string[]
@@ -590,8 +498,8 @@ type ClipConfig = {
 const TRIP_ONLY = [TRIP_CARD_ID]
 
 const CLIPS: Record<FeatureClipId, ClipConfig> = {
-  // Opens on the canvas, around the Codebase frame.
-  overview: { script: overviewScript, start: "canvas" },
+  // An empty canvas that populates itself: the Codebase frame, the app's frames out of it, an agent.
+  overview: { loadIntro: OVERVIEW_INTRO, start: "canvas" },
   // A calm canvas: just the Codebase frame, then the captured trip card gliding in beside it.
   capture: {
     script: captureScript,
@@ -677,6 +585,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
   const [ready, setReady] = useState(false)
   const {
     script,
+    loadIntro,
     start,
     elementIds,
     canvasEntrance = false,
@@ -728,33 +637,51 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
     return () => observer.disconnect()
   }, [])
 
+  /** The screen's load-in, held until the clip starts. */
+  const intro = useMemo<LoadIntro | undefined>(
+    () => (loadIntro ? { ...loadIntro, phase: ready ? "play" : "waiting" } : undefined),
+    [loadIntro, ready],
+  )
+
+  const screen = (
+    <HeroScreen
+      // A replay remounts the screen, so its load-in plays again from an empty canvas.
+      key={script ? undefined : runId}
+      className="h-auto min-h-0 flex-1"
+      start={start}
+      portalLoadMs={PORTAL_LOAD_MS}
+      portalShowUrl={portalShowUrl}
+      maxZoom={MAX_ZOOM}
+      canvasEntrance={canvasEntrance}
+      quickEntrance={quickEntrance}
+      elementIds={elementIds}
+      componentLibrary={componentLibrary}
+      showCodebase={showCodebase}
+      seed={seed}
+      loadIntro={intro}
+    />
+  )
+
   return (
     <div ref={ref} className={cn("group/clip relative overflow-hidden rounded-lg bg-mi-canvas", className)}>
       <ScaledScreen>
-        <ScriptedStage
-          key={runId}
-          script={script}
-          pace={PACE}
-          ready={ready}
-          paused={outOfView}
-          loop={false}
-          holdLastFrame
-          className="min-h-0"
-        >
-          <HeroScreen
-            className="h-auto min-h-0 flex-1"
-            start={start}
-            portalLoadMs={PORTAL_LOAD_MS}
-            portalShowUrl={portalShowUrl}
-            maxZoom={MAX_ZOOM}
-            canvasEntrance={canvasEntrance}
-            quickEntrance={quickEntrance}
-            elementIds={elementIds}
-            componentLibrary={componentLibrary}
-            showCodebase={showCodebase}
-            seed={seed}
-          />
-        </ScriptedStage>
+        {script ? (
+          <ScriptedStage
+            key={runId}
+            script={script}
+            pace={PACE}
+            ready={ready}
+            paused={outOfView}
+            loop={false}
+            holdLastFrame
+            className="min-h-0"
+          >
+            {screen}
+          </ScriptedStage>
+        ) : (
+          // No script: no cursor; the screen plays its load-in by itself.
+          <div className="relative flex min-h-0 w-full flex-1 flex-col overflow-hidden">{screen}</div>
+        )}
       </ScaledScreen>
 
       {/* Reset: shown while the screen is hovered (or the button has keyboard focus). */}

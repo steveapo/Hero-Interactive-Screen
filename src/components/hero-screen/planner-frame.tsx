@@ -39,6 +39,8 @@ export type CanvasEntrance =
        * instead of on mount.
        */
       onReveal?: boolean
+      /** The glide's start scale (it grows to 1 as it arrives). Default ENTRANCE_START_SCALE. */
+      scale?: number
     }
 
 export const ENTRANCE_DURATION_MS = 1280
@@ -103,12 +105,12 @@ export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntranc
  * Two animations, the glide (transform) and the fade (opacity), each on its own curve.
  * `backwards` keeps the start frame (hidden, offset) applied during the delay.
  */
-function playGlideIn(el: HTMLElement, e: { x: number; y: number; delay: number; duration?: number }) {
+function playGlideIn(el: HTMLElement, e: { x: number; y: number; delay: number; duration?: number; scale?: number }) {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return []
   const timing = { duration: e.duration ?? ENTRANCE_DURATION_MS, delay: e.delay, fill: "backwards" } as const
   const glide = el.animate(
     [
-      { transform: `translate(${e.x}px, ${e.y}px) scale(${ENTRANCE_START_SCALE})` },
+      { transform: `translate(${e.x}px, ${e.y}px) scale(${e.scale ?? ENTRANCE_START_SCALE})` },
       { transform: "translate(0px, 0px) scale(1)" },
     ],
     { ...timing, easing: ENTRANCE_EASING },

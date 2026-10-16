@@ -109,6 +109,14 @@ const QUICK_ENTER_DELAY = 60
 const QUICK_ENTER_DURATION_MS = 520
 /** Where the sweep starts, in turns clockwise from straight up (−⅛ = the top-left diagonal). */
 const ENTER_SWEEP_START = -1 / 8
+/**
+ * "emerge" load-in: the elements start at this scale on the Codebase frame's centre, the nearest
+ * one setting off first and the farthest EMERGE_SPREAD_MS later, each spreading out over
+ * EMERGE_DURATION_MS (ms).
+ */
+const EMERGE_START_SCALE = 0.2
+const EMERGE_SPREAD_MS = 900
+const EMERGE_DURATION_MS = 1500
 
 /**
  * Build Agent variants: each source's variants form a row below everything on the canvas, starting
@@ -229,8 +237,12 @@ export type LoadIntro = {
    * own edges (`chromeAt` after `elementsAt`); then at `panelsAt` the side panels move in (the
    * sidebar's `sidebarPanel` grows out of its rail, the selected frame's settings slide in from the
    * right), their contents appearing one by one.
+   * "emerge" (the "Everything in one place" feature clip): the bars and tools are simply there on an
+   * empty canvas; at `codebaseAt` the Codebase frame fades in and its live app boots; at `elementsAt`
+   * the app's frames grow out of the Codebase frame's centre and spread to their places, nearest
+   * first; at `agentAt` a Build Agent picks up the `agentOn` frame (its cursor and working outline).
    */
-  style?: "glide" | "flip"
+  style?: "glide" | "flip" | "emerge"
   chromeAt: number
   codebaseAt: number
   githubAt: number
@@ -241,9 +253,13 @@ export type LoadIntro = {
   panelsAt?: number
   /** "flip": the left sidebar panel that opens at `panelsAt`. */
   sidebarPanel?: RailPanel
+  /** "emerge": when a Build Agent picks up the `agentOn` frame. */
+  agentAt?: number
+  /** "emerge": the app frame (by id) the Build Agent works on. */
+  agentOn?: string
 }
 
-type IntroStep = "chrome" | "codebase" | "github" | "elements" | "panels" | "settled"
+type IntroStep = "chrome" | "codebase" | "github" | "elements" | "panels" | "settled" | "agent"
 
 /** Bars and tools come in one after another, this far apart (ms). */
 const CHROME_STAGGER_MS = 90
@@ -552,6 +568,7 @@ export function HeroScreen({
             ["settled", intro.panelsAt + PANELS_SETTLE_MS],
           ] as [IntroStep, number][])
         : []),
+      ...(intro.style === "emerge" && intro.agentAt !== undefined ? ([["agent", intro.agentAt]] as [IntroStep, number][]) : []),
     ]
     const timers = steps.map(([step, at]) =>
       setTimeout(() => setIntroSteps((reached) => (reached.includes(step) ? reached : [...reached, step])), at),
@@ -563,6 +580,10 @@ export function HeroScreen({
   const githubIn = introSteps.includes("github")
   /** "flip" load-in (see LoadIntro). */
   const flipIntro = loadIntro?.style === "flip"
+  /** "emerge" load-in (see LoadIntro). */
+  const emergeIntro = loadIntro?.style === "emerge"
+  /** "emerge": the frame a Build Agent has picked up, once it has. */
+  const introAgentOn = emergeIntro && introSteps.includes("agent") ? loadIntro?.agentOn : undefined
   const panelsIn = introSteps.includes("panels")
   /** The panel step's entrance is playing: side panels mounting now move in (PanelLoadInContext). */
   const panelsEntering = panelsIn && !introSteps.includes("settled")
@@ -582,16 +603,18 @@ export function HeroScreen({
     if (selectIn && id) setSelectedIds([id])
   }, [selectIn])
   const hasIntro = loadIntro !== undefined
+  /** The bars and tools play a load-in (not in "emerge", where they're simply there). */
+  const chromeHasIntro = hasIntro && !emergeIntro
   // Bars and tools, in the order they come in: the canvas title, the tool bar and the sidebar, the
   // actions (with the avatar), then the zoom readout.
-  const titleIntro = chromeIntro(hasIntro, chromeIn, 0, "top", flipIntro)
-  const toolbarIntro = chromeIntro(hasIntro, chromeIn, 1, "top", flipIntro)
-  const actionsIntro = chromeIntro(hasIntro, chromeIn, 2, "top", flipIntro)
-  const zoomIntro = chromeIntro(hasIntro, chromeIn, 3, "bottom", flipIntro)
+  const titleIntro = chromeIntro(chromeHasIntro, chromeIn, 0, "top", flipIntro)
+  const toolbarIntro = chromeIntro(chromeHasIntro, chromeIn, 1, "top", flipIntro)
+  const actionsIntro = chromeIntro(chromeHasIntro, chromeIn, 2, "top", flipIntro)
+  const zoomIntro = chromeIntro(chromeHasIntro, chromeIn, 3, "bottom", flipIntro)
   /** The sidebar's intro props, memoized: it's a memo component and the canvas re-renders every camera frame. */
   const sidebarIntro = useMemo(
-    () => chromeIntro(hasIntro, chromeIn, 1, "left", flipIntro),
-    [hasIntro, chromeIn, flipIntro],
+    () => chromeIntro(chromeHasIntro, chromeIn, 1, "left", flipIntro),
+    [chromeHasIntro, chromeIn, flipIntro],
   )
   /** "flip": the sidebar panel opened at the panel step. */
   const sidebarCue = flipIntro && panelsIn ? (loadIntro?.sidebarPanel ?? null) : null
@@ -1301,6 +1324,24 @@ export function HeroScreen({
     // The load-in may play the entrance faster (its delays and glides alike); leaving the Portal
     // always plays it at its own pace.
     const pace = loadIntro?.elementsTimeScale ?? 1
+    // "emerge" load-in: every element starts small at the Codebase frame's centre (it grows out of
+    // the app) and spreads to its place, the nearest ones first. Mounted (hidden) from the start, so
+    // the glide plays as it's revealed.
+    if (emergeIntro) {
+      const farthest = Math.max(
+        1,
+        ...canvasElements.map((el) => Math.hypot(el.rect.x - codebaseRect.x, el.rect.y - codebaseRect.y)),
+      )
+      const reach = Math.min(1, Math.hypot(rect.x - codebaseRect.x, rect.y - codebaseRect.y) / farthest)
+      return {
+        x: -dx,
+        y: -dy,
+        scale: EMERGE_START_SCALE,
+        delay: Math.round((ENTER_BASE_DELAY + reach * EMERGE_SPREAD_MS) * pace),
+        duration: Math.round(EMERGE_DURATION_MS * pace),
+        onReveal: true,
+      }
+    }
     // "flip" load-in: once the Codebase frame has landed, the elements glide in around it from their
     // side of it, sweeping clockwise (the v1 directional move-in). They stay mounted (hidden) from
     // the start, so the glide plays as they're revealed (`onReveal`) rather than on a remount.
@@ -1501,9 +1542,10 @@ export function HeroScreen({
           const isTrip = el.id === TRIP_CARD_ID
           return (
           <DesignFrame
-            // Remount on each reveal so the entrance animation replays. "flip": never remounted (the
-            // flip plays as the frame goes from hidden to in), so it's loaded long before it shows.
-            key={flipIntro ? el.id : `${el.id}-${revealId}`}
+            // Remount on each reveal so the entrance animation replays. "flip" / "emerge": never
+            // remounted (the entrance plays as the frame goes from hidden to in), so it's loaded long
+            // before it shows.
+            key={flipIntro || emergeIntro ? el.id : `${el.id}-${revealId}`}
             id={el.id}
             label={elementNames[el.id]}
             onRename={(name) => setElementNames((current) => ({ ...current, [el.id]: name }))}
@@ -1532,7 +1574,7 @@ export function HeroScreen({
             }}
             showAgentButton={activeElement?.id === el.id && !agentOpen}
             onOpenAgent={() => setAgentOpen(true)}
-            working={workingIds.has(el.id)}
+            working={workingIds.has(el.id) || introAgentOn === el.id}
             agentBusy={busyIds.has(el.id)}
             zoom={camera.zoom}
             offsetX={camera.x}
@@ -1566,7 +1608,7 @@ export function HeroScreen({
           selectedId={selectedComponentId}
           onPress={pressComponent}
           entranceFor={entranceFor}
-          revealKey={flipIntro ? 0 : revealId}
+          revealKey={flipIntro || emergeIntro ? 0 : revealId}
         />
         {/* Variants generated by the Build Agent, then the agents' cursors over them */}
         {agents.variants.map((variant) => (
@@ -1590,6 +1632,16 @@ export function HeroScreen({
         {Object.entries(cursorAt).map(([id, at]) => (
           <AgentCursor key={id} x={at.x} y={at.y} zoom={camera.zoom} offsetX={camera.x} offsetY={camera.y} />
         ))}
+        {/* "emerge" load-in: the Build Agent's cursor on the top-left of the frame it picked up */}
+        {introAgentOn && elementRects[introAgentOn] && (
+          <AgentCursor
+            x={elementRects[introAgentOn].x - elementRects[introAgentOn].w / 2 - AGENT_CURSOR_INSET / camera.zoom}
+            y={elementRects[introAgentOn].y - elementRects[introAgentOn].h / 2 - AGENT_CURSOR_INSET / camera.zoom}
+            zoom={camera.zoom}
+            offsetX={camera.x}
+            offsetY={camera.y}
+          />
+        )}
         {/* Several frames selected: their bounding box, with the Build Agent button off its corner */}
         {agentRect && agentIds.length > 1 && (
           <div
