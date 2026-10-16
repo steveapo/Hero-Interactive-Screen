@@ -1334,6 +1334,7 @@ export function HeroScreen({
         x: (codebaseRect.x + from.x - rect.x) * z,
         y: (codebaseRect.y + from.y - rect.y) * z,
         scale: from.w / rect.w,
+        quickFade: true,
         delay: Math.round((ENTER_BASE_DELAY + Math.max(index, 0) * EMERGE_STAGGER_MS) * pace),
         duration: Math.round(EMERGE_DURATION_MS * pace),
         onReveal: true,

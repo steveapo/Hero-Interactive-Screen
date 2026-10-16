@@ -499,7 +499,7 @@ const TRIP_ONLY = [TRIP_CARD_ID]
 
 const CLIPS: Record<FeatureClipId, ClipConfig> = {
   // An empty canvas that populates itself: the Codebase frame, then the app's pieces lifted off it.
-  overview: { loadIntro: OVERVIEW_INTRO, start: "canvas" },
+  overview: { loadIntro: OVERVIEW_INTRO, start: "canvas", canvasEntrance: true },
   // A calm canvas: just the Codebase frame, then the captured trip card gliding in beside it.
   capture: {
     script: captureScript,

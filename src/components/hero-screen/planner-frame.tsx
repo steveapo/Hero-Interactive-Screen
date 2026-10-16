@@ -41,6 +41,11 @@ export type CanvasEntrance =
       onReveal?: boolean
       /** The glide's start scale (it grows to 1 as it arrives). Default ENTRANCE_START_SCALE. */
       scale?: number
+      /**
+       * Fully shown almost as soon as the glide starts (instead of halfway), e.g. a piece lifting
+       * off the live app, which must read as that piece from its first move.
+       */
+      quickFade?: boolean
     }
 
 export const ENTRANCE_DURATION_MS = 1280
@@ -52,6 +57,8 @@ const ENTRANCE_EASING = "cubic-bezier(0.16, 1, 0.3, 1)"
 const ENTRANCE_FADE_EASING = "cubic-bezier(0.4, 0, 0.2, 1)"
 /** Elements start slightly smaller and grow as they arrive. */
 const ENTRANCE_START_SCALE = 0.96
+/** A `quickFade` entrance is fully shown this far into its glide. */
+const QUICK_FADE_SHARE = 0.1
 
 /**
  * Hides an element or plays its entrance. Both are done inline (style + Web Animations API) so
@@ -105,7 +112,10 @@ export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntranc
  * Two animations, the glide (transform) and the fade (opacity), each on its own curve.
  * `backwards` keeps the start frame (hidden, offset) applied during the delay.
  */
-function playGlideIn(el: HTMLElement, e: { x: number; y: number; delay: number; duration?: number; scale?: number }) {
+function playGlideIn(
+  el: HTMLElement,
+  e: { x: number; y: number; delay: number; duration?: number; scale?: number; quickFade?: boolean },
+) {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return []
   const timing = { duration: e.duration ?? ENTRANCE_DURATION_MS, delay: e.delay, fill: "backwards" } as const
   const glide = el.animate(
@@ -118,7 +128,7 @@ function playGlideIn(el: HTMLElement, e: { x: number; y: number; delay: number; 
   const fade = el.animate(
     [
       { opacity: 0, offset: 0 },
-      { opacity: 1, offset: 0.5 },
+      { opacity: 1, offset: e.quickFade ? QUICK_FADE_SHARE : 0.5 },
       { opacity: 1, offset: 1 },
     ],
     { ...timing, easing: ENTRANCE_FADE_EASING },
