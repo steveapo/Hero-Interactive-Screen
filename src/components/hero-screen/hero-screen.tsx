@@ -22,7 +22,8 @@ import { FrameSettingsPanel } from "./frame-settings-panel"
 import { GithubButton } from "./github-popover"
 import { LayerSelectionOverlay } from "./layer-selection-overlay"
 import { LayerSettingsPanel } from "./layer-settings-panel"
-import { LeftSidebar } from "./left-sidebar"
+import { LeftSidebar, type RailPanel } from "./left-sidebar"
+import { PanelLoadInContext } from "./load-in"
 import {
   builtComponentsChange,
   ComponentDragGhost,
@@ -219,31 +220,65 @@ export type HeroSeed = {
  */
 export type LoadIntro = {
   phase: "waiting" | "play"
+  /**
+   * "glide" (default, the stored v1 load-in): the bars come in first, the Codebase frame fades in,
+   * the elements glide in around it in a clockwise sweep. "flip": the Codebase frame and then the
+   * elements (top first) flip down onto the screen from above; then the bars slide in from their
+   * own edges (`chromeAt` after `elementsAt`); then at `panelsAt` the side panels move in (the
+   * sidebar's `sidebarPanel` grows out of its rail, the selected frame's settings slide in from the
+   * right), their contents appearing one by one.
+   */
+  style?: "glide" | "flip"
   chromeAt: number
   codebaseAt: number
   githubAt: number
   elementsAt: number
   /** Time scale of the canvas elements' entrance (its delays and glides): 0.8 = 20% faster. Default 1. */
   elementsTimeScale?: number
+  /** "flip": when the side panels move in. */
+  panelsAt?: number
+  /** "flip": the left sidebar panel that opens at `panelsAt`. */
+  sidebarPanel?: RailPanel
 }
 
-type IntroStep = "chrome" | "codebase" | "github" | "elements"
+type IntroStep = "chrome" | "codebase" | "github" | "elements" | "panels" | "settled"
 
 /** Bars and tools come in one after another, this far apart (ms). */
 const CHROME_STAGGER_MS = 90
 
+/** "flip": the elements' flips start over this long, top of the canvas first (ms)… */
+const FLIP_SWEEP_MS = 650
+/** …each flip taking this long (ms). */
+const FLIP_DURATION_MS = 950
+/** "flip": the panel step's entrance is over this long after it starts (ms); later panels open normally. */
+const PANELS_SETTLE_MS = 1600
+
 /**
  * A bar / tool's load-in: hidden until the chrome step, then it fades and slides in from `from`,
- * `order` places into the stagger. Without an intro it's left alone.
+ * `order` places into the stagger. "flip" slides it all the way in from beyond its edge, slower.
+ * Without an intro it's left alone.
  */
 function chromeIntro(
   hasIntro: boolean,
   chromeIn: boolean,
   order: number,
   from: "top" | "left" | "bottom",
+  flip = false,
 ): { className?: string; style?: React.CSSProperties } {
   if (!hasIntro) return {}
   if (!chromeIn) return { style: { visibility: "hidden" } }
+  if (flip) {
+    const slide =
+      from === "top"
+        ? "slide-in-from-top-[56px]"
+        : from === "left"
+          ? "slide-in-from-left-[120%]"
+          : "slide-in-from-bottom-[40px]"
+    return {
+      className: `animate-in fade-in ${slide} duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none`,
+      style: { animationDelay: `${order * CHROME_STAGGER_MS}ms`, animationFillMode: "both" },
+    }
+  }
   const slide = from === "top" ? "slide-in-from-top-2" : from === "left" ? "slide-in-from-left-2" : "slide-in-from-bottom-2"
   return {
     className: `animate-in fade-in ${slide} duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none`,
@@ -507,6 +542,12 @@ export function HeroScreen({
       ["codebase", intro.codebaseAt],
       ["github", intro.githubAt],
       ["elements", intro.elementsAt],
+      ...(intro.style === "flip" && intro.panelsAt !== undefined
+        ? ([
+            ["panels", intro.panelsAt],
+            ["settled", intro.panelsAt + PANELS_SETTLE_MS],
+          ] as [IntroStep, number][])
+        : []),
     ]
     const timers = steps.map(([step, at]) =>
       setTimeout(() => setIntroSteps((reached) => (reached.includes(step) ? reached : [...reached, step])), at),
@@ -516,6 +557,11 @@ export function HeroScreen({
   const chromeIn = introSteps.includes("chrome")
   const codebaseIn = introSteps.includes("codebase")
   const githubIn = introSteps.includes("github")
+  /** "flip" load-in (see LoadIntro). */
+  const flipIntro = loadIntro?.style === "flip"
+  const panelsIn = introSteps.includes("panels")
+  /** The panel step's entrance is playing: side panels mounting now move in (PanelLoadInContext). */
+  const panelsEntering = panelsIn && !introSteps.includes("settled")
   // The canvas elements' step reveals the canvas (the first reveal plays the entrance). Layout
   // effect, so the frame that reaches it never paints the elements in place first.
   const elementsIn = introSteps.includes("elements")
@@ -523,21 +569,28 @@ export function HeroScreen({
     if (elementsIn) setRevealId((id) => (id === 0 ? 1 : id))
   }, [elementsIn])
   // With an intro, the initially selected frame gets selected as the elements come in (not before,
-  // so its settings panel doesn't show over an empty canvas).
+  // so its settings panel doesn't show over an empty canvas). "flip": at the panel step, so its
+  // settings panel moves in with the sidebar's.
   const initialSelectedIdRef = useRef(initialSelectedId)
+  const selectIn = flipIntro ? panelsIn : elementsIn
   useLayoutEffect(() => {
     const id = initialSelectedIdRef.current
-    if (elementsIn && id) setSelectedIds([id])
-  }, [elementsIn])
+    if (selectIn && id) setSelectedIds([id])
+  }, [selectIn])
   const hasIntro = loadIntro !== undefined
   // Bars and tools, in the order they come in: the canvas title, the tool bar and the sidebar, the
   // actions (with the avatar), then the zoom readout.
-  const titleIntro = chromeIntro(hasIntro, chromeIn, 0, "top")
-  const toolbarIntro = chromeIntro(hasIntro, chromeIn, 1, "top")
-  const actionsIntro = chromeIntro(hasIntro, chromeIn, 2, "top")
-  const zoomIntro = chromeIntro(hasIntro, chromeIn, 3, "bottom")
+  const titleIntro = chromeIntro(hasIntro, chromeIn, 0, "top", flipIntro)
+  const toolbarIntro = chromeIntro(hasIntro, chromeIn, 1, "top", flipIntro)
+  const actionsIntro = chromeIntro(hasIntro, chromeIn, 2, "top", flipIntro)
+  const zoomIntro = chromeIntro(hasIntro, chromeIn, 3, "bottom", flipIntro)
   /** The sidebar's intro props, memoized: it's a memo component and the canvas re-renders every camera frame. */
-  const sidebarIntro = useMemo(() => chromeIntro(hasIntro, chromeIn, 1, "left"), [hasIntro, chromeIn])
+  const sidebarIntro = useMemo(
+    () => chromeIntro(hasIntro, chromeIn, 1, "left", flipIntro),
+    [hasIntro, chromeIn, flipIntro],
+  )
+  /** "flip": the sidebar panel opened at the panel step. */
+  const sidebarCue = flipIntro && panelsIn ? (loadIntro?.sidebarPanel ?? null) : null
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   // Sequence: fade the Portal out first, then unmount it and start the canvas entrance. Only the
   // first close plays the entrance; after that the elements are simply there when the Portal goes.
@@ -1233,6 +1286,26 @@ export function HeroScreen({
     // The load-in may play the entrance faster (its delays and glides alike); leaving the Portal
     // always plays it at its own pace.
     const pace = loadIntro?.elementsTimeScale ?? 1
+    // "flip" load-in: each element flips down onto the screen from above; the flips start from the
+    // top of the canvas downward (with a slight lean from left to right), so the canvas fills in
+    // like cards being laid down one after another.
+    if (flipIntro) {
+      const tops = canvasElements.map((el) => elementRects[el.id].y - elementRects[el.id].h / 2)
+      const lefts = canvasElements.map((el) => elementRects[el.id].x - elementRects[el.id].w / 2)
+      const minTop = Math.min(...tops)
+      const minLeft = Math.min(...lefts)
+      const spanY = Math.max(1, Math.max(...tops) - minTop)
+      const spanX = Math.max(1, Math.max(...lefts) - minLeft)
+      const fromTop = Math.min(1, Math.max(0, (rect.y - rect.h / 2 - minTop) / spanY))
+      const fromLeft = Math.min(1, Math.max(0, (rect.x - rect.w / 2 - minLeft) / spanX))
+      return {
+        x: 0,
+        y: 0,
+        flip: true,
+        delay: Math.round((0.8 * fromTop + 0.2 * fromLeft) * FLIP_SWEEP_MS),
+        duration: FLIP_DURATION_MS,
+      }
+    }
     // A calm canvas with just a frame or two: it simply glides in, right away and briefly.
     if (quickEntrance) {
       return {
@@ -1323,6 +1396,7 @@ export function HeroScreen({
   }, [toolsEnabled])
 
   return (
+    <PanelLoadInContext.Provider value={panelsEntering}>
     <div
       ref={rootRef}
       data-hero-root
@@ -1393,6 +1467,7 @@ export function HeroScreen({
             offsetX={camera.x + codebaseRect.x * camera.zoom}
             offsetY={camera.y + codebaseRect.y * camera.zoom}
             appear={hasIntro ? (codebaseIn ? "in" : "hidden") : undefined}
+            appearStyle={flipIntro ? "flip" : "fade"}
             built={codebaseBuilt}
           />
         )}
@@ -1760,6 +1835,7 @@ export function HeroScreen({
         names={elementNames}
         library={componentLibrary}
         initialPanel={layersOpen ? "layers" : null}
+        cuePanel={sidebarCue}
         className={sidebarIntro.className}
         style={sidebarIntro.style}
       />
@@ -1884,6 +1960,7 @@ export function HeroScreen({
 
       {reopened && <CanvasReopen />}
     </div>
+    </PanelLoadInContext.Provider>
   )
 }
 

@@ -3,6 +3,7 @@
 import { memo, useState } from "react"
 import { ChevronDown, ChevronRight, Ellipsis, FlipHorizontal2, FlipVertical2, ImagePlus, Minus, Plus, RotateCwSquare, Scan } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { LOAD_ITEM, usePanelLoadIn } from "./load-in"
 import { FrameGlyph } from "./planner-frame"
 
 /* --------------------------------- Types ---------------------------------- */
@@ -112,13 +113,24 @@ export function SettingsPanelShell({
   onAddToChat?: () => void
   children: React.ReactNode
 }) {
+  // During the load-in's panel step it moves in from the right, its pieces appearing one by one
+  // (instead of the usual quick fade).
+  const loadIn = usePanelLoadIn<HTMLElement>("right")
+  const setRef = (node: HTMLElement | null) => {
+    loadIn.ref.current = node
+    if (typeof ref === "function") ref(node)
+    else if (ref) ref.current = node
+  }
   return (
     <aside
-      ref={ref}
-      className="absolute right-1 top-[46px] z-30 flex max-h-[calc(100%-50px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-transparent bg-[#f5f5f4] pb-6 shadow-[-6px_4px_20px_-6px_rgba(17,17,16,0.14),-2px_1px_4px_-1px_rgba(17,17,16,0.06),0_0_0_1px_rgba(17,17,16,0.05)] animate-in fade-in slide-in-from-right-1 duration-150"
+      ref={setRef}
+      className={cn(
+        "absolute right-1 top-[46px] z-30 flex max-h-[calc(100%-50px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-transparent bg-[#f5f5f4] pb-6 shadow-[-6px_4px_20px_-6px_rgba(17,17,16,0.14),-2px_1px_4px_-1px_rgba(17,17,16,0.06),0_0_0_1px_rgba(17,17,16,0.05)]",
+        !loadIn.playing && "animate-in fade-in slide-in-from-right-1 duration-150",
+      )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 border-b border-stone-700/10 px-3 py-2.5">
+      <div {...LOAD_ITEM} className="flex items-center justify-between gap-2 border-b border-stone-700/10 px-3 py-2.5">
         <h2 className="flex items-center gap-2.5 text-[14px] font-semibold leading-4 text-stone-800">
           {icon}
           {title}
@@ -428,7 +440,7 @@ export function EmptySection({ title, addLabel }: { title: string; addLabel: str
 export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-2 border-b border-stone-700/10 px-3 pb-4 pt-3">
-      <h3 className="mb-1 text-[12px] font-semibold leading-4 text-stone-900">{title}</h3>
+      <h3 {...LOAD_ITEM} className="mb-1 text-[12px] font-semibold leading-4 text-stone-900">{title}</h3>
       {children}
     </section>
   )
@@ -440,7 +452,7 @@ export function Section({ title, children }: { title: string; children: React.Re
  */
 export function Row({ side, children }: { side?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2">
+    <div {...LOAD_ITEM} className="flex items-center gap-2">
       <div className="grid flex-1 grid-cols-2 gap-2">{children}</div>
       <div className="flex size-6 shrink-0 items-center justify-center">{side}</div>
     </div>

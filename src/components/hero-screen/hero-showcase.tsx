@@ -64,6 +64,31 @@ const ELEMENTS_TIME_SCALE = 0.8
 const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_TIME_SCALE
 
 /**
+ * The "flip" load-in (the homepage), in ms from when it starts:
+ *   1. the Canvas window is drawn in: its outline traces around it, then the window fills in from
+ *      the top down (DRAW_IN)
+ *   2. the Codebase frame, then the canvas elements (top first) flip down onto the screen from above
+ *   3. the bars come in from their own edges (top bar from the top, the sidebar rail from the left,
+ *      the zoom readout from the bottom)
+ *   4. the two side panels move in (the Components library out of the sidebar rail, the trip card's
+ *      settings from the right) and their contents appear one by one
+ * It's interactive throughout: whatever has come in can already be pressed, dragged and panned.
+ */
+const FLIP_INTRO = {
+  codebaseAt: 950,
+  elementsAt: 1150,
+  chromeAt: 2050,
+  panelsAt: 2550,
+  githubAt: 2700,
+}
+/** The window's draw-in (ms): the outline traces round, then the window fills in under it. */
+const DRAW_IN = {
+  outlineMs: 750,
+  fillAt: 500,
+  fillMs: 750,
+}
+
+/**
  * A window on the Desktop Area: rounded, with a shadow; positioned by its `placement` classes.
  * No CSS border here: a border on the clipping box thins out and turns jagged at the corners where
  * the content is clipped. The outline is the first shadow instead: a solid 1px #c9c7c3 ring just
@@ -90,8 +115,15 @@ export function HeroShowcase({
   portalEnabled = false,
   githubPrSheet = true,
   introOnMount = false,
+  introStyle = "rise",
 }: {
   className?: string
+  /**
+   * How the showcase loads in. "rise" (default, the stored v1): the Canvas window scales up into
+   * place and the canvas glides in (see INTRO). "flip": the window is drawn in and the canvas
+   * flips in, then its bars and panels (see FLIP_INTRO).
+   */
+  introStyle?: "rise" | "flip"
   /**
    * The load-in plays as soon as the showcase mounts, instead of waiting for the Desktop Area to be
    * scrolled to the viewport's centre (INTRO_CENTER_AT). Only read on mount.
@@ -152,15 +184,27 @@ export function HeroShowcase({
 
   /** The canvas's part of the load-in (bars, Codebase, GitHub popover, elements). */
   const canvasIntro = useMemo<LoadIntro>(
-    () => ({
-      phase: intro,
-      chromeAt: INTRO.chromeAt,
-      codebaseAt: INTRO.codebaseAt,
-      githubAt: INTRO.githubAt,
-      elementsAt: INTRO.elementsAt,
-      elementsTimeScale: ELEMENTS_TIME_SCALE,
-    }),
-    [intro],
+    () =>
+      introStyle === "flip"
+        ? {
+            phase: intro,
+            style: "flip",
+            chromeAt: FLIP_INTRO.chromeAt,
+            codebaseAt: FLIP_INTRO.codebaseAt,
+            githubAt: FLIP_INTRO.githubAt,
+            elementsAt: FLIP_INTRO.elementsAt,
+            panelsAt: FLIP_INTRO.panelsAt,
+            sidebarPanel: "components",
+          }
+        : {
+            phase: intro,
+            chromeAt: INTRO.chromeAt,
+            codebaseAt: INTRO.codebaseAt,
+            githubAt: INTRO.githubAt,
+            elementsAt: INTRO.elementsAt,
+            elementsTimeScale: ELEMENTS_TIME_SCALE,
+          },
+    [intro, introStyle],
   )
 
   return (
@@ -192,7 +236,8 @@ export function HeroShowcase({
         z={stack.length - stack.indexOf("main")}
         onFocus={() => focus("main")}
         opening={intro}
-        openDelay={INTRO.canvasWindowAt}
+        openDelay={introStyle === "flip" ? 0 : INTRO.canvasWindowAt}
+        drawIn={introStyle === "flip"}
       >
         <div className="flex min-h-0 flex-1 flex-col bg-mi-canvas">
           <DensityScale scale={CANVAS_DENSITY}>
@@ -208,8 +253,9 @@ export function HeroShowcase({
               toolsEnabled={false}
               scrollPans={false}
               loadIntro={canvasIntro}
-              // Opens with the Layers panel showing and the trip card frame selected (its settings panel open).
-              layersOpen
+              // Opens with the Layers panel showing and the trip card frame selected (its settings panel
+              // open). "flip": the sidebar's Components panel opens during the load-in instead.
+              layersOpen={introStyle !== "flip"}
               initialSelectedId="card-upcoming-trip"
             />
           </DensityScale>
@@ -256,6 +302,7 @@ function DesktopWindow({
   opening,
   openDelay = 0,
   openDuration = WINDOW_OPEN_MS,
+  drawIn = false,
   children,
 }: {
   title: string
@@ -271,9 +318,12 @@ function DesktopWindow({
   openDelay?: number
   /** How long the opening takes (ms). */
   openDuration?: number
+  /** The opening draws the window in (see DRAW_IN) instead of scaling it up. */
+  drawIn?: boolean
   children: ReactNode
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const outlineRef = useRef<SVGSVGElement>(null)
   /** How far the window has been dragged from its placement, in layout px. */
   const [offset, setOffset] = useState({ x: 0, y: 0 })
 
@@ -281,10 +331,53 @@ function DesktopWindow({
   // easing out. Animated through the `scale` / `translate` properties so it composes with the drag
   // offset (`transform`). Its first frame is hidden, so during the delay it's invisible and can't be
   // pressed. Runs in a layout effect: the frame that drops the "waiting" style never shows it early.
+  //
+  // Drawn in instead: a light outline traces once round the window's edge (from its top-left
+  // corner, clockwise), and as it closes the window fills in from the top down, its shadow growing
+  // out with it; the outline then fades into the window's own edge.
   useLayoutEffect(() => {
     const el = ref.current
     if (opening !== "play" || !el) return
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    if (drawIn) {
+      const outline = outlineRef.current
+      const rect = outline?.querySelector("rect")
+      const animations: Animation[] = []
+      if (outline && rect) {
+        animations.push(
+          rect.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], {
+            duration: DRAW_IN.outlineMs,
+            delay: openDelay,
+            easing: "cubic-bezier(0.65, 0, 0.35, 1)",
+            fill: "backwards",
+          }),
+          // Base style is hidden: it shows only while this runs.
+          outline.animate(
+            [
+              { opacity: 1, offset: 0 },
+              { opacity: 1, offset: 0.6 },
+              { opacity: 0, offset: 1 },
+            ],
+            { duration: DRAW_IN.fillAt + DRAW_IN.fillMs, delay: openDelay, fill: "backwards" },
+          ),
+        )
+      }
+      animations.push(
+        el.animate(
+          [
+            { visibility: "hidden", clipPath: "inset(0px 0px 100% 0px round 12px)", opacity: 0.6 },
+            { visibility: "visible", clipPath: "inset(-80px -80px -80px -80px round 12px)", opacity: 1 },
+          ],
+          {
+            duration: DRAW_IN.fillMs,
+            delay: openDelay + DRAW_IN.fillAt,
+            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            fill: "backwards",
+          },
+        ),
+      )
+      return () => animations.forEach((a) => a.cancel())
+    }
     const animation = el.animate(
       [
         { visibility: "hidden", opacity: 0, scale: "0.85", translate: "0 20px" },
@@ -323,6 +416,7 @@ function DesktopWindow({
   }
 
   return (
+    <>
     <div
       ref={ref}
       data-desktop-window={title}
@@ -345,6 +439,29 @@ function DesktopWindow({
         {children}
       </SafariChrome>
     </div>
+    {drawIn && (
+      // The draw-in's outline: over the window's edge (same placement and drag offset), hidden
+      // except while the opening plays. pathLength 1 lets the dash run 1 → 0 at any size.
+      <svg
+        ref={outlineRef}
+        aria-hidden="true"
+        className={cn("pointer-events-none absolute overflow-visible", placement)}
+        style={{ zIndex: 100, opacity: 0, transform: `translate(${offset.x}px, ${offset.y}px)` }}
+      >
+        <rect
+          width="100%"
+          height="100%"
+          rx={12}
+          fill="none"
+          stroke="rgba(255,255,255,0.9)"
+          strokeWidth={1.5}
+          pathLength={1}
+          strokeDasharray="1 1"
+          strokeDashoffset={0}
+        />
+      </svg>
+    )}
+    </>
   )
 }
 

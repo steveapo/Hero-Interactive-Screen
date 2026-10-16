@@ -1,12 +1,13 @@
 "use client"
 
-import { memo, useState } from "react"
+import { memo, useContext, useLayoutEffect, useRef, useState } from "react"
 import { FileText, Layers, MessageCircleQuestionMark, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { AIRBNB_ELEMENTS } from "./airbnb-elements"
 import { COMPONENT_PREVIEWS } from "./component-previews"
 import { FAIRBNB_COMPONENT_PREVIEWS } from "./fairbnb-component-previews"
 import { isInsertable, type ComponentLibrary, type InsertableComponent } from "./library-components"
+import { LOAD_ITEM, PanelLoadInContext, playExpandFrom } from "./load-in"
 import { FrameGlyph } from "./planner-frame"
 
 export type RailPanel = "layers" | "components" | "help"
@@ -24,12 +25,18 @@ export const LeftSidebar = memo(function LeftSidebar({
   names,
   library = "default",
   initialPanel = null,
+  cuePanel = null,
   className,
   style,
 }: {
   ref?: React.Ref<HTMLElement>
   /** The rail panel open on mount (e.g. "layers"). Default: none. Only read on mount. */
   initialPanel?: RailPanel | null
+  /**
+   * Opens this panel when it's set (e.g. at its step of a load-in). Opened during the load-in's
+   * panel step (PanelLoadInContext), it grows out of the rail and its pieces appear one by one.
+   */
+  cuePanel?: RailPanel | null
   onLibraryDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
   /** Current frame names by element id (renamed on the canvas); falls back to each element's own name. */
   names?: Record<string, string>
@@ -42,9 +49,33 @@ export const LeftSidebar = memo(function LeftSidebar({
   const [panel, setPanel] = useState<RailPanel | null>(initialPanel)
   const open = panel === "layers" || panel === "components"
 
+  // The cue opens its panel (adjusted during render, so it opens in the same commit as the cue).
+  const [cued, setCued] = useState<RailPanel | null>(null)
+  if (cuePanel && cuePanel !== cued) {
+    setCued(cuePanel)
+    setPanel(cuePanel)
+  }
+  const loadIn = useContext(PanelLoadInContext)
+  const asideRef = useRef<HTMLElement | null>(null)
+  const railRef = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const aside = asideRef.current
+    const rail = railRef.current
+    if (!cued || !loadIn || !aside || !rail) return
+    const animations = playExpandFrom(aside, { width: rail.offsetWidth, height: rail.offsetHeight })
+    return () => animations.forEach((a) => a.cancel())
+    // Plays once, when the cue opens the panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cued])
+  const setRef = (node: HTMLElement | null) => {
+    asideRef.current = node
+    if (typeof ref === "function") ref(node)
+    else if (ref) ref.current = node
+  }
+
   return (
     <aside
-      ref={ref}
+      ref={setRef}
       style={style}
       className={cn(
         // Soft shadow cast to the right (onto the canvas), plus a faint hairline so it lifts off it.
@@ -55,7 +86,7 @@ export const LeftSidebar = memo(function LeftSidebar({
       )}
     >
       {/* Rail */}
-      <nav className={cn("flex flex-col items-center gap-0.5 p-0.5", open && "border-r border-stone-700/10")}>
+      <nav ref={railRef} className={cn("flex flex-col items-center gap-0.5 p-0.5", open && "border-r border-stone-700/10")}>
         {RAIL.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -86,7 +117,7 @@ function LayersPanel({ names }: { names?: Record<string, string> }) {
   return (
     <div className="flex w-[280px] flex-col">
       <section className="flex h-[30%] shrink-0 flex-col px-1.5 pt-2.5">
-        <div className="mb-1.5 flex items-center justify-between pl-1 pr-0.5">
+        <div {...LOAD_ITEM} className="mb-1.5 flex items-center justify-between pl-1 pr-0.5">
           <h2 className="text-px-11 font-semibold text-stone-900">Pages</h2>
           <button
             type="button"
@@ -97,6 +128,7 @@ function LayersPanel({ names }: { names?: Record<string, string> }) {
           </button>
         </div>
         <button
+          {...LOAD_ITEM}
           type="button"
           className="flex h-7 w-full items-center gap-2 rounded-[6px] bg-mi-selected px-2 text-left text-px-12 text-stone-900"
         >
@@ -106,11 +138,12 @@ function LayersPanel({ names }: { names?: Record<string, string> }) {
       </section>
 
       <section className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-stone-700/10 px-1.5 pt-2.5">
-        <div className="mb-1.5 flex items-center justify-between pl-1 pr-0.5">
+        <div {...LOAD_ITEM} className="mb-1.5 flex items-center justify-between pl-1 pr-0.5">
           <h2 className="text-px-11 font-semibold text-stone-900">Layers</h2>
           <Layers className="size-3.5 text-stone-500" strokeWidth={1.5} />
         </div>
         <button
+          {...LOAD_ITEM}
           type="button"
           className="flex h-7 w-full items-center gap-2 rounded-md pl-4 pr-2 text-left text-px-12 text-stone-900 hover:bg-stone-700/5"
         >
@@ -119,6 +152,7 @@ function LayersPanel({ names }: { names?: Record<string, string> }) {
         </button>
         {AIRBNB_ELEMENTS.map((el) => (
           <button
+            {...LOAD_ITEM}
             key={el.id}
             type="button"
             className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md pl-4 pr-2 text-left text-px-12 text-stone-900 hover:bg-stone-700/5"
@@ -148,8 +182,9 @@ function ComponentsPanel({
   return (
     <div className="flex w-[280px] flex-col">
       <div className="px-2.5 pt-2.5">
-        <h2 className="mb-2 text-px-11 font-semibold text-stone-900">Components</h2>
+        <h2 {...LOAD_ITEM} className="mb-2 text-px-11 font-semibold text-stone-900">Components</h2>
         <input
+          {...LOAD_ITEM}
           type="search"
           aria-label="Search components"
           value={query}
@@ -167,6 +202,7 @@ function ComponentsPanel({
           const insertable = isInsertable(name, library)
           return (
             <li
+              {...LOAD_ITEM}
               key={name}
               data-cursor-id={`library-${name}`}
               className={cn("group/tile min-w-0", insertable && onDragStart && "cursor-grab active:cursor-grabbing")}

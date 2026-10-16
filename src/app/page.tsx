@@ -11,9 +11,18 @@ export default function Home() {
       <SiteHero>
         {/* The Desktop Area with the canvas window only (no Code Changes window). The canvas loads linked
             to its repo with the GitHub Sync popover closed, and the Codebase frame opens in the Portal; see
-            hero-showcase.tsx. Its load-in plays right away (no waiting to be scrolled to the viewport's
-            centre). The two-window version plays at /showcase; the four-clip demo at /demo. */}
-        <HeroShowcase showCodeWindow={false} githubPopoverOpen={false} portalEnabled githubPrSheet={false} introOnMount />
+            hero-showcase.tsx. Its "flip" load-in plays right away (no waiting to be scrolled to the
+            viewport's centre): the window is drawn in, the canvas flips in, then its bars and panels. The
+            previous version (rise / glide load-in) is stored at /hero/v1; the two-window version plays at
+            /showcase; the four-clip demo at /demo. */}
+        <HeroShowcase
+          showCodeWindow={false}
+          githubPopoverOpen={false}
+          portalEnabled
+          githubPrSheet={false}
+          introOnMount
+          introStyle="flip"
+        />
       </SiteHero>
       <FeatureSection />
       <LastMileSection />

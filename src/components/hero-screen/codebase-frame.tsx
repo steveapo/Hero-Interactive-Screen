@@ -1,11 +1,15 @@
 "use client"
 
-import { useCallback, useState } from "react"
+import { useCallback, useLayoutEffect, useRef, useState } from "react"
 import { Play, ScanLine, SquareDashedMousePointer } from "lucide-react"
 import { AirbnbScreen } from "@/app/copy-project/airbnb-screen"
+import { playFlipIn } from "./load-in"
 
 /** The canvas opens at this zoom; the user can then zoom between the hero's min/max. */
 export const CANVAS_ZOOM = 0.3
+
+/** The "flip" appearance's length (ms). */
+const CODEBASE_FLIP_MS = 900
 
 /** The Codebase frame's opening animation plays at this rate (1 = the app's own pace). */
 const CODEBASE_INTRO_SPEED = 0.6
@@ -38,6 +42,7 @@ export function CodebaseFrame({
   offsetX,
   offsetY,
   appear,
+  appearStyle = "fade",
   built,
 }: {
   /**
@@ -52,6 +57,11 @@ export function CodebaseFrame({
    * Omitted: the frame simply shows the thumbnail.
    */
   appear?: "hidden" | "in"
+  /**
+   * How the frame appears at `appear="in"`: "fade" (default) or "flip", flipping down onto the
+   * screen from above (see playFlipIn).
+   */
+  appearStyle?: "fade" | "flip"
   selected: boolean
   onSelect: () => void
   /** Double-click: open the frame in the Portal View. */
@@ -92,8 +102,19 @@ export function CodebaseFrame({
   /** Not playing the intro: the settled app straight away. */
   const liveIntroSpeed = introPlaying ? CODEBASE_INTRO_SPEED : 1000
 
+  /** The "flip" appearance: played once, when the frame comes in. */
+  const flipping = appear === "in" && appearStyle === "flip"
+  const rootRef = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = rootRef.current
+    if (!flipping || !el) return
+    const animations = playFlipIn(el, { delay: 0, duration: CODEBASE_FLIP_MS })
+    return () => animations.forEach((a) => a.cancel())
+  }, [flipping])
+
   return (
     <div
+      ref={rootRef}
       data-cursor-id="codebase-frame"
       // The fade-in's length is set on the animation alone. Tailwind's `duration-700` would also set
       // `transition-duration`, and with the default `transition-property: all` every change of
@@ -101,7 +122,7 @@ export function CodebaseFrame({
       // back after release, and lagged behind the pointer when dragged. Like the design frames, it
       // must follow the camera and the pointer immediately.
       className={
-        appear === "in"
+        appear === "in" && !flipping
           ? "group/codebase absolute -translate-x-1/2 -translate-y-1/2 animate-in fade-in [--tw-animation-duration:700ms] motion-reduce:animate-none"
           : "group/codebase absolute -translate-x-1/2 -translate-y-1/2"
       }

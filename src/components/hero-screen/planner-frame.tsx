@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { cn } from "@/lib/utils"
 import { CODEBASE_WIDTH } from "./codebase-frame"
 import type { CanvasRect } from "./drag"
+import { playFlipIn } from "./load-in"
 
 const SELECT_BLUE = "#2f6bf6"
 const LABEL_GREY = "#78716c"
@@ -19,7 +20,16 @@ export type Corner = { sx: -1 | 1; sy: -1 | 1 }
  * `x`/`y` screen px away (its side of the Codebase frame) after `delay` ms, over `duration` ms
  * (ENTRANCE_DURATION_MS when omitted).
  */
-export type CanvasEntrance = "hidden" | { x: number; y: number; delay: number; duration?: number }
+export type CanvasEntrance =
+  | "hidden"
+  | {
+      x: number
+      y: number
+      delay: number
+      duration?: number
+      /** Flip down onto the screen from above instead of gliding in (x / y unused; see playFlipIn). */
+      flip?: boolean
+    }
 
 export const ENTRANCE_DURATION_MS = 1280
 /**
@@ -45,6 +55,10 @@ export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntranc
     const e = onMount.current
     if (!el || !e || e === "hidden") return
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
+    if (e.flip) {
+      const flip = playFlipIn(el, { delay: e.delay, duration: e.duration ?? ENTRANCE_DURATION_MS })
+      return () => flip.forEach((a) => a.cancel())
+    }
     // Two animations: the glide (transform) and the fade (opacity), each on its own curve.
     // `backwards` keeps the start frame (hidden, offset) applied during the delay.
     const timing = { duration: e.duration ?? ENTRANCE_DURATION_MS, delay: e.delay, fill: "backwards" } as const
