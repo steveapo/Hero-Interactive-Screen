@@ -9,7 +9,7 @@ import { playFlipIn } from "./load-in"
 export const CANVAS_ZOOM = 0.3
 
 /** The "flip" appearance's length (ms). */
-const CODEBASE_FLIP_MS = 900
+const CODEBASE_FLIP_MS = 1300
 
 /** The Codebase frame's opening animation plays at this rate (1 = the app's own pace). */
 const CODEBASE_INTRO_SPEED = 0.6
@@ -92,13 +92,19 @@ export function CodebaseFrame({
   const thumbnailRef = useCallback((img: HTMLImageElement | null) => {
     if (img && img.complete && img.naturalWidth === 0) setThumbnailMissing(true)
   }, [])
-  /** The intro is playing in the frame (it settles on the thumbnail, or on the built app). */
-  const introPlaying = appear === "in" && !introDone
+  /**
+   * The intro is playing in the frame (it settles on the thumbnail, or on the built app). Not in
+   * the "flip": the frame lands showing the settled app (its thumbnail, loaded while it was hidden),
+   * with no second animation running inside the falling frame.
+   */
+  const introPlaying = appear === "in" && !introDone && appearStyle !== "flip"
   /**
    * The live app is mounted for the load-in's opening animation, while built changes must show
-   * (the thumbnail predates them), or if there's no thumbnail.
+   * (the thumbnail predates them), or if there's no thumbnail. In the "flip" it's mounted (settled)
+   * while the frame is still hidden, so it's loaded long before the frame falls in.
    */
-  const showLiveApp = introPlaying || (appear !== "hidden" && (thumbnailMissing || built !== undefined))
+  const preloaded = appear !== "hidden" || appearStyle === "flip"
+  const showLiveApp = introPlaying || (preloaded && (thumbnailMissing || built !== undefined))
   /** Not playing the intro: the settled app straight away. */
   const liveIntroSpeed = introPlaying ? CODEBASE_INTRO_SPEED : 1000
 
@@ -173,7 +179,7 @@ export function CodebaseFrame({
         out at its natural 1440×900 size and scaled with zoom; once it has settled it unmounts.
       */}
       <div className="relative size-full cursor-default overflow-hidden rounded-md bg-white shadow-[0_0_0_1px_rgba(17,17,16,0.12),0_12px_32px_-12px_rgba(17,17,16,0.3)]">
-        {appear !== "hidden" && !thumbnailMissing && (
+        {preloaded && !thumbnailMissing && (
           // eslint-disable-next-line @next/next/no-img-element -- a fixed-size canvas thumbnail, scaled by the frame
           <img
             ref={thumbnailRef}

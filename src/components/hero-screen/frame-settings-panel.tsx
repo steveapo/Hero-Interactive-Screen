@@ -3,7 +3,7 @@
 import { memo, useState } from "react"
 import { ChevronDown, ChevronRight, Ellipsis, FlipHorizontal2, FlipVertical2, ImagePlus, Minus, Plus, RotateCwSquare, Scan } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { LOAD_ITEM, usePanelLoadIn } from "./load-in"
+import { CONCEALED_STYLE, LOAD_ITEM, usePanelLoadIn } from "./load-in"
 import { FrameGlyph } from "./planner-frame"
 
 /* --------------------------------- Types ---------------------------------- */
@@ -53,8 +53,11 @@ export const FrameSettingsPanel = memo(function FrameSettingsPanel({
   colors,
   onFillChange,
   onAddToChat,
+  concealed = false,
 }: {
   ref?: React.Ref<HTMLElement>
+  /** Mounted ahead of its load-in: unseen and unreachable until this turns off (then it moves in). */
+  concealed?: boolean
   /** Element tag shown in the header. */
   tag?: string
   position?: CssPosition
@@ -84,7 +87,7 @@ export const FrameSettingsPanel = memo(function FrameSettingsPanel({
   const selectionColors = colors ?? [fill, border].filter((c): c is string => c !== null)
 
   return (
-    <SettingsPanelShell ref={ref} icon={<FrameGlyph />} title={tag} onAddToChat={onAddToChat}>
+    <SettingsPanelShell ref={ref} icon={<FrameGlyph />} title={tag} onAddToChat={onAddToChat} concealed={concealed}>
       <PositionSection position={position} inset={inset} x={x} y={y} />
       <SizeSection width={px(width)} height={px(height)} />
       <LayoutSection layout={layout} padding={padding} clip={clip} />
@@ -104,6 +107,7 @@ export function SettingsPanelShell({
   icon,
   title,
   onAddToChat,
+  concealed = false,
   children,
 }: {
   ref?: React.Ref<HTMLElement>
@@ -111,11 +115,13 @@ export function SettingsPanelShell({
   title: string
   /** "Add to Build Chat" was clicked. */
   onAddToChat?: () => void
+  /** Mounted ahead of its load-in: unseen and unreachable until this turns off (then it moves in). */
+  concealed?: boolean
   children: React.ReactNode
 }) {
   // During the load-in's panel step it moves in from the right, its pieces appearing one by one
   // (instead of the usual quick fade).
-  const loadIn = usePanelLoadIn<HTMLElement>("right")
+  const loadIn = usePanelLoadIn<HTMLElement>("right", concealed)
   const setRef = (node: HTMLElement | null) => {
     loadIn.ref.current = node
     if (typeof ref === "function") ref(node)
@@ -124,6 +130,8 @@ export function SettingsPanelShell({
   return (
     <aside
       ref={setRef}
+      inert={concealed || undefined}
+      style={concealed ? CONCEALED_STYLE : undefined}
       className={cn(
         "absolute right-1 top-[46px] z-30 flex max-h-[calc(100%-50px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-transparent bg-[#f5f5f4] pb-6 shadow-[-6px_4px_20px_-6px_rgba(17,17,16,0.14),-2px_1px_4px_-1px_rgba(17,17,16,0.06),0_0_0_1px_rgba(17,17,16,0.05)]",
         !loadIn.playing && "animate-in fade-in slide-in-from-right-1 duration-150",

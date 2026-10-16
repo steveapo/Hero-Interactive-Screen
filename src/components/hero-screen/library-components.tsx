@@ -316,8 +316,18 @@ export function FrameComponentsLayer({
         const left = frame.x - frame.w / 2 + c.x
         const top = frame.y - frame.h / 2 + c.y
         const selected = selectedId === c.id
+        // A flip hinges on the frame's top edge (this layer spans the whole canvas), so the instance
+        // lies down together with its card.
+        const frameEntrance = entranceFor?.(frame) ?? null
+        const entrance =
+          frameEntrance && frameEntrance !== "hidden" && frameEntrance.flip
+            ? {
+                ...frameEntrance,
+                origin: `calc(50% + ${camera.x + frame.x * camera.zoom}px) calc(50% + ${camera.y + (frame.y - frame.h / 2) * camera.zoom}px)`,
+              }
+            : frameEntrance
         return (
-          <ComponentEntrance key={`${c.id}-${revealKey}`} entrance={entranceFor?.(frame) ?? null}>
+          <ComponentEntrance key={`${c.id}-${revealKey}`} entrance={entrance}>
           <div
             className="pointer-events-none absolute origin-top-left"
             style={{

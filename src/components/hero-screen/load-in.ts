@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useLayoutEffect, useRef, useState } from "react"
+import { createContext, useContext, useLayoutEffect, useRef, useState, type CSSProperties } from "react"
 
 /**
  * Shared pieces of the "flip" load-in (the homepage hero): the flip-down of canvas frames, and the
@@ -20,37 +20,46 @@ const SETTLE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)"
 const FLIP_RISE_PX = 36
 /** Perspective of the flip (px): lower = more dramatic depth. */
 const FLIP_PERSPECTIVE_PX = 1400
+/**
+ * The flip's fall: it tips over slowly, gathers speed like something falling under its own
+ * weight, and lands softly (no bounce: it can't pass through the screen).
+ */
+const FLIP_EASING = "cubic-bezier(0.5, 0, 0.2, 1)"
 
 /**
  * A canvas frame flips down onto the screen from above: it starts standing straight up out of the
  * screen (rotated 90° about its top edge, so it's edge-on and invisible) and a little higher than its
  * place, then lowers until it lies flat in place. Uses `transform` only (positioning in these frames
  * uses the `translate` property and left / top), so it composes with them. `backwards` keeps the
- * start frame applied during the delay.
+ * start frame applied during the delay. `origin`: the hinge (default: the element's own top edge).
  */
-export function playFlipIn(el: HTMLElement, { delay, duration }: { delay: number; duration: number }) {
+export function playFlipIn(
+  el: HTMLElement,
+  { delay, duration, origin = "50% 0%" }: { delay: number; duration: number; origin?: string },
+) {
   if (reducedMotion()) return []
   const timing = { delay, duration, fill: "backwards" } as const
   const flip = el.animate(
     [
       {
-        transformOrigin: "50% 0%",
+        transformOrigin: origin,
         transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(-${FLIP_RISE_PX}px) rotateX(90deg)`,
       },
       {
-        transformOrigin: "50% 0%",
+        transformOrigin: origin,
         transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(0px) rotateX(0deg)`,
       },
     ],
-    { ...timing, easing: SETTLE_EASING },
+    { ...timing, easing: FLIP_EASING },
   )
+  // Edge-on at the start it's invisible anyway; the fade just keeps the first frames from flickering.
   const fade = el.animate(
     [
       { opacity: 0, offset: 0 },
-      { opacity: 1, offset: 0.45 },
+      { opacity: 1, offset: 0.3 },
       { opacity: 1, offset: 1 },
     ],
-    { ...timing, easing: "ease-out" },
+    { ...timing, easing: "linear" },
   )
   return [flip, fade]
 }
@@ -110,21 +119,26 @@ export function playPanelIn(el: HTMLElement, from: "left" | "right") {
 }
 
 /**
- * A docked panel plays the load-in entrance when it mounts during the panel step (see
- * PanelLoadInContext). `playing` is read on mount: whether it should skip its usual quick entrance.
+ * A docked panel's load-in entrance (see playPanelIn). It plays when the panel mounts during the
+ * panel step (PanelLoadInContext), or, for a panel mounted ahead of time while `concealed` (so it's
+ * loaded and laid out long before it shows), the moment it's revealed. `playing`: the panel is part
+ * of the load-in, so it should skip its usual quick entrance.
  */
-export function usePanelLoadIn<T extends HTMLElement>(from: "left" | "right") {
+export function usePanelLoadIn<T extends HTMLElement>(from: "left" | "right", concealed = false) {
   const active = useContext(PanelLoadInContext)
   const ref = useRef<T>(null)
-  const [playing] = useState(active)
+  const [playing] = useState(active || concealed)
   useLayoutEffect(() => {
     const el = ref.current
-    if (!playing || !el) return
+    if (!playing || concealed || !el) return
     const animations = playPanelIn(el, from)
     return () => animations.forEach((a) => a.cancel())
-  }, [playing, from])
+  }, [playing, concealed, from])
   return { ref, playing }
 }
+
+/** Style for a panel mounted ahead of its load-in: laid out and painted-ready, but unseen and unreachable. */
+export const CONCEALED_STYLE: CSSProperties = { visibility: "hidden", pointerEvents: "none" }
 
 /**
  * A panel growing out of the rail it's attached to (the left sidebar): the box is revealed from

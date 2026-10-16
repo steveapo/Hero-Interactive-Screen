@@ -29,6 +29,8 @@ export type CanvasEntrance =
       duration?: number
       /** Flip down onto the screen from above instead of gliding in (x / y unused; see playFlipIn). */
       flip?: boolean
+      /** The flip's hinge (a CSS transform-origin). Default: the element's own top edge. */
+      origin?: string
     }
 
 export const ENTRANCE_DURATION_MS = 1280
@@ -43,22 +45,33 @@ const ENTRANCE_START_SCALE = 0.96
 
 /**
  * Hides an element or plays its entrance. Both are done inline (style + Web Animations API) so
- * they work without any stylesheet rule. The entrance plays once, on mount: the canvas remounts
- * its elements on each reveal. Spread `style` before the element's own style.
+ * they work without any stylesheet rule. The glide plays once, on mount: the canvas remounts its
+ * elements on each reveal. The flip plays when the element goes from hidden to its flip entrance
+ * (or on mount with it), so a flipping element is already mounted, loaded and painted (hidden)
+ * long before it flips in. Spread `style` before the element's own style.
  */
 export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntrance | null | undefined) {
   const ref = useRef<T>(null)
   const onMount = useRef(entrance)
+  const latest = useRef(entrance)
+  useLayoutEffect(() => {
+    latest.current = entrance
+  })
+  const flipping = typeof entrance === "object" && entrance !== null && entrance.flip === true
+
+  useLayoutEffect(() => {
+    const el = ref.current
+    const e = latest.current
+    if (!flipping || !el || typeof e !== "object" || e === null) return
+    const flip = playFlipIn(el, { delay: e.delay, duration: e.duration ?? ENTRANCE_DURATION_MS, origin: e.origin })
+    return () => flip.forEach((a) => a.cancel())
+  }, [flipping])
 
   useLayoutEffect(() => {
     const el = ref.current
     const e = onMount.current
-    if (!el || !e || e === "hidden") return
+    if (!el || !e || e === "hidden" || e.flip) return
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
-    if (e.flip) {
-      const flip = playFlipIn(el, { delay: e.delay, duration: e.duration ?? ENTRANCE_DURATION_MS })
-      return () => flip.forEach((a) => a.cancel())
-    }
     // Two animations: the glide (transform) and the fade (opacity), each on its own curve.
     // `backwards` keeps the start frame (hidden, offset) applied during the delay.
     const timing = { duration: e.duration ?? ENTRANCE_DURATION_MS, delay: e.delay, fill: "backwards" } as const

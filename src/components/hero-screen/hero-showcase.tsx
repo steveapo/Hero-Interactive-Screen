@@ -64,29 +64,37 @@ const ELEMENTS_TIME_SCALE = 0.8
 const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_TIME_SCALE
 
 /**
- * The "flip" load-in (the homepage), in ms from when it starts:
- *   1. the Canvas window is drawn in: its outline traces around it, then the window fills in from
- *      the top down (DRAW_IN)
- *   2. the Codebase frame, then the canvas elements (top first) flip down onto the screen from above
- *   3. the bars come in from their own edges (top bar from the top, the sidebar rail from the left,
- *      the zoom readout from the bottom)
- *   4. the two side panels move in (the Components library out of the sidebar rail, the trip card's
- *      settings from the right) and their contents appear one by one
+ * The "flip" load-in (the homepage), in ms from when it starts. Every step is mounted (hidden) from
+ * the start, and the load-in only starts PRELOAD_MS after mount (and once the fonts and wallpaper
+ * have loaded), so each step has been loaded for well over a second before it shows. Each step
+ * starts as the one before it lands:
+ *   1. the Canvas window is drawn in: its outline traces once round it, then the window fills in
+ *      inside the closed outline (DRAW_IN)
+ *   2. the Codebase frame flips down onto the screen from above; once it has landed, the canvas
+ *      elements follow, top of the canvas first, slowly
+ *   3. as the last elements settle, the bars come in from their own edges (top bar from the top,
+ *      the sidebar rail from the left, the zoom readout from the bottom)
+ *   4. the two side panels move in (the Components library grows out of the sidebar rail, the trip
+ *      card's settings slide in from the right) and their contents appear one by one
  * It's interactive throughout: whatever has come in can already be pressed, dragged and panned.
  */
 const FLIP_INTRO = {
-  codebaseAt: 950,
-  elementsAt: 1150,
-  chromeAt: 2050,
-  panelsAt: 2550,
-  githubAt: 2700,
+  codebaseAt: 1750,
+  elementsAt: 2850,
+  chromeAt: 5300,
+  panelsAt: 6300,
+  githubAt: 7500,
 }
-/** The window's draw-in (ms): the outline traces round, then the window fills in under it. */
+/** The window's draw-in (ms): the outline traces round; once it has closed, the window fills in. */
 const DRAW_IN = {
-  outlineMs: 750,
-  fillAt: 500,
-  fillMs: 750,
+  outlineMs: 1000,
+  fillAt: 1000,
+  fillMs: 700,
 }
+/** The "flip" load-in starts at least this long after mount (ms), with everything loaded by then. */
+const PRELOAD_MS = 1000
+/** Don't hold the load-in back more than this for the wallpaper (ms). */
+const WALLPAPER_TIMEOUT_MS = 3000
 
 /**
  * A window on the Desktop Area: rounded, with a shadow; positioned by its `placement` classes.
@@ -146,11 +154,38 @@ export function HeroShowcase({
 
   const desktopRef = useRef<HTMLDivElement>(null)
   const [intro, setIntro] = useState<IntroPhase>("waiting")
+
+  // "flip": the load-in waits until everything it shows is loaded: at least PRELOAD_MS after mount
+  // (the whole screen is mounted, hidden, from the start), the fonts, and the wallpaper (or
+  // WALLPAPER_TIMEOUT_MS). The "rise" load-in starts as before.
+  const preloadGate = introStyle === "flip"
+  const [preloaded, setPreloaded] = useState(!preloadGate)
+  const [wallpaperReady, setWallpaperReady] = useState(!preloadGate)
   useEffect(() => {
+    if (!preloadGate) return
+    let cancelled = false
+    const minimum = new Promise<void>((resolve) => setTimeout(resolve, PRELOAD_MS))
+    const fonts = document.fonts ? document.fonts.ready.then(() => undefined, () => undefined) : Promise.resolve()
+    Promise.all([minimum, fonts]).then(() => {
+      if (!cancelled) setPreloaded(true)
+    })
+    const giveUp = setTimeout(() => setWallpaperReady(true), WALLPAPER_TIMEOUT_MS)
+    return () => {
+      cancelled = true
+      clearTimeout(giveUp)
+    }
+    // Only read on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const ready = preloaded && wallpaperReady
+
+  useEffect(() => {
+    if (!ready) return
     // Played on mount: no waiting for the Desktop Area to scroll to the viewport's centre.
     if (introOnMount) {
-      setIntro("play")
-      return
+      // Started on a fresh frame, so its first animation frame isn't shared with other work.
+      const frame = requestAnimationFrame(() => setIntro("play"))
+      return () => cancelAnimationFrame(frame)
     }
     const el = desktopRef.current
     if (!el) return
@@ -178,9 +213,9 @@ export function HeroShowcase({
     window.addEventListener("resize", schedule)
     check()
     return stop
-    // Only read on mount.
+    // Starts once ready; the rest is only read on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [ready])
 
   /** The canvas's part of the load-in (bars, Codebase, GitHub popover, elements). */
   const canvasIntro = useMemo<LoadIntro>(
@@ -226,6 +261,7 @@ export function HeroShowcase({
         sizes="100vw"
         loading="eager"
         draggable={false}
+        onLoad={() => setWallpaperReady(true)}
         className="pointer-events-none select-none object-cover object-center"
       />
       <DesktopWindow
@@ -333,8 +369,9 @@ function DesktopWindow({
   // pressed. Runs in a layout effect: the frame that drops the "waiting" style never shows it early.
   //
   // Drawn in instead: a light outline traces once round the window's edge (from its top-left
-  // corner, clockwise), and as it closes the window fills in from the top down, its shadow growing
-  // out with it; the outline then fades into the window's own edge.
+  // corner, clockwise). Only once it has closed does the window fill in inside it: it fades up from
+  // nothing, shadow and all, in place, so there's no clip to come off and nothing jumps at the end.
+  // The outline fades into the window's own edge as it fills.
   useLayoutEffect(() => {
     const el = ref.current
     if (opening !== "play" || !el) return
@@ -348,14 +385,15 @@ function DesktopWindow({
           rect.animate([{ strokeDashoffset: 1 }, { strokeDashoffset: 0 }], {
             duration: DRAW_IN.outlineMs,
             delay: openDelay,
-            easing: "cubic-bezier(0.65, 0, 0.35, 1)",
+            easing: "cubic-bezier(0.45, 0, 0.25, 1)",
             fill: "backwards",
           }),
-          // Base style is hidden: it shows only while this runs.
+          // Base style is hidden: it shows while the outline draws and the window fills in, then
+          // fades out over the second half of the fill.
           outline.animate(
             [
               { opacity: 1, offset: 0 },
-              { opacity: 1, offset: 0.6 },
+              { opacity: 1, offset: (DRAW_IN.fillAt + DRAW_IN.fillMs * 0.4) / (DRAW_IN.fillAt + DRAW_IN.fillMs) },
               { opacity: 0, offset: 1 },
             ],
             { duration: DRAW_IN.fillAt + DRAW_IN.fillMs, delay: openDelay, fill: "backwards" },
@@ -365,13 +403,14 @@ function DesktopWindow({
       animations.push(
         el.animate(
           [
-            { visibility: "hidden", clipPath: "inset(0px 0px 100% 0px round 12px)", opacity: 0.6 },
-            { visibility: "visible", clipPath: "inset(-80px -80px -80px -80px round 12px)", opacity: 1 },
+            { visibility: "hidden", opacity: 0, offset: 0 },
+            { visibility: "visible", opacity: 0, offset: 0.001 },
+            { visibility: "visible", opacity: 1, offset: 1 },
           ],
           {
             duration: DRAW_IN.fillMs,
             delay: openDelay + DRAW_IN.fillAt,
-            easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+            easing: "cubic-bezier(0.4, 0, 0.2, 1)",
             fill: "backwards",
           },
         ),

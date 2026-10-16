@@ -26,12 +26,18 @@ export const LeftSidebar = memo(function LeftSidebar({
   library = "default",
   initialPanel = null,
   cuePanel = null,
+  preloadPanel = null,
   className,
   style,
 }: {
   ref?: React.Ref<HTMLElement>
   /** The rail panel open on mount (e.g. "layers"). Default: none. Only read on mount. */
   initialPanel?: RailPanel | null
+  /**
+   * A panel mounted (hidden) ahead of time, e.g. the one a load-in's cue will open: its contents
+   * are loaded and laid out long before it shows.
+   */
+  preloadPanel?: RailPanel | null
   /**
    * Opens this panel when it's set (e.g. at its step of a load-in). Opened during the load-in's
    * panel step (PanelLoadInContext), it grows out of the rail and its pieces appear one by one.
@@ -105,8 +111,17 @@ export const LeftSidebar = memo(function LeftSidebar({
         ))}
       </nav>
 
-      {panel === "layers" && <LayersPanel names={names} />}
-      {panel === "components" && <ComponentsPanel onDragStart={onLibraryDragStart} library={library} />}
+      {(panel === "layers" || cuePanel === "layers" || preloadPanel === "layers") && (
+        // Kept mounted (hidden) when it's preloaded for the load-in, so opening it only reveals it.
+        <div className={panel === "layers" ? "contents" : "hidden"}>
+          <LayersPanel names={names} />
+        </div>
+      )}
+      {(panel === "components" || cuePanel === "components" || preloadPanel === "components") && (
+        <div className={panel === "components" ? "contents" : "hidden"}>
+          <ComponentsPanel onDragStart={onLibraryDragStart} library={library} />
+        </div>
+      )}
     </aside>
   )
 })
