@@ -74,15 +74,8 @@ export function playFlipIn(
     ],
     { ...timing, easing: FLIP_EASING },
   )
-  // It starts tilted but face-on, so it fades in over the first part of the motion.
-  const fade = el.animate(
-    [
-      { opacity: 0, offset: 0 },
-      { opacity: 1, offset: 0.3 },
-      { opacity: 1, offset: 1 },
-    ],
-    { ...timing, easing: "linear" },
-  )
+  // It fades in over the whole motion: 0% as it starts moving, 100% just as it lands.
+  const fade = el.animate([{ opacity: 0 }, { opacity: 1 }], { ...timing, easing: "linear" })
   return [flip, fade]
 }
 
