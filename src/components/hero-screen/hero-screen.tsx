@@ -223,9 +223,9 @@ export type LoadIntro = {
   phase: "waiting" | "play"
   /**
    * "glide" (default, the stored v1 load-in): the bars come in first, the Codebase frame fades in,
-   * the elements glide in around it in a clockwise sweep. "flip": the Codebase frame and then the
-   * elements (all together) each get a dashed placeholder drawn at their place, then come up from
-   * below and land on it; then the bars slide in from their
+   * the elements glide in around it in a clockwise sweep. "flip": the Codebase frame gets a dashed
+   * placeholder drawn at its place, then comes up from below and lands on it; then the elements
+   * glide in around it as in "glide" (paced by `elementsTimeScale`); then the bars slide in from their
    * own edges (`chromeAt` after `elementsAt`); then at `panelsAt` the side panels move in (the
    * sidebar's `sidebarPanel` grows out of its rail, the selected frame's settings slide in from the
    * right), their contents appearing one by one.
@@ -248,13 +248,9 @@ type IntroStep = "chrome" | "codebase" | "github" | "elements" | "panels" | "set
 /** Bars and tools come in one after another, this far apart (ms). */
 const CHROME_STAGGER_MS = 90
 
-/** "flip": each element's flip takes this long (ms): slow, so each one reads as coming up and settling into place. */
-const FLIP_DURATION_MS = 1500
-/** "flip": how far below its place each element starts, rising into it as it lands (screen px). */
-const FLIP_DROP_PX = 140
 /**
- * "flip": an element comes in this long after its dashed placeholder starts drawing (ms): the
- * outline draws all the way round (PLACEHOLDER_DRAW_MS), holds a beat, then the element comes up
+ * "flip": the Codebase frame comes in this long after its dashed placeholder starts drawing (ms):
+ * the outline draws all the way round (PLACEHOLDER_DRAW_MS), holds a beat, then the frame comes up
  * and lands on it.
  */
 const PLACEHOLDER_LEAD_MS = PLACEHOLDER_DRAW_MS + 300
@@ -1305,19 +1301,18 @@ export function HeroScreen({
     // The load-in may play the entrance faster (its delays and glides alike); leaving the Portal
     // always plays it at its own pace.
     const pace = loadIntro?.elementsTimeScale ?? 1
-    // "flip" load-in: once the Codebase frame has landed, all the elements come up from below and
-    // land on the screen together, each onto its dashed placeholder, drawn
-    // just before (see FlipPlaceholder).
+    // "flip" load-in: once the Codebase frame has landed, the elements glide in around it from their
+    // side of it, sweeping clockwise (the v1 directional move-in). They stay mounted (hidden) from
+    // the start, so the glide plays as they're revealed (`onReveal`) rather than on a remount.
     if (flipIntro) {
-      // After the load-in, anything new is simply there (no flip when it mounts later).
+      // After the load-in, anything new is simply there (no entrance when it mounts later).
       if (introSteps.includes("settled")) return null
       return {
-        x: 0,
-        // Each comes up from well below its place as it lands.
-        y: FLIP_DROP_PX,
-        flip: true,
-        delay: PLACEHOLDER_LEAD_MS,
-        duration: FLIP_DURATION_MS,
+        x: outsideVertically ? 0 : travel(dx),
+        y: outsideVertically ? travel(dy) : 0,
+        delay: Math.round((ENTER_BASE_DELAY + sweep * ENTER_SWEEP_MS) * pace),
+        duration: Math.round(ENTRANCE_DURATION_MS * pace),
+        onReveal: true,
       }
     }
     // A calm canvas with just a frame or two: it simply glides in, right away and briefly.
@@ -1502,27 +1497,6 @@ export function HeroScreen({
             built={codebaseBuilt}
           />
         )}
-        {/* "flip" load-in: each element's flat dashed placeholder, drawn at its place just before it
-            comes up onto it (beneath the elements). Mounted, hidden, from the start; gone once the load-in has settled. */}
-        {flipIntro &&
-          !introSteps.includes("settled") &&
-          canvasElements.map((el) => {
-            const r = elementRects[el.id]
-            return (
-              <FlipPlaceholder
-                key={`placeholder:${el.id}`}
-                left={camera.x + (r.x - r.w / 2) * camera.zoom}
-                top={camera.y + (r.y - r.h / 2) * camera.zoom}
-                width={r.w * camera.zoom}
-                height={r.h * camera.zoom}
-                radius={(elementRadii[el.id] ?? 0) * camera.zoom}
-                play={elementsIn}
-                // All drawn together, as the elements step starts.
-                appearAt={0}
-                landAt={PLACEHOLDER_LEAD_MS + FLIP_DURATION_MS}
-              />
-            )
-          })}
         {canvasElements.map((el) => {
           const isTrip = el.id === TRIP_CARD_ID
           return (

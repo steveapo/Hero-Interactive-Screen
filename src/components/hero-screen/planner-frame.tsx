@@ -34,6 +34,11 @@ export type CanvasEntrance =
       flip?: boolean
       /** The flip's hinge (a CSS transform-origin). Default: the element's own bottom edge. */
       origin?: string
+      /**
+       * A glide that plays when the element goes from hidden to this entrance (it stays mounted),
+       * instead of on mount.
+       */
+      onReveal?: boolean
     }
 
 export const ENTRANCE_DURATION_MS = 1280
@@ -49,9 +54,9 @@ const ENTRANCE_START_SCALE = 0.96
 /**
  * Hides an element or plays its entrance. Both are done inline (style + Web Animations API) so
  * they work without any stylesheet rule. The glide plays once, on mount: the canvas remounts its
- * elements on each reveal. The flip plays when the element goes from hidden to its flip entrance
- * (or on mount with it), so a flipping element is already mounted, loaded and painted (hidden)
- * long before it flips in. Spread `style` before the element's own style.
+ * elements on each reveal. A flip, or a glide marked `onReveal`, plays when the element goes from
+ * hidden to that entrance (or on mount with it), so the element is already mounted, loaded and
+ * painted (hidden) long before it comes in. Spread `style` before the element's own style.
  */
 export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntrance | null | undefined) {
   const ref = useRef<T>(null)
@@ -60,12 +65,17 @@ export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntranc
   useLayoutEffect(() => {
     latest.current = entrance
   })
-  const flipping = typeof entrance === "object" && entrance !== null && entrance.flip === true
+  const revealed =
+    typeof entrance === "object" && entrance !== null && (entrance.flip === true || entrance.onReveal === true)
 
   useLayoutEffect(() => {
     const el = ref.current
     const e = latest.current
-    if (!flipping || !el || typeof e !== "object" || e === null) return
+    if (!revealed || !el || typeof e !== "object" || e === null) return
+    if (!e.flip) {
+      const glide = playGlideIn(el, e)
+      return () => glide.forEach((a) => a.cancel())
+    }
     const flip = playFlipIn(el, {
       delay: e.delay,
       duration: e.duration ?? ENTRANCE_DURATION_MS,
@@ -74,39 +84,44 @@ export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntranc
       rise: e.y ? e.y : undefined,
     })
     return () => flip.forEach((a) => a.cancel())
-  }, [flipping])
+  }, [revealed])
 
   useLayoutEffect(() => {
     const el = ref.current
     const e = onMount.current
-    if (!el || !e || e === "hidden" || e.flip) return
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return
-    // Two animations: the glide (transform) and the fade (opacity), each on its own curve.
-    // `backwards` keeps the start frame (hidden, offset) applied during the delay.
-    const timing = { duration: e.duration ?? ENTRANCE_DURATION_MS, delay: e.delay, fill: "backwards" } as const
-    const glide = el.animate(
-      [
-        { transform: `translate(${e.x}px, ${e.y}px) scale(${ENTRANCE_START_SCALE})` },
-        { transform: "translate(0px, 0px) scale(1)" },
-      ],
-      { ...timing, easing: ENTRANCE_EASING },
-    )
-    const fade = el.animate(
-      [
-        { opacity: 0, offset: 0 },
-        { opacity: 1, offset: 0.5 },
-        { opacity: 1, offset: 1 },
-      ],
-      { ...timing, easing: ENTRANCE_FADE_EASING },
-    )
-    return () => {
-      glide.cancel()
-      fade.cancel()
-    }
+    if (!el || !e || e === "hidden" || e.flip || e.onReveal) return
+    const glide = playGlideIn(el, e)
+    return () => glide.forEach((a) => a.cancel())
   }, [])
 
   const style: React.CSSProperties | undefined = entrance === "hidden" ? { opacity: 0, pointerEvents: "none" } : undefined
   return { ref, style }
+}
+
+/**
+ * The glide: the element moves in from `x` / `y` px away, growing slightly, while it fades in.
+ * Two animations, the glide (transform) and the fade (opacity), each on its own curve.
+ * `backwards` keeps the start frame (hidden, offset) applied during the delay.
+ */
+function playGlideIn(el: HTMLElement, e: { x: number; y: number; delay: number; duration?: number }) {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return []
+  const timing = { duration: e.duration ?? ENTRANCE_DURATION_MS, delay: e.delay, fill: "backwards" } as const
+  const glide = el.animate(
+    [
+      { transform: `translate(${e.x}px, ${e.y}px) scale(${ENTRANCE_START_SCALE})` },
+      { transform: "translate(0px, 0px) scale(1)" },
+    ],
+    { ...timing, easing: ENTRANCE_EASING },
+  )
+  const fade = el.animate(
+    [
+      { opacity: 0, offset: 0 },
+      { opacity: 1, offset: 0.5 },
+      { opacity: 1, offset: 1 },
+    ],
+    { ...timing, easing: ENTRANCE_FADE_EASING },
+  )
+  return [glide, fade]
 }
 
 const CORNERS: (Corner & { cursor: string })[] = [
