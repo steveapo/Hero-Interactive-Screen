@@ -152,8 +152,8 @@ function LayersPanel({ names }: { names?: Record<string, string> }) {
         </button>
         {AIRBNB_ELEMENTS.map((el) => (
           <button
-            {...LOAD_ITEM}
             key={el.id}
+            {...LOAD_ITEM}
             type="button"
             className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md pl-4 pr-2 text-left text-px-12 text-stone-900 hover:bg-stone-700/5"
           >
@@ -202,8 +202,8 @@ function ComponentsPanel({
           const insertable = isInsertable(name, library)
           return (
             <li
-              {...LOAD_ITEM}
               key={name}
+              {...LOAD_ITEM}
               data-cursor-id={`library-${name}`}
               className={cn("group/tile min-w-0", insertable && onDragStart && "cursor-grab active:cursor-grabbing")}
               onPointerDown={
