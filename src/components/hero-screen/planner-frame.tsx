@@ -27,7 +27,10 @@ export type CanvasEntrance =
       y: number
       delay: number
       duration?: number
-      /** Flip down onto the screen from above instead of gliding in (x / y unused; see playFlipIn). */
+      /**
+       * Flip down onto the screen from above instead of gliding in (see playFlipIn); it starts `y`
+       * px off its place (negative = above) and drops into it as it lies down. `x` is unused.
+       */
       flip?: boolean
       /** The flip's hinge (a CSS transform-origin). Default: the element's own top edge. */
       origin?: string
@@ -63,7 +66,13 @@ export function useCanvasEntrance<T extends HTMLElement>(entrance: CanvasEntranc
     const el = ref.current
     const e = latest.current
     if (!flipping || !el || typeof e !== "object" || e === null) return
-    const flip = playFlipIn(el, { delay: e.delay, duration: e.duration ?? ENTRANCE_DURATION_MS, origin: e.origin })
+    const flip = playFlipIn(el, {
+      delay: e.delay,
+      duration: e.duration ?? ENTRANCE_DURATION_MS,
+      origin: e.origin,
+      // A flip starts `y` px off its place (negative = above); 0 keeps the default small rise.
+      rise: e.y ? -e.y : undefined,
+    })
     return () => flip.forEach((a) => a.cancel())
   }, [flipping])
 

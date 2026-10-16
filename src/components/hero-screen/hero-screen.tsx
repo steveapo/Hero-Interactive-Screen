@@ -250,6 +250,8 @@ const CHROME_STAGGER_MS = 90
 const FLIP_SWEEP_MS = 1200
 /** …each flip taking this long (ms): slow, so each one reads as falling into place. */
 const FLIP_DURATION_MS = 1500
+/** "flip": how far above its place each element starts, dropping into it as it flips (screen px). */
+const FLIP_DROP_PX = 140
 /** "flip": the panel step's entrance is over this long after it starts (ms); later panels open normally. */
 const PANELS_SETTLE_MS = 2200
 
@@ -1313,7 +1315,8 @@ export function HeroScreen({
       const fromLeft = Math.min(1, Math.max(0, (rect.x - rect.w / 2 - minLeft) / spanX))
       return {
         x: 0,
-        y: 0,
+        // Each comes down from well above its place as it lies down.
+        y: -FLIP_DROP_PX,
         flip: true,
         delay: Math.round((0.8 * fromTop + 0.2 * fromLeft) * FLIP_SWEEP_MS),
         duration: FLIP_DURATION_MS,
