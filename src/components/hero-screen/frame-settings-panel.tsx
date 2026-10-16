@@ -1,8 +1,9 @@
 "use client"
 
-import { useState } from "react"
+import { memo, useState } from "react"
 import { ChevronDown, ChevronRight, Ellipsis, FlipHorizontal2, FlipVertical2, ImagePlus, Minus, Plus, RotateCwSquare, Scan } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { CONCEALED_STYLE, LOAD_ITEM, usePanelLoadIn } from "./load-in"
 import { FrameGlyph } from "./planner-frame"
 
 /* --------------------------------- Types ---------------------------------- */
@@ -16,7 +17,7 @@ export type Insets = { top: number | null; right: number | null; bottom: number 
 
 export const NO_SIDES: Sides = { top: 0, right: 0, bottom: 0, left: 0 }
 
-const LAYOUT_MODES: { id: LayoutMode; label: string; icon: () => React.JSX.Element }[] = [
+export const LAYOUT_MODES: { id: LayoutMode; label: string; icon: () => React.JSX.Element }[] = [
   { id: "freeform", label: "Freeform", icon: FreeformIcon },
   { id: "row", label: "Row", icon: RowIcon },
   { id: "column", label: "Column", icon: ColumnIcon },
@@ -32,8 +33,9 @@ export function px(value: number | null) {
 
 /* ------------------------------ Frame panel ------------------------------- */
 
-/** Right-side settings for a selected design frame. */
-export function FrameSettingsPanel({
+/** Right-side settings for a selected design frame. Memoized: the canvas re-renders it on every
+ * camera frame otherwise, and its props only change with the selected frame. */
+export const FrameSettingsPanel = memo(function FrameSettingsPanel({
   ref,
   tag = "div",
   position = "static",
@@ -49,8 +51,13 @@ export function FrameSettingsPanel({
   radius,
   border,
   colors,
+  onFillChange,
+  onAddToChat,
+  concealed = false,
 }: {
   ref?: React.Ref<HTMLElement>
+  /** Mounted ahead of its load-in: unseen and unreachable until this turns off (then it moves in). */
+  concealed?: boolean
   /** Element tag shown in the header. */
   tag?: string
   position?: CssPosition
@@ -72,21 +79,25 @@ export function FrameSettingsPanel({
   border: string | null
   /** Colours used inside the frame; defaults to its fill and stroke. */
   colors?: string[]
+  /** Makes the fill editable: the Fill swatch opens preset colours (see FillSection). */
+  onFillChange?: (color: string) => void
+  /** "Add to Build Chat": hand this frame to the Build Mode agent (opens the Portal with it attached). */
+  onAddToChat?: () => void
 }) {
   const selectionColors = colors ?? [fill, border].filter((c): c is string => c !== null)
 
   return (
-    <SettingsPanelShell ref={ref} icon={<FrameGlyph />} title={tag}>
+    <SettingsPanelShell ref={ref} icon={<FrameGlyph />} title={tag} onAddToChat={onAddToChat} concealed={concealed}>
       <PositionSection position={position} inset={inset} x={x} y={y} />
       <SizeSection width={px(width)} height={px(height)} />
       <LayoutSection layout={layout} padding={padding} clip={clip} />
       <AppearanceSection radius={radius} />
-      <FillSection fill={fill} />
+      <FillSection fill={fill} onFillChange={onFillChange} />
       <StrokeSection border={border} />
       <SelectionColorsSection colors={selectionColors} />
     </SettingsPanelShell>
   )
-}
+})
 
 /* ------------------------- Shared panel sections -------------------------- */
 
@@ -95,26 +106,47 @@ export function SettingsPanelShell({
   ref,
   icon,
   title,
+  onAddToChat,
+  concealed = false,
   children,
 }: {
   ref?: React.Ref<HTMLElement>
   icon: React.ReactNode
   title: string
+  /** "Add to Build Chat" was clicked. */
+  onAddToChat?: () => void
+  /** Mounted ahead of its load-in: unseen and unreachable until this turns off (then it moves in). */
+  concealed?: boolean
   children: React.ReactNode
 }) {
+  // During the load-in's panel step it moves in from the right, its pieces appearing one by one
+  // (instead of the usual quick fade).
+  const loadIn = usePanelLoadIn<HTMLElement>("right", concealed)
+  const setRef = (node: HTMLElement | null) => {
+    loadIn.ref.current = node
+    if (typeof ref === "function") ref(node)
+    else if (ref) ref.current = node
+  }
   return (
     <aside
-      ref={ref}
-      className="absolute right-1.5 top-[46px] z-30 flex max-h-[calc(100%-56px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-stone-700/10 bg-[#f5f5f4] pb-6 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)] animate-in fade-in slide-in-from-right-1 duration-150"
+      ref={setRef}
+      inert={concealed || undefined}
+      style={concealed ? CONCEALED_STYLE : undefined}
+      className={cn(
+        "absolute right-1 top-[46px] z-30 flex max-h-[calc(100%-50px)] w-[326px] flex-col overflow-y-auto rounded-xl border border-transparent bg-[#f5f5f4] pb-6 shadow-[-6px_4px_20px_-6px_rgba(17,17,16,0.14),-2px_1px_4px_-1px_rgba(17,17,16,0.06),0_0_0_1px_rgba(17,17,16,0.05)]",
+        !loadIn.playing && "animate-in fade-in slide-in-from-right-1 duration-150",
+      )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 border-b border-stone-700/10 px-3 py-2.5">
+      <div {...LOAD_ITEM} className="flex items-center justify-between gap-2 border-b border-stone-700/10 px-3 py-2.5">
         <h2 className="flex items-center gap-2.5 text-[14px] font-semibold leading-4 text-stone-800">
           {icon}
           {title}
         </h2>
         <button
           type="button"
+          data-cursor-id="add-to-build-chat"
+          onClick={onAddToChat}
           className="flex h-7 items-center gap-1.5 rounded-full bg-[#46a35a] px-2.5 text-[12px] font-semibold text-white shadow-[inset_0_0_0_1px_rgba(0,0,0,0.06)] transition-colors hover:bg-[#3d9150]"
         >
           <AddToChatIcon />
@@ -340,12 +372,15 @@ export function AppearanceSection({ radius }: { radius: number | null }) {
   )
 }
 
-/** Fill colour row + Add Image. A transparent fill reads as #000000 at 0 %. */
-export function FillSection({ fill }: { fill: string | null }) {
+/**
+ * Fill colour row + Add Image. A transparent fill reads as #000000 at 0 %. With `onFillChange`,
+ * the hex is an input: typing a new colour sets the fill.
+ */
+export function FillSection({ fill, onFillChange }: { fill: string | null; onFillChange?: (color: string) => void }) {
   return (
     <Section title="Fill">
       <Row side={<SideButton label="Remove fill" icon={<Minus className="size-3.5" strokeWidth={1.25} />} plain />}>
-        <ColorField name="Fill" color={fill} className="col-span-2" />
+        <ColorField name="Fill" color={fill} className="col-span-2" onChange={onFillChange} />
       </Row>
       <Row>
         <button
@@ -413,7 +448,7 @@ export function EmptySection({ title, addLabel }: { title: string; addLabel: str
 export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section className="flex flex-col gap-2 border-b border-stone-700/10 px-3 pb-4 pt-3">
-      <h3 className="mb-1 text-[12px] font-semibold leading-4 text-stone-900">{title}</h3>
+      <h3 {...LOAD_ITEM} className="mb-1 text-[12px] font-semibold leading-4 text-stone-900">{title}</h3>
       {children}
     </section>
   )
@@ -425,7 +460,7 @@ export function Section({ title, children }: { title: string; children: React.Re
  */
 export function Row({ side, children }: { side?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2">
+    <div {...LOAD_ITEM} className="flex items-center gap-2">
       <div className="grid flex-1 grid-cols-2 gap-2">{children}</div>
       <div className="flex size-6 shrink-0 items-center justify-center">{side}</div>
     </div>
@@ -494,20 +529,38 @@ export function Field({
   )
 }
 
-/** Swatch + hex + opacity. null = transparent: checkerboard, #000000 at 0 %. */
-export function ColorField({ name, color, className }: { name: string; color: string | null; className?: string }) {
+/** Swatch + hex + opacity. null = transparent: checkerboard, #000000 at 0 %. With `onChange` the hex is an editable input. */
+export function ColorField({
+  name,
+  color,
+  className,
+  onChange,
+}: {
+  name: string
+  color: string | null
+  className?: string
+  /** Makes the hex editable: called once the text is a full #rrggbb colour (as typed). */
+  onChange?: (color: string) => void
+}) {
+  const swatch = (
+    <span
+      className="size-3.5 shrink-0 rounded-[4px] border border-stone-700/15 transition-colors duration-300"
+      style={{
+        background:
+          color ?? "repeating-conic-gradient(#d6d3d1 0 25%, #ffffff 0 50%) 0 0 / 7px 7px",
+      }}
+    />
+  )
   return (
     <div className={cn("flex h-6 min-w-0 items-center rounded-md bg-stone-200/70 text-[12px] text-stone-900", className)}>
-      <span tabIndex={0} className="group/setting relative flex h-full min-w-0 flex-1 items-center gap-2 pl-1.5 outline-none">
+      <span tabIndex={onChange ? undefined : 0} className="group/setting relative flex h-full min-w-0 flex-1 items-center gap-2 pl-1.5 outline-none">
         <SettingTooltip label={`${name} colour`} />
-        <span
-          className="size-3.5 shrink-0 rounded-[4px] border border-stone-700/15"
-          style={{
-            background:
-              color ?? "repeating-conic-gradient(#d6d3d1 0 25%, #ffffff 0 50%) 0 0 / 7px 7px",
-          }}
-        />
-        <span className="truncate font-mono tracking-tight">{color ?? "#000000"}</span>
+        {swatch}
+        {onChange ? (
+          <HexInput name={name} color={color} onChange={onChange} />
+        ) : (
+          <span className="truncate font-mono tracking-tight">{color ?? "#000000"}</span>
+        )}
       </span>
       <span
         tabIndex={0}
@@ -518,6 +571,38 @@ export function ColorField({ name, color, className }: { name: string; color: st
         <span className="text-stone-400">%</span>
       </span>
     </div>
+  )
+}
+
+/** A complete hex colour, with or without its "#". */
+const HEX = /^#?[0-9a-f]{6}$/i
+
+/**
+ * The hex of an editable colour. While typing, the text is a draft; as soon as it's a full
+ * #rrggbb colour it's applied (so the frame changes the moment the last digit lands). Enter or
+ * leaving the field settles it: an incomplete draft goes back to the current colour.
+ */
+function HexInput({ name, color, onChange }: { name: string; color: string | null; onChange: (color: string) => void }) {
+  const current = color ?? "#000000"
+  const [draft, setDraft] = useState<string | null>(null)
+  return (
+    <input
+      type="text"
+      aria-label={`${name} hex`}
+      spellCheck={false}
+      maxLength={7}
+      value={draft ?? current}
+      onChange={(e) => {
+        const next = e.target.value
+        setDraft(next)
+        if (HEX.test(next)) onChange((next.startsWith("#") ? next : `#${next}`).toLowerCase())
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur()
+      }}
+      onBlur={() => setDraft(null)}
+      className="h-full min-w-0 flex-1 bg-transparent font-mono tracking-tight outline-none selection:bg-[#2f6bf6]/25"
+    />
   )
 }
 
@@ -610,7 +695,7 @@ export function Glyph({ children }: { children: React.ReactNode }) {
 }
 
 /** Window with a header bar; its bottom edge opens where the up arrow comes out of it. */
-function AddToChatIcon() {
+export function AddToChatIcon() {
   return (
     <Glyph>
       <path d="M5.25 12.5H3a1.5 1.5 0 0 1-1.5-1.5V3A1.5 1.5 0 0 1 3 1.5h8A1.5 1.5 0 0 1 12.5 3v8a1.5 1.5 0 0 1-1.5 1.5H8.75" />
@@ -620,7 +705,7 @@ function AddToChatIcon() {
   )
 }
 
-function AngleIcon() {
+export function AngleIcon() {
   return (
     <Glyph>
       <path d="M2 2v10h10M2 7a5 5 0 0 1 5 5" />
@@ -705,7 +790,7 @@ function GridIcon() {
   )
 }
 
-function PaddingXIcon() {
+export function PaddingXIcon() {
   return (
     <Glyph>
       <rect x="1.5" y="3" width="11" height="8" rx="1" />
@@ -714,7 +799,7 @@ function PaddingXIcon() {
   )
 }
 
-function PaddingYIcon() {
+export function PaddingYIcon() {
   return (
     <Glyph>
       <rect x="1.5" y="2.5" width="11" height="9" rx="1" />
@@ -768,7 +853,7 @@ function PaddingPerSideIcon() {
   )
 }
 
-function MarginPerSideIcon() {
+export function MarginPerSideIcon() {
   return (
     <Glyph>
       <path d="M1.5 2v10M12.5 2v10" />
@@ -778,7 +863,7 @@ function MarginPerSideIcon() {
   )
 }
 
-function MarginLeftIcon() {
+export function MarginLeftIcon() {
   return (
     <Glyph>
       <path d="M1.5 2.5v9" />
@@ -787,7 +872,7 @@ function MarginLeftIcon() {
   )
 }
 
-function MarginRightIcon() {
+export function MarginRightIcon() {
   return (
     <Glyph>
       <path d="M12.5 2.5v9" />
@@ -796,7 +881,7 @@ function MarginRightIcon() {
   )
 }
 
-function MarginTopIcon() {
+export function MarginTopIcon() {
   return (
     <Glyph>
       <path d="M2.5 1.5h9" />
@@ -805,7 +890,7 @@ function MarginTopIcon() {
   )
 }
 
-function MarginBottomIcon() {
+export function MarginBottomIcon() {
   return (
     <Glyph>
       <path d="M2.5 12.5h9" />
@@ -814,7 +899,7 @@ function MarginBottomIcon() {
   )
 }
 
-function StrokeWidthIcon() {
+export function StrokeWidthIcon() {
   return (
     <Glyph>
       <path d="M2 3.5h10" />
@@ -824,7 +909,7 @@ function StrokeWidthIcon() {
   )
 }
 
-function OpacityIcon() {
+export function OpacityIcon() {
   return (
     <Glyph>
       <rect x="1.5" y="1.5" width="11" height="11" rx="1.5" />

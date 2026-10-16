@@ -1,6 +1,13 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
+import { memo, useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
+import { Check } from "lucide-react"
+import { cn } from "@/lib/utils"
+
+/** The "Copied Preview Link" toast: slides up, stays this long, then slides back down (ms). */
+const TOAST_SLIDE_MS = 300
+const TOAST_HOLD_MS = 2400
 
 /**
  * Top-bar Share control: publishes the canvas to a preview URL.
@@ -11,7 +18,7 @@ import { useEffect, useRef, useState } from "react"
  * `changes` lists the values that make up the current canvas content. Publishing snapshots them;
  * once any of them is a different value, the preview is out of date.
  */
-export function ShareButton({
+export const ShareButton = memo(function ShareButton({
   previewUrl,
   changes,
 }: {
@@ -22,6 +29,13 @@ export function ShareButton({
   const [publishedAt, setPublishedAt] = useState<number | null>(null)
   const [publishedChanges, setPublishedChanges] = useState<readonly unknown[] | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  /** Bumped by each Copy: shows (or restarts) the "Copied Preview Link" toast. 0 = none yet. */
+  const [copiedId, setCopiedId] = useState(0)
+  /** The screen root the toast is drawn in (its bottom-right corner). */
+  const [toastHost, setToastHost] = useState<Element | null>(null)
+  useEffect(() => {
+    setToastHost(rootRef.current?.closest("[data-hero-root]") ?? null)
+  }, [])
 
   const published = publishedAt !== null && publishedChanges !== null
   const upToDate =
@@ -59,7 +73,7 @@ export function ShareButton({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex h-8 items-center rounded-md bg-mi-lime px-3 text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] hover:bg-mi-lime-deep"
+        className="flex h-7 items-center rounded-md bg-mi-lime px-3 text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] hover:bg-mi-lime-deep"
       >
         Share
       </button>
@@ -70,8 +84,44 @@ export function ShareButton({
           publishedAt={publishedAt}
           upToDate={upToDate}
           onPublish={publish}
+          onCopied={() => setCopiedId((id) => id + 1)}
         />
       )}
+
+      {/* Outlives the popover: it stays up after the popover closes. */}
+      {copiedId > 0 && toastHost && createPortal(<CopiedToast key={copiedId} />, toastHost)}
+    </div>
+  )
+})
+
+/** Bottom-right info box: slides up from the bottom, stays a moment, then slides back down. */
+function CopiedToast() {
+  const [phase, setPhase] = useState<"in" | "out" | "gone">("in")
+  useEffect(() => {
+    const out = window.setTimeout(() => setPhase("out"), TOAST_SLIDE_MS + TOAST_HOLD_MS)
+    const gone = window.setTimeout(() => setPhase("gone"), TOAST_SLIDE_MS * 2 + TOAST_HOLD_MS)
+    return () => {
+      window.clearTimeout(out)
+      window.clearTimeout(gone)
+    }
+  }, [])
+  if (phase === "gone") return null
+  return (
+    <div
+      role="status"
+      data-cursor-id="copied-toast"
+      className={cn(
+        "pointer-events-none absolute bottom-3 right-3 z-[55] flex items-center gap-2.5 rounded-2xl bg-white py-3 pl-3.5 pr-5 text-px-13 font-medium text-stone-900 shadow-[0_8px_24px_-8px_rgba(17,17,16,0.25),0_1px_3px_rgba(17,17,16,0.08)]",
+        phase === "in"
+          ? "animate-in fade-in slide-in-from-bottom-6 ease-out"
+          : "animate-out fade-out slide-out-to-bottom-6 ease-in",
+      )}
+      style={{ animationDuration: `${TOAST_SLIDE_MS}ms`, animationFillMode: "both" }}
+    >
+      <span aria-hidden="true" className="flex size-4 shrink-0 items-center justify-center rounded-full bg-stone-900 text-white">
+        <Check className="size-2.5" strokeWidth={3.5} />
+      </span>
+      Copied Preview Link
     </div>
   )
 }
@@ -81,11 +131,14 @@ function SharePopover({
   publishedAt,
   upToDate,
   onPublish,
+  onCopied,
 }: {
   previewUrl: string
   publishedAt: number | null
   upToDate: boolean
   onPublish: () => void
+  /** Copy was clicked: the "Copied Preview Link" toast shows. */
+  onCopied: () => void
 }) {
   const now = useNow()
   const [copied, setCopied] = useState(false)
@@ -97,13 +150,13 @@ function SharePopover({
     return () => window.clearTimeout(id)
   }, [copied])
 
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(previewUrl)
-      setCopied(true)
-    } catch {
-      // Clipboard access denied: leave the label as is
-    }
+  function copy() {
+    // The toast shows either way: a scripted click (no user gesture) can't write the clipboard.
+    setCopied(true)
+    onCopied()
+    navigator.clipboard?.writeText(previewUrl).catch(() => {
+      // Clipboard access denied: nothing else to do
+    })
   }
 
   return (
@@ -146,6 +199,7 @@ function SharePopover({
             </a>
             <button
               type="button"
+              data-cursor-id="share-copy"
               onClick={copy}
               className="flex h-8 items-center justify-center rounded-md bg-stone-700/5 text-px-13 font-medium text-stone-800 hover:bg-stone-700/10"
             >

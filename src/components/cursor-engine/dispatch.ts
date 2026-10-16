@@ -26,7 +26,7 @@ export function buttonsFor(button: number) {
   return button === 1 ? 4 : button === 2 ? 2 : 1
 }
 
-function pointerInit(point: Point, buttons: number, button = 0): PointerEventInit {
+function pointerInit(point: Point, buttons: number, button = 0, mods?: KeyModifiers): PointerEventInit {
   return {
     bubbles: true,
     cancelable: true,
@@ -38,6 +38,10 @@ function pointerInit(point: Point, buttons: number, button = 0): PointerEventIni
     screenY: point.clientY,
     button,
     buttons,
+    ctrlKey: !!mods?.ctrl,
+    metaKey: !!mods?.meta,
+    shiftKey: !!mods?.shift,
+    altKey: !!mods?.alt,
     pointerId: mousePointerId,
     pointerType: "mouse",
     isPrimary: true,
@@ -75,28 +79,28 @@ function focusTarget(target: Element) {
  * Press: pointerdown + mousedown (+ focus for the left button, contextmenu for the right).
  * Returns the pressed element (for move/up).
  */
-export function dispatchDown(point: Point, button = 0): Element | null {
+export function dispatchDown(point: Point, button = 0, mods?: KeyModifiers): Element | null {
   const target = document.elementFromPoint(point.clientX, point.clientY)
   if (!target) return null
   const buttons = buttonsFor(button)
   withoutPointerCapture(() => {
-    const notCancelled = target.dispatchEvent(new PointerEvent("pointerdown", pointerInit(point, buttons, button)))
+    const notCancelled = target.dispatchEvent(new PointerEvent("pointerdown", pointerInit(point, buttons, button, mods)))
     if (notCancelled) {
-      target.dispatchEvent(new MouseEvent("mousedown", pointerInit(point, buttons, button)))
+      target.dispatchEvent(new MouseEvent("mousedown", pointerInit(point, buttons, button, mods)))
       if (button === 0) focusTarget(target)
     }
-    if (button === 2) target.dispatchEvent(new MouseEvent("contextmenu", pointerInit(point, buttons, button)))
+    if (button === 2) target.dispatchEvent(new MouseEvent("contextmenu", pointerInit(point, buttons, button, mods)))
   })
   return target
 }
 
 /** Drag move while pressed: sent to the pressed element, as pointer capture would. */
-export function dispatchMove(pressed: Element, point: Point, button = 0) {
+export function dispatchMove(pressed: Element, point: Point, button = 0, mods?: KeyModifiers) {
   const buttons = buttonsFor(button)
   withoutPointerCapture(() => {
     // Moves report button -1: no button changed state.
-    pressed.dispatchEvent(new PointerEvent("pointermove", pointerInit(point, buttons, -1)))
-    pressed.dispatchEvent(new MouseEvent("mousemove", pointerInit(point, buttons, 0)))
+    pressed.dispatchEvent(new PointerEvent("pointermove", pointerInit(point, buttons, -1, mods)))
+    pressed.dispatchEvent(new MouseEvent("mousemove", pointerInit(point, buttons, 0, mods)))
   })
 }
 
@@ -104,13 +108,13 @@ export function dispatchMove(pressed: Element, point: Point, button = 0) {
  * Release: pointerup + mouseup, then (released over the pressed element) click for the left
  * button, auxclick for the others.
  */
-export function dispatchUp(pressed: Element | null, point: Point, button = 0) {
+export function dispatchUp(pressed: Element | null, point: Point, button = 0, mods?: KeyModifiers) {
   const over = document.elementFromPoint(point.clientX, point.clientY)
   const target = pressed ?? over
   if (!target) return
   withoutPointerCapture(() => {
-    target.dispatchEvent(new PointerEvent("pointerup", pointerInit(point, 0, button)))
-    target.dispatchEvent(new MouseEvent("mouseup", pointerInit(point, 0, button)))
+    target.dispatchEvent(new PointerEvent("pointerup", pointerInit(point, 0, button, mods)))
+    target.dispatchEvent(new MouseEvent("mouseup", pointerInit(point, 0, button, mods)))
     if (pressed && over && (pressed.contains(over) || over.contains(pressed))) {
       // Browsers fire click on the nearest common ancestor of the press and release targets.
       const clickTarget = pressed.contains(over) ? pressed : over
