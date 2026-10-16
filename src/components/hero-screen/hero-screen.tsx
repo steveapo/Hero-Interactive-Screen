@@ -15,7 +15,7 @@ import { AIRBNB_ELEMENTS } from "./airbnb-elements"
 import { CanvasText, DrawnFrame, TEXT_LINE_HEIGHT, type CanvasElement } from "./canvas-elements"
 import { builtVariantChange } from "./built-change"
 import { allChanges, CodeChangesPopover, totalsOf } from "./code-changes-popover"
-import { CodebaseFrame, CANVAS_ZOOM, CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
+import { CodebaseFrame, CANVAS_ZOOM, CODEBASE_FLIP_MS, CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
 import { CodebaseSettingsPanel } from "./codebase-settings-panel"
 import { trackDrag, useMeasuredRect, type CanvasRect } from "./drag"
 import { FrameSettingsPanel } from "./frame-settings-panel"
@@ -224,7 +224,8 @@ export type LoadIntro = {
   /**
    * "glide" (default, the stored v1 load-in): the bars come in first, the Codebase frame fades in,
    * the elements glide in around it in a clockwise sweep. "flip": the Codebase frame and then the
-   * elements (top first) flip down onto the screen from above; then the bars slide in from their
+   * elements (top first) each get a dashed placeholder drawn at their place, then come up from
+   * below and land on it; then the bars slide in from their
    * own edges (`chromeAt` after `elementsAt`); then at `panelsAt` the side panels move in (the
    * sidebar's `sidebarPanel` grows out of its rail, the selected frame's settings slide in from the
    * right), their contents appearing one by one.
@@ -249,15 +250,16 @@ const CHROME_STAGGER_MS = 90
 
 /** "flip": the elements' flips start over this long, top of the canvas first (ms)… */
 const FLIP_SWEEP_MS = 1200
-/** …each flip taking this long (ms): slow, so each one reads as falling into place. */
+/** …each flip taking this long (ms): slow, so each one reads as coming up and settling into place. */
 const FLIP_DURATION_MS = 1500
-/** "flip": how far above its place each element starts, dropping into it as it flips (screen px). */
+/** "flip": how far below its place each element starts, rising into it as it lands (screen px). */
 const FLIP_DROP_PX = 140
 /**
- * "flip": an element falls in this long after its dashed placeholder starts drawing (ms): the
- * outline draws round (PLACEHOLDER_DRAW_MS), holds a beat, then the element comes down onto it.
+ * "flip": an element comes in this long after its dashed placeholder starts drawing (ms): the
+ * outline draws all the way round (PLACEHOLDER_DRAW_MS), holds a beat, then the element comes up
+ * and lands on it.
  */
-const PLACEHOLDER_LEAD_MS = PLACEHOLDER_DRAW_MS + 250
+const PLACEHOLDER_LEAD_MS = PLACEHOLDER_DRAW_MS + 300
 /** "flip": the panel step's entrance is over this long after it starts (ms); later panels open normally. */
 const PANELS_SETTLE_MS = 2200
 
@@ -1282,7 +1284,7 @@ export function HeroScreen({
   /**
    * "flip": when an element's turn comes in the load-in's sweep (ms after the elements step): from
    * the top of the canvas downward, leaning slightly left to right. Its placeholder is drawn then;
-   * the element itself falls in PLACEHOLDER_LEAD_MS later.
+   * the element itself comes in PLACEHOLDER_LEAD_MS later.
    */
   function flipSweepDelay(rect: CanvasRect) {
     const tops = canvasElements.map((el) => elementRects[el.id].y - elementRects[el.id].h / 2)
@@ -1322,17 +1324,17 @@ export function HeroScreen({
     // The load-in may play the entrance faster (its delays and glides alike); leaving the Portal
     // always plays it at its own pace.
     const pace = loadIntro?.elementsTimeScale ?? 1
-    // "flip" load-in: each element flips down onto the screen from above; the flips start from the
+    // "flip" load-in: each element comes up from below and lands on the screen; they start from the
     // top of the canvas downward (with a slight lean from left to right), so the canvas fills in
-    // like cards being laid down one after another. Each falls onto its dashed placeholder, drawn
+    // like cards being laid down one after another. Each lands on its dashed placeholder, drawn
     // just before (see FlipPlaceholder).
     if (flipIntro) {
       // After the load-in, anything new is simply there (no flip when it mounts later).
       if (introSteps.includes("settled")) return null
       return {
         x: 0,
-        // Each comes down from well above its place as it lies down.
-        y: -FLIP_DROP_PX,
+        // Each comes up from well below its place as it lands.
+        y: FLIP_DROP_PX,
         flip: true,
         delay: flipSweepDelay(rect) + PLACEHOLDER_LEAD_MS,
         duration: FLIP_DURATION_MS,
@@ -1488,6 +1490,21 @@ export function HeroScreen({
         onPointerUp={endPan}
         onPointerCancel={endPan}
       >
+        {/* "flip" load-in: the Codebase frame's dashed placeholder, drawn all the way round before
+            the frame comes up onto it. Mounted, hidden, from the start. */}
+        {showCodebase && flipIntro && !introSteps.includes("settled") && (
+          <FlipPlaceholder
+            left={camera.x + (codebaseRect.x - codebaseRect.w / 2) * camera.zoom}
+            top={camera.y + (codebaseRect.y - codebaseRect.h / 2) * camera.zoom}
+            width={codebaseRect.w * camera.zoom}
+            height={codebaseRect.h * camera.zoom}
+            // The frame's rounded-md corners (screen px).
+            radius={6}
+            play={codebaseIn}
+            appearAt={0}
+            landAt={PLACEHOLDER_LEAD_MS + CODEBASE_FLIP_MS}
+          />
+        )}
         {showCodebase && (
           <CodebaseFrame
             selected={codebaseSelected}
@@ -1500,11 +1517,13 @@ export function HeroScreen({
             offsetY={camera.y + codebaseRect.y * camera.zoom}
             appear={hasIntro ? (codebaseIn ? "in" : "hidden") : undefined}
             appearStyle={flipIntro ? "flip" : "fade"}
+            // "flip": it comes up once its placeholder has been drawn all the way round.
+            appearDelay={flipIntro ? PLACEHOLDER_LEAD_MS : 0}
             built={codebaseBuilt}
           />
         )}
         {/* "flip" load-in: each element's flat dashed placeholder, drawn at its place just before it
-            falls in (beneath the elements). Mounted, hidden, from the start; gone once the load-in has settled. */}
+            comes up onto it (beneath the elements). Mounted, hidden, from the start; gone once the load-in has settled. */}
         {flipIntro &&
           !introSteps.includes("settled") &&
           canvasElements.map((el) => {

@@ -10,10 +10,13 @@ const PLACEHOLDER_FADE_MS = 450
 /**
  * The "flip" load-in's placeholder for a canvas element: a flat dashed outline at the element's
  * place on the canvas, drawn round (from its top-left corner, clockwise) at `appearAt`, before the
- * element falls in; it fades away as the element lands on it at `landAt` (ms after `play`).
+ * element comes up onto it; it fades away as the element lands on it at `landAt` (ms after `play`).
  *
  * Mounted (hidden) well ahead of time; nothing shows until `play`. Positioned like the canvas
  * frames (screen px from the canvas centre), so it stays put under the element if the canvas pans.
+ *
+ * The element comes in only after the outline has been drawn all the way round: callers start it
+ * at least PLACEHOLDER_DRAW_MS after `appearAt`.
  */
 export function FlipPlaceholder({
   left,

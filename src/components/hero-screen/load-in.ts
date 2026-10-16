@@ -14,32 +14,32 @@ function reducedMotion() {
 /** Soft ease-out with no bounce: fast start, long gentle settle. */
 const SETTLE_EASING = "cubic-bezier(0.22, 1, 0.36, 1)"
 
-/* ------------------------------- Flip down -------------------------------- */
+/* -------------------------------- Flip up --------------------------------- */
 
-/** How far above its place a frame starts its flip by default (screen px). */
+/** How far below its place a frame starts its flip by default (screen px). */
 const FLIP_RISE_PX = 36
 /** Perspective of the flip (px): lower = more dramatic depth. */
 const FLIP_PERSPECTIVE_PX = 1400
 /**
- * The flip's fall: it tips over slowly, gathers speed like something falling under its own
+ * The flip's motion: it tips back slowly, gathers speed like something falling under its own
  * weight, and lands softly (no bounce: it can't pass through the screen).
  */
 const FLIP_EASING = "cubic-bezier(0.5, 0, 0.2, 1)"
 
 /**
- * A canvas frame flips down onto the screen from above: it starts standing straight up out of the
- * screen (rotated 90° about its top edge, so it's edge-on and invisible) and `rise` px higher than
- * its place, then drops and lowers at once until it lies flat in place. Uses `transform` only
- * (positioning in these frames uses the `translate` property and left / top), so it composes with
- * them. `backwards` keeps the start frame applied during the delay. `origin`: the hinge (default:
- * the element's own top edge).
+ * A canvas frame comes up from below and lands on the screen: it starts standing straight up out of
+ * the screen (rotated 90° about its bottom edge, its top edge towards the viewer, so it's edge-on
+ * and invisible) and `rise` px lower than its place, then rises and tips back at once until it lies
+ * flat in place. Uses `transform` only (positioning in these frames uses the `translate` property
+ * and left / top), so it composes with them. `backwards` keeps the start frame applied during the
+ * delay. `origin`: the hinge (default: the element's own bottom edge).
  */
 export function playFlipIn(
   el: HTMLElement,
   {
     delay,
     duration,
-    origin = "50% 0%",
+    origin = "50% 100%",
     rise = FLIP_RISE_PX,
   }: { delay: number; duration: number; origin?: string; rise?: number },
 ) {
@@ -49,7 +49,7 @@ export function playFlipIn(
     [
       {
         transformOrigin: origin,
-        transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(${-rise}px) rotateX(90deg)`,
+        transform: `perspective(${FLIP_PERSPECTIVE_PX}px) translateY(${rise}px) rotateX(-90deg)`,
       },
       {
         transformOrigin: origin,

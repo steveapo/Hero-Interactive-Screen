@@ -9,7 +9,7 @@ import { playFlipIn } from "./load-in"
 export const CANVAS_ZOOM = 0.3
 
 /** The "flip" appearance's length (ms). */
-const CODEBASE_FLIP_MS = 1300
+export const CODEBASE_FLIP_MS = 1300
 
 /** The Codebase frame's opening animation plays at this rate (1 = the app's own pace). */
 const CODEBASE_INTRO_SPEED = 0.6
@@ -43,6 +43,7 @@ export function CodebaseFrame({
   offsetY,
   appear,
   appearStyle = "fade",
+  appearDelay = 0,
   built,
 }: {
   /**
@@ -58,10 +59,12 @@ export function CodebaseFrame({
    */
   appear?: "hidden" | "in"
   /**
-   * How the frame appears at `appear="in"`: "fade" (default) or "flip", flipping down onto the
-   * screen from above (see playFlipIn).
+   * How the frame appears at `appear="in"`: "fade" (default) or "flip", coming up from below and
+   * landing on the screen (see playFlipIn), `appearDelay` ms after it's "in".
    */
   appearStyle?: "fade" | "flip"
+  /** "flip": how long after `appear="in"` the frame comes up (ms), e.g. while its placeholder draws. */
+  appearDelay?: number
   selected: boolean
   onSelect: () => void
   /** Double-click: open the frame in the Portal View. */
@@ -95,28 +98,50 @@ export function CodebaseFrame({
   /**
    * The intro is playing in the frame (it settles on the thumbnail, or on the built app). Not in
    * the "flip": the frame lands showing the settled app (its thumbnail, loaded while it was hidden),
-   * with no second animation running inside the falling frame.
+   * with no second animation running inside the moving frame.
    */
   const introPlaying = appear === "in" && !introDone && appearStyle !== "flip"
   /**
    * The live app is mounted for the load-in's opening animation, while built changes must show
    * (the thumbnail predates them), or if there's no thumbnail. In the "flip" it's mounted (settled)
-   * while the frame is still hidden, so it's loaded long before the frame falls in.
+   * while the frame is still hidden, so it's loaded long before the frame comes in.
    */
   const preloaded = appear !== "hidden" || appearStyle === "flip"
   const showLiveApp = introPlaying || (preloaded && (thumbnailMissing || built !== undefined))
   /** Not playing the intro: the settled app straight away. */
   const liveIntroSpeed = introPlaying ? CODEBASE_INTRO_SPEED : 1000
 
-  /** The "flip" appearance: played once, when the frame comes in. */
+  /** The "flip" appearance: played once, when the frame comes in (after `appearDelay`). */
   const flipping = appear === "in" && appearStyle === "flip"
+  /** The flip has landed: the frame no longer needs a layer of its own. */
+  const [landed, setLanded] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const el = rootRef.current
     if (!flipping || !el) return
-    const animations = playFlipIn(el, { delay: 0, duration: CODEBASE_FLIP_MS })
+    const animations = playFlipIn(el, { delay: appearDelay, duration: CODEBASE_FLIP_MS })
+    if (animations.length === 0) setLanded(true)
+    else
+      animations[0].finished.then(
+        () => setLanded(true),
+        () => undefined, // cancelled
+      )
     return () => animations.forEach((a) => a.cancel())
+    // The delay is fixed; it plays once, when the frame comes in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flipping])
+  /**
+   * "flip": until it lands, the frame is its own compositor layer, and while hidden it's only
+   * transparent (not `visibility: hidden`), so it's painted and rasterized ahead of time. Its
+   * entrance then only moves that layer, instead of painting the whole live app on its first frame.
+   */
+  const flipStyle: React.CSSProperties =
+    appearStyle === "flip"
+      ? {
+          willChange: landed ? undefined : "transform, opacity",
+          ...(appear === "hidden" ? { opacity: 0, pointerEvents: "none" as const } : {}),
+        }
+      : { visibility: appear === "hidden" ? "hidden" : undefined }
 
   return (
     <div
@@ -137,7 +162,7 @@ export function CodebaseFrame({
         top: `calc(50% + ${offsetY}px)`,
         width: CODEBASE_WIDTH * zoom,
         height: CODEBASE_HEIGHT * zoom,
-        visibility: appear === "hidden" ? "hidden" : undefined,
+        ...flipStyle,
         transition: "none",
       }}
       onPointerDown={(e) => {
