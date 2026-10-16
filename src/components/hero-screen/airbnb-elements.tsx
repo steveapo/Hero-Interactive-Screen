@@ -52,6 +52,12 @@ export type AppElement = {
   name: string
   /** Position (centre, canvas units, relative to the Codebase frame's centre) and natural size. */
   rect: CanvasRect
+  /**
+   * Where the element sits in the live app inside the Codebase frame (centre, canvas units, relative
+   * to the frame's centre). A whole explored screen: the frame itself. The "emerge" load-in lifts
+   * the element off this spot.
+   */
+  appRect: CanvasRect
   /** Fill colour; null = no fill. */
   fill: string | null
   /** Corner radius in canvas units; null = none. */
@@ -116,6 +122,28 @@ function placed(left: number, top: number, w: number, h: number): CanvasRect {
   return { x: (left + w / 2) * LAYOUT_SPREAD, y: (top + h / 2) * LAYOUT_SPREAD, w, h }
 }
 
+/**
+ * Where an element sits in the live app (desktop screen, top-left corner and size in cqw), as a
+ * rect relative to the Codebase frame's centre (canvas units).
+ */
+function inApp(left: number, top: number, w: number, h: number): CanvasRect {
+  return {
+    x: (left + w / 2) * CQW - CODEBASE_WIDTH / 2,
+    y: (top + h / 2) * CQW - CODEBASE_HEIGHT / 2,
+    w: w * CQW,
+    h: h * CQW,
+  }
+}
+
+/* ------------------------------ In the live app ----------------------------- */
+// Top edges in cqw of the desktop screen, following its layout: the header, the categories, then
+// the scrolling content with its "Your upcoming trip" row and its "Stays you might love" grid.
+
+const APP_TRIP_TOP = LAYOUT.header + LAYOUT.categories + LAYOUT.contentTop + LAYOUT.sectionHead + LAYOUT.sectionHeadGap
+const APP_LISTINGS_TOP = APP_TRIP_TOP + LAYOUT.tripRow + LAYOUT.sectionGap + LAYOUT.sectionHead + LAYOUT.sectionHeadGap
+/** Left edge (cqw) of the content grid's `index`th column. */
+const appColumnLeft = (index: number) => LAYOUT.padX + index * (COLUMN + LAYOUT.columnGap)
+
 /* --------------------------------- Layout --------------------------------- */
 // Top-left corners in canvas units; the Codebase frame spans x −720…720, y −450…450.
 // Only the complex pieces (about 10): the header and categories above the Codebase, the trip card
@@ -160,6 +188,8 @@ function band(
   id: string,
   name: string,
   at: { left: number; top: number },
+  /** Its top edge in the live app (cqw). */
+  appTop: number,
   heightCqw: number,
   content: React.ReactNode,
   style: Partial<AppElement> = {},
@@ -168,6 +198,7 @@ function band(
     id,
     name,
     rect: placed(at.left, at.top, CODEBASE_WIDTH, heightCqw * CQW),
+    appRect: inApp(0, appTop, 100, heightCqw),
     fill: WHITE,
     radius: null,
     border: null,
@@ -179,13 +210,14 @@ function band(
 
 /* ---------------------------------- Cards ---------------------------------- */
 
-function listingElement(listing: Listing): AppElement {
+function listingElement(listing: Listing, index: number): AppElement {
   const at = LISTINGS_AT[listing.id]
   return {
     id: `card-listing-${listing.id}`,
     name: `Listing — ${listing.title}`,
     cardTitle: listing.title,
     rect: placed(at.left, at.top, COLUMN * CQW, LISTING_HEIGHT * CQW),
+    appRect: inApp(appColumnLeft(index), APP_LISTINGS_TOP, COLUMN, LISTING_HEIGHT),
     fill: null,
     radius: LAYOUT.radius * CQW,
     border: null,
@@ -205,6 +237,8 @@ function exploration(id: string, name: string, at: { x: number; y: number }, con
     id,
     name: `Screen — ${name}`,
     rect: { x: at.x, y: at.y, w: CODEBASE_WIDTH, h: CODEBASE_HEIGHT },
+    // A whole screen of the app: it comes off the Codebase frame itself.
+    appRect: { x: 0, y: 0, w: CODEBASE_WIDTH, h: CODEBASE_HEIGHT },
     fill: WHITE,
     radius: 8,
     border: HAIRLINE,
@@ -220,13 +254,13 @@ function exploration(id: string, name: string, at: { x: number; y: number }, con
 /* -------------------------------- The set --------------------------------- */
 
 export const AIRBNB_ELEMENTS: AppElement[] = [
-  band("search-header", "Header", AT.header, LAYOUT.header, <SearchHeader />, {
+  band("search-header", "Header", AT.header, 0, LAYOUT.header, <SearchHeader />, {
     tag: "header",
     layout: "grid",
     padding: cqwSides(0, 4, 0, 4),
     colors: palette(WHITE, RAUSCH, INK, MUTED, BORDER_GREY, HAIRLINE),
   }),
-  band("categories", "Categories", AT.categories, LAYOUT.categories, <CategoryBar />, {
+  band("categories", "Categories", AT.categories, LAYOUT.header, LAYOUT.categories, <CategoryBar />, {
     padding: cqwSides(0, 4, 0, 4),
     colors: palette(WHITE, INK, MUTED, BORDER_GREY),
   }),
@@ -235,6 +269,7 @@ export const AIRBNB_ELEMENTS: AppElement[] = [
     name: `Trip — ${TRIP.title}`,
     cardTitle: TRIP.title,
     rect: placed(AT.trip.left, AT.trip.top, TRIP_CARD_WIDTH * CQW, LAYOUT.tripRow * CQW),
+    appRect: inApp(appColumnLeft(0), APP_TRIP_TOP, TRIP_CARD_WIDTH, LAYOUT.tripRow),
     fill: WHITE,
     radius: LAYOUT.radius * CQW,
     border: HAIRLINE,
@@ -249,6 +284,7 @@ export const AIRBNB_ELEMENTS: AppElement[] = [
     id: "check-in-tile",
     name: "Check-in Banner",
     rect: placed(AT.tile.left, AT.tile.top, CHECK_IN_WIDTH * CQW, LAYOUT.tripRow * CQW),
+    appRect: inApp(appColumnLeft(2), APP_TRIP_TOP, CHECK_IN_WIDTH, LAYOUT.tripRow),
     fill: null,
     radius: LAYOUT.radius * CQW,
     border: null,
@@ -262,6 +298,8 @@ export const AIRBNB_ELEMENTS: AppElement[] = [
     id: "listing-photo",
     name: "Listing Photo",
     rect: placed(AT.listingPhoto.left, AT.listingPhoto.top, COLUMN * CQW, LAYOUT.photo * CQW),
+    // The photo of the second listing (LISTINGS[1]) in the app's grid.
+    appRect: inApp(appColumnLeft(1), APP_LISTINGS_TOP, COLUMN, LAYOUT.photo),
     fill: null,
     radius: LAYOUT.radius * CQW,
     border: null,

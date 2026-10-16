@@ -81,19 +81,19 @@ const portalSend = (api: ScriptApi) => () =>
 
 /**
  * 0. Everything in one place: no cursor, no clicks; the canvas populates itself (HeroScreen's
- * "emerge" load-in). On an empty canvas the Codebase frame fades in and its live app boots; the
- * app's frames then grow out of it and spread across the canvas; finally a Build Agent picks up the
- * trip card. Key moment: codebase, canvas and agent, all in one place. Times in ms after the clip
- * starts.
+ * "emerge" load-in). On an empty canvas the Codebase frame fades in and its live app boots; then,
+ * with the frame highlighted, the app's pieces lift off it one by one, each from its own spot in the
+ * live app, and glide out onto the canvas as editable frames; the explored screens slide out of it
+ * last. Key moment: the codebase and the canvas made of it, in one place. Times in ms after the
+ * clip starts.
  */
 const OVERVIEW_INTRO: Omit<LoadIntro, "phase"> = {
   style: "emerge",
   chromeAt: 0,
   githubAt: 0,
   codebaseAt: 200,
-  elementsAt: 2200,
-  agentAt: 4900,
-  agentOn: TRIP_CARD_ID,
+  elementsAt: 2400,
+  settledAt: 6000,
 }
 
 /** Share of the canvas (its larger dimension) the captured card fills once zoomed in. */
@@ -498,7 +498,7 @@ type ClipConfig = {
 const TRIP_ONLY = [TRIP_CARD_ID]
 
 const CLIPS: Record<FeatureClipId, ClipConfig> = {
-  // An empty canvas that populates itself: the Codebase frame, the app's frames out of it, an agent.
+  // An empty canvas that populates itself: the Codebase frame, then the app's pieces lifted off it.
   overview: { loadIntro: OVERVIEW_INTRO, start: "canvas" },
   // A calm canvas: just the Codebase frame, then the captured trip card gliding in beside it.
   capture: {
