@@ -111,9 +111,11 @@ const FOCUS_FX = 0.4
  * and ⌘-scrolls by exactly the amount that scales it from its current share of the canvas to
  * FILL_AIM (zoom × exp(−deltaY × WHEEL_ZOOM_SPEED)). Checks again afterwards, then pans it to
  * FOCUS_FX, leaving room on the right for the settings panel.
+ * `quick`: no centring pan first (zooming toward the cursor on the frame keeps it in view), and
+ * shorter moves, for a zoom that follows straight on from what came before.
  */
-async function zoomToFill(api: ScriptApi, target: string) {
-  await panToShow(api, [target], { fx: 0.5, fy: 0.5 })
+async function zoomToFill(api: ScriptApi, target: string, { quick = false } = {}) {
+  if (!quick) await panToShow(api, [target], { fx: 0.5, fy: 0.5 })
   for (let attempt = 0; attempt < 3; attempt++) {
     const frame = api.boxOf(target)
     const canvas = api.boxOf(CANVAS)
@@ -121,11 +123,11 @@ async function zoomToFill(api: ScriptApi, target: string) {
     const share = Math.max(frame.width / canvas.width, frame.height / canvas.height)
     if (share >= FILL_SHARE) break
     const deltaY = -Math.log(FILL_AIM / share) / WHEEL_ZOOM_SPEED
-    await api.moveTo(target, { fx: 0.5, fy: 0.5 })
-    await api.wheel(0, deltaY, { mods: { ctrl: true }, duration: 1100 })
-    await api.wait(200)
+    await api.moveTo(target, { fx: 0.5, fy: 0.5, ...(quick ? { duration: 450 } : {}) })
+    await api.wheel(0, deltaY, { mods: { ctrl: true }, duration: quick ? 750 : 1100 })
+    await api.wait(quick ? 100 : 200)
   }
-  await panToShow(api, [target], { fx: FOCUS_FX, fy: 0.5 })
+  await panToShow(api, [target], { fx: FOCUS_FX, fy: 0.5, ...(quick ? { duration: 600 } : {}) })
 }
 
 /* ------------------------------- The story -------------------------------- */
@@ -220,11 +222,12 @@ const captureScript: DemoScript = async (api) => {
   await scene(api, "back to canvas", async () => {
     await api.click(BACK_TO_CANVAS)
     await api.until(() => !api.exists("[data-portal-screen]"), 4000)
-    // The captured card glides in beside the Codebase frame (a quick glide, see `quickEntrance`).
-    await api.wait(900)
+    // The captured card glides in beside the Codebase frame (a quick glide, see `quickEntrance`,
+    // ≈ 0.6s); the zoom sets off as it lands.
+    await api.wait(450)
   })
   await scene(api, "the snapshot on canvas", async () => {
-    await zoomToFill(api, TRIP_CARD)
+    await zoomToFill(api, TRIP_CARD, { quick: true })
     // Its right side is the card itself (its text hugs the left), so this selects it.
     await api.click(TRIP_CARD, { fx: 0.85, fy: 0.5 })
     await api.wait(400)
