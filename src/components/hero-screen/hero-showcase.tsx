@@ -295,6 +295,8 @@ export function HeroShowcase({
               // open). "flip": the sidebar's Components panel opens during the load-in instead.
               layersOpen={introStyle !== "flip"}
               initialSelectedId="card-upcoming-trip"
+              // The Components library shows the project's own (Fairbnb) components, as in the feature cards.
+              componentLibrary="fairbnb"
             />
           </DensityScale>
         </div>
