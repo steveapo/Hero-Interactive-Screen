@@ -59,6 +59,15 @@ export type ScriptedStageProps = {
    */
   holdLastFrame?: boolean
   /**
+   * Click to take over (instead of shielding the screen): while the script plays, the visitor's real
+   * pointer reaches the screen (hovers show, clicks land), but their wheel and keys never do (plain
+   * scroll over it scrolls the page, nothing inside it). Their first real press on the screen stops
+   * the run for good (no resume; remount the stage to replay) and hands the screen to them, as at the
+   * end of a `holdLastFrame` run. Throughout, a real press or click only reaches the screen when this
+   * accepts its target, and real keys never reach the screen: it keeps the visitor to the clip's own action.
+   */
+  takeOver?: (target: Element) => boolean
+  /**
    * Pause the run where it is (e.g. while the stage is scrolled out of view): the cursor stops
    * mid-glide and the script picks up exactly where it left off once this is false again.
    */
@@ -91,6 +100,7 @@ export function ScriptedStage({
   interruptible = false,
   resumeAfterIdle = 8000,
   holdLastFrame = false,
+  takeOver,
   paused = false,
   onStart,
   onFinish,
@@ -129,14 +139,17 @@ export function ScriptedStage({
   /** The run is over and the screen holds its last frame for the visitor (see `holdLastFrame`). */
   const [held, setHeld] = useState(false)
   /** The visitor's mouse and keys are kept off the screen while the demo plays (it's not interactive until it's done). */
-  const shielded = playing && !interruptible && !held
+  const takeOverMode = !!takeOver
+  const shielded = playing && !interruptible && !held && !takeOverMode
   const scriptRef = useRef(script)
   const onStartRef = useRef(onStart)
   const onFinishRef = useRef(onFinish)
+  const takeOverRef = useRef(takeOver)
   useEffect(() => {
     scriptRef.current = script
     onStartRef.current = onStart
     onFinishRef.current = onFinish
+    takeOverRef.current = takeOver
   })
 
   // A fresh screen (after the crossfade) fades in. Cut loops hand over on the spot.
@@ -197,7 +210,7 @@ export function ScriptedStage({
     /** Shielded screens ignore the pointer; synthetic hits switch it back on for the instant they need. */
     const live = <T,>(run: () => T): T => {
       const content = contentRef.current
-      if (!content || interruptible) return run()
+      if (!content || interruptible || takeOverMode) return run()
       const wasShielded = content.hasAttribute("data-script-shielded")
       content.style.pointerEvents = "auto"
       content.removeAttribute("data-script-shielded")
@@ -276,7 +289,7 @@ export function ScriptedStage({
       controller.abort()
       resetHover()
     }
-  }, [playing, ready, iteration, pace, startDelay, loop, loopDelay, loopTransition, interruptible, holdLastFrame])
+  }, [playing, ready, iteration, pace, startDelay, loop, loopDelay, loopTransition, interruptible, holdLastFrame, takeOverMode])
 
   /*
    * Holding the last frame (`holdLastFrame`): the visitor can play with the screen, but it mustn't
@@ -342,6 +355,88 @@ export function ScriptedStage({
       moveTypes.forEach((type) => window.removeEventListener(type, stopDuringPress, true))
     }
   }, [shielded])
+
+  /*
+   * Click to take over (`takeOver`), while the script plays: hovers and clicks reach the screen, but
+   * no scrolling or typing can happen in it before the visitor clicks.
+   * - Wheel over the screen never reaches it (no canvas pan / zoom, no scrolling inside it); plain
+   *   scroll scrolls the page instead.
+   * - Real presses outside the stage are kept from the screen's outside-click listeners (they'd
+   *   close the script's popovers), and real moves don't reach its drag tracking mid script press.
+   * - The visitor's first real press on the screen stops the run for good and hands them the screen
+   *   (held: as after a `holdLastFrame` run). It only resumes on a remount (the host's Replay).
+   */
+  useEffect(() => {
+    if (!takeOverMode || !playing || held) return
+    const stage = stageRef.current
+    const inStage = (target: EventTarget | null) => target instanceof Node && !!stage?.contains(target)
+    function onPress(e: Event) {
+      if (!e.isTrusted || !inStage(e.target)) return
+      setPlaying(false)
+      setHeld(true)
+      setCursorVisible(false)
+      setFaded(false)
+    }
+    function onWheel(e: WheelEvent) {
+      if (!e.isTrusted || !inStage(e.target)) return
+      e.preventDefault()
+      e.stopPropagation()
+      if (e.ctrlKey || e.metaKey) return
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1
+      window.scrollBy(e.deltaX * unit, e.deltaY * unit)
+    }
+    function stopOutsidePress(e: Event) {
+      if (e.isTrusted && !inStage(e.target)) e.stopImmediatePropagation()
+    }
+    function stopDuringPress(e: Event) {
+      if (e.isTrusted && stage?.dataset.scriptPressing) e.stopImmediatePropagation()
+    }
+    const pressTypes = ["pointerdown", "mousedown"] as const
+    const moveTypes = ["pointermove", "pointerup", "pointercancel", "mousemove", "mouseup"] as const
+    window.addEventListener("pointerdown", onPress, true)
+    window.addEventListener("wheel", onWheel, { capture: true, passive: false })
+    pressTypes.forEach((type) => document.addEventListener(type, stopOutsidePress))
+    moveTypes.forEach((type) => window.addEventListener(type, stopDuringPress, true))
+    return () => {
+      window.removeEventListener("pointerdown", onPress, true)
+      window.removeEventListener("wheel", onWheel, true)
+      pressTypes.forEach((type) => document.removeEventListener(type, stopOutsidePress))
+      moveTypes.forEach((type) => window.removeEventListener(type, stopDuringPress, true))
+    }
+  }, [takeOverMode, playing, held])
+
+  /*
+   * Click to take over (`takeOver`), throughout (playing or handed over): a real press or click on
+   * the screen whose target `takeOver` rejects never reaches it, and real keys never reach the screen
+   * (nor its shortcuts, when pressed outside any field). stopPropagation, not stopImmediatePropagation:
+   * the takeover listener above (also on `window`) still sees the press.
+   */
+  useEffect(() => {
+    if (!takeOverMode) return
+    const stage = stageRef.current
+    const inStage = (target: EventTarget | null): target is Element =>
+      target instanceof Element && !!stage?.contains(target)
+    function guardPointer(e: Event) {
+      if (!e.isTrusted || !inStage(e.target)) return
+      if (takeOverRef.current?.(e.target)) return
+      e.stopPropagation()
+      e.preventDefault()
+    }
+    function stopKeys(e: Event) {
+      if (!e.isTrusted) return
+      const ours = inStage(e.target)
+      if (ours) e.preventDefault()
+      if (ours || e.target === document.body || e.target === document.documentElement) e.stopImmediatePropagation()
+    }
+    const pointerTypes = ["pointerdown", "mousedown", "pointerup", "mouseup", "click", "dblclick", "contextmenu"] as const
+    const keyTypes = ["keydown", "keypress", "keyup", "beforeinput"] as const
+    pointerTypes.forEach((type) => window.addEventListener(type, guardPointer, true))
+    keyTypes.forEach((type) => window.addEventListener(type, stopKeys, true))
+    return () => {
+      pointerTypes.forEach((type) => window.removeEventListener(type, guardPointer, true))
+      keyTypes.forEach((type) => window.removeEventListener(type, stopKeys, true))
+    }
+  }, [takeOverMode])
 
   // A real click, wheel or key press stops the demo so the user can take over.
   useEffect(() => {

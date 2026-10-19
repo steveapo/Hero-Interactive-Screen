@@ -197,6 +197,21 @@ const liveTripCard = (api: ScriptApi) => () =>
   )
 
 const CAPTURE_BUTTON = 'button[aria-label="Capture a selection to the canvas (⌘S)"]'
+const CAPTURE_PAGE_BUTTON = 'button[aria-label="Capture the page to the canvas (⇧⌘S)"]'
+const EXIT_CAPTURE = 'button[aria-label="Exit area capture"]'
+
+/**
+ * What the visitor may click in the capture clip (see ScriptedStage's `takeOver`): code to canvas
+ * only. In the Portal: Capture a selection / the page, exiting Area capture, Back to canvas, and the
+ * live app only while in Area capture (a click there captures, it never drives the app). On the
+ * canvas: its frames and empty space (select, move, pan; double-click the Codebase frame back into
+ * the Portal). The rest of the UI (toolbars, panels, the agent chat, the app's own clicks) stays put.
+ */
+function allowsCodeToCanvas(target: Element) {
+  if ([CAPTURE_BUTTON, CAPTURE_PAGE_BUTTON, EXIT_CAPTURE, BACK_TO_CANVAS].some((s) => target.closest(s))) return true
+  if (target.closest(PORTAL_SCREEN)) return !!target.closest("[data-hero-root]")?.querySelector(EXIT_CAPTURE)
+  return !!target.closest(CANVAS)
+}
 
 /**
  * 1. Live product on canvas; key moment: the captured trip card on the canvas, selected and
@@ -219,7 +234,7 @@ const captureScript: DemoScript = async (api) => {
     await api.wait(300)
     await api.click(liveTripCard(api), spot)
     await api.wait(900)
-    await api.click('button[aria-label="Exit area capture"]')
+    await api.click(EXIT_CAPTURE)
     await api.wait(250)
   })
   await scene(api, "back to canvas", async () => {
@@ -538,6 +553,12 @@ type ClipConfig = {
   showCodebase?: boolean
   /** The trip card as the previous step of the story left it (see STORY and HeroScreen's `seed`). */
   seed?: HeroSeed
+  /**
+   * Hover and click through while it plays; the visitor's first click stops it for good (until
+   * Replay) and they may then only click what this accepts (see ScriptedStage's `takeOver`).
+   * Omitted: the screen is shielded while the clip plays.
+   */
+  takeOver?: (target: Element) => boolean
 }
 
 /** The story's clips show the trip card alone. */
@@ -553,6 +574,7 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     elementIds: TRIP_ONLY,
     canvasEntrance: true,
     quickEntrance: true,
+    takeOver: allowsCodeToCanvas,
   },
   // Opens in the Portal on the live app: the change is made straight in the code.
   "portal-edit": {
@@ -646,6 +668,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
     componentLibrary,
     showCodebase = true,
     seed,
+    takeOver,
   } = CLIPS[clip]
 
   useEffect(() => {
@@ -726,6 +749,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
             paused={outOfView}
             loop={false}
             holdLastFrame
+            takeOver={takeOver}
             className="min-h-0"
           >
             {screen}
