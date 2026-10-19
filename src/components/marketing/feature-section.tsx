@@ -17,8 +17,8 @@ const MOCKUP_FRAME =
   "relative overflow-hidden rounded-lg shadow-[0_0_0_1px_rgba(17,17,16,0.08),0_0_32px_-8px_rgba(17,17,16,0.25)]"
 
 /**
- * Below the hero: a "Loved by" logo strip, the "Canvas and code, unified." headline, and a
- * feature card with a product mockup.
+ * Below the hero: a "Loved by" logo strip, the "Canvas and code, unified." headline, and three
+ * feature cards for the journey: code (the Portal) to canvas, canvas to code, and edits directly in code.
  */
 export function FeatureSection() {
   return (
@@ -56,21 +56,30 @@ export function FeatureSection() {
           Code to canvas in one click, canvas to code in one shot.
         </p>
 
-        {/* Feature cards */}
+        {/* Feature cards: the journey between the Portal (code) and the Canvas, both ways, and edits made right in code. */}
         <div className="mt-[clamp(2.5rem,5vw,4rem)] flex flex-col gap-[clamp(3rem,7vw,6rem)]">
           <div className={FEATURE_CARD}>
-            <FeatureCopy title="Everything in one place">
-              Your codebase, the canvas, and coding agents, integrated out of the box. No MCP servers, no localhost,
-              no devops glue.
+            <FeatureCopy title="Code to canvas">
+              Capture any element of your live product from the Portal onto the Canvas, pixel perfect and fully
+              editable.
             </FeatureCopy>
-            <ClipMockup clip="overview" />
+            <ClipMockup clip="capture" />
           </div>
 
           <div className={cn(FEATURE_CARD, "lg:grid-cols-[2fr_1fr]")}>
-            <FeatureCopy title="Live product on canvas" className="lg:order-2">
-              Capture any element of your live product onto the canvas, pixel perfect and fully editable.
+            <FeatureCopy title="Canvas to code" className="lg:order-2">
+              Send a frame from the Canvas to the Portal and it builds back into your codebase as clean, scoped diffs,
+              your design system enforced.
             </FeatureCopy>
-            <ClipMockup clip="capture" />
+            <ClipMockup clip="build" />
+          </div>
+
+          <div className={FEATURE_CARD}>
+            <FeatureCopy title="Edit directly in code">
+              Skip the Canvas when you don&apos;t need it. Ask for a change in the Portal and watch it land in your
+              live product.
+            </FeatureCopy>
+            <ClipMockup clip="portal-edit" />
           </div>
         </div>
       </div>
@@ -111,13 +120,6 @@ export function LastMileSection() {
               controls you already know.
             </FeatureCopy>
             <ClipMockup clip="visual-edits" />
-          </div>
-
-          <div className={FEATURE_CARD}>
-            <FeatureCopy title="Canvas to code in one shot">
-              Your changes build back as clean, scoped diffs with your design system enforced.
-            </FeatureCopy>
-            <ClipMockup clip="build" />
           </div>
         </div>
       </div>

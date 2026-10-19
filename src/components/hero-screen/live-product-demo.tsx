@@ -55,6 +55,9 @@ import {
  *  6. "share"         Collaborate and ship: with the change built, open Share and create the
  *                     preview link → the Preview URL window, published; then Copy → "Copied
  *                     Preview Link" slides up at the bottom right and back down.
+ *
+ * "portal-edit" stands on its own too: in the Portal, the Portal Agent makes the live app's search
+ * button pulse, edited straight into the code (see portalEditScript).
  */
 
 const BACK_TO_CANVAS = 'button[aria-label="Back to canvas"]'
@@ -380,6 +383,38 @@ const buildScript: DemoScript = async (api) => {
   })
 }
 
+/** The live app's search button in the Portal. */
+const PORTAL_SEARCH_BUTTON = `${PORTAL_SCREEN} [data-anim="search-button"]`
+/** The Portal Agent turn that makes the search button pulse, edited straight into the code. */
+const SEARCH_PULSE_TURN = PORTAL_TURNS.find((t) => t.applies === "search-pulse")
+const SEARCH_PULSE_PROMPT = SEARCH_PULSE_TURN?.prompt ?? "Make the search button pulse so it's easy to spot"
+const SEARCH_PULSE_DONE = SEARCH_PULSE_TURN?.workedFor ?? "Worked for"
+
+/**
+ * Edit directly in code; key moment: in the Portal, the live app's search button pulsing, changed
+ * straight in the codebase by the Portal Agent, no canvas in between. A new agent is opened, asked
+ * to make the search button pulse, and the cursor rests beside the button while the change lands.
+ */
+const portalEditScript: DemoScript = async (api) => {
+  await scene(api, "ask the portal agent", async () => {
+    await api.find(PORTAL_SCREEN)
+    await api.wait(400)
+    await api.click('button[aria-label="New agent"]')
+    await api.wait(350)
+    await api.click(PORTAL_FIELD)
+    await api.type(SEARCH_PULSE_PROMPT, { into: PORTAL_FIELD })
+    await api.wait(250)
+    await api.click(portalSend(api))
+  })
+  await scene(api, "live in the app", async () => {
+    // While it works, drift over to the button it's changing.
+    await api.wait(500)
+    await api.moveTo(PORTAL_SEARCH_BUTTON, { dx: 40, dy: 26 })
+    await api.until(() => textOf(api, PORTAL_MESSAGES).includes(SEARCH_PULSE_DONE), 15000)
+    await api.wait(1200)
+  })
+}
+
 /** The Share popover's "Create Preview Link" button. */
 const createPreviewLink = (api: ScriptApi) => () =>
   Array.from(api.stage.querySelectorAll(`${SHARE_DIALOG} button`)).find((el) =>
@@ -473,7 +508,15 @@ async function switchViewport(api: ScriptApi, viewport: string) {
   await api.wait(700)
 }
 
-export type FeatureClipId = "overview" | "capture" | "visual-edits" | "components" | "test" | "build" | "share"
+export type FeatureClipId =
+  | "overview"
+  | "capture"
+  | "portal-edit"
+  | "visual-edits"
+  | "components"
+  | "test"
+  | "build"
+  | "share"
 
 type ClipConfig = {
   /** The cursor's script. Omitted: no cursor; the screen plays its `loadIntro` on its own. */
@@ -510,6 +553,12 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     elementIds: TRIP_ONLY,
     canvasEntrance: true,
     quickEntrance: true,
+  },
+  // Opens in the Portal on the live app: the change is made straight in the code.
+  "portal-edit": {
+    script: portalEditScript,
+    start: "portal",
+    elementIds: TRIP_ONLY,
   },
   // The captured card alone; the library holds the Fairbnb app's own components.
   components: {
