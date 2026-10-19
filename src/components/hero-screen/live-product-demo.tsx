@@ -217,7 +217,7 @@ function allowsCodeToCanvas(target: Element) {
   return !!target.closest(CANVAS)
 }
 
-/** The canvas-to-code clip lets the visitor click anything on the screen (see ScriptedStage's `takeOver`). */
+/** These clips let the visitor click anything on the screen (see ScriptedStage's `takeOver`). */
 function allowsAnything() {
   return true
 }
@@ -592,12 +592,12 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     quickEntrance: true,
     takeOver: allowsCodeToCanvas,
   },
-  // Opens in the Portal on the live app: the change is made straight in the code. Starts on Play.
+  // Opens in the Portal on the live app: the change is made straight in the code.
   "portal-edit": {
     script: portalEditScript,
     start: "portal",
     elementIds: TRIP_ONLY,
-    playOnClick: { estimateMs: 12000 },
+    takeOver: allowsAnything,
   },
   // The captured card alone; the library holds the Fairbnb app's own components.
   components: {
@@ -606,6 +606,7 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     elementIds: TRIP_ONLY,
     showCodebase: false,
     componentLibrary: "fairbnb",
+    takeOver: allowsAnything,
   },
   // The card with its badge and Reserve button.
   "visual-edits": {
@@ -615,6 +616,7 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     showCodebase: false,
     componentLibrary: "fairbnb",
     seed: STORY.components,
+    takeOver: allowsAnything,
   },
   // The completely edited card: that's what gets built.
   build: {
@@ -624,7 +626,6 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     showCodebase: false,
     componentLibrary: "fairbnb",
     seed: STORY.spaced,
-    replayWhilePlaying: true,
     takeOver: allowsAnything,
   },
   // Opens in Build Mode on the live app with the card built; no address in the title bar.
@@ -635,6 +636,7 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     elementIds: TRIP_ONLY,
     componentLibrary: "fairbnb",
     seed: STORY.built,
+    takeOver: allowsAnything,
   },
   // Built into the code, so there's a real change to share: the Codebase frame and the card.
   share: {
@@ -643,6 +645,7 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     elementIds: TRIP_ONLY,
     componentLibrary: "fairbnb",
     seed: STORY.built,
+    takeOver: allowsAnything,
   },
 }
 
