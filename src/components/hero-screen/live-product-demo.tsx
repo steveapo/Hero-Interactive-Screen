@@ -694,6 +694,10 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
 
   /** Bumped by the reset button: remounts the stage, so the clip replays from its first frame. */
   const [runId, setRunId] = useState(0)
+  /** The run whose script has handed the screen over (ended, or the visitor took over). Replay shows only then. */
+  const [handedOverRun, setHandedOverRun] = useState<number | null>(null)
+  /** Replay is hidden while a script plays; a clip without a script can always be replayed. */
+  const showReplay = !script || handedOverRun === runId
 
   /**
    * 75% or more of the clip is out of the viewport (scrolled past the top or back below the
@@ -754,6 +758,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
             loop={false}
             holdLastFrame
             takeOver={takeOver}
+            onHandOver={() => setHandedOverRun(runId)}
             className="min-h-0"
           >
             {screen}
@@ -764,19 +769,21 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
         )}
       </ScaledScreen>
 
-      {/* Reset: shown while the screen is hovered (or the button has keyboard focus). */}
-      <button
-        type="button"
-        onClick={() => {
-          setReady(true)
-          setRunId((id) => id + 1)
-        }}
-        aria-label="Replay"
-        className="absolute bottom-3 left-3 z-50 flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 opacity-0 shadow-[0_0_0_1px_#c9c7c3,0_4px_12px_rgba(17,17,16,0.2)] transition-opacity duration-200 hover:bg-neutral-100 focus-visible:opacity-100 group-hover/clip:opacity-100"
-      >
-        <RotateCcw className="size-3.5" aria-hidden />
-        Replay
-      </button>
+      {/* Reset: hidden while the script plays; once it's done (or taken over), shown while the screen is hovered (or the button has keyboard focus). */}
+      {showReplay && (
+        <button
+          type="button"
+          onClick={() => {
+            setReady(true)
+            setRunId((id) => id + 1)
+          }}
+          aria-label="Replay"
+          className="absolute bottom-3 left-3 z-50 flex items-center gap-1.5 rounded-full bg-white px-3 py-1.5 text-xs font-medium text-neutral-900 opacity-0 shadow-[0_0_0_1px_#c9c7c3,0_4px_12px_rgba(17,17,16,0.2)] transition-opacity duration-200 hover:bg-neutral-100 focus-visible:opacity-100 group-hover/clip:opacity-100"
+        >
+          <RotateCcw className="size-3.5" aria-hidden />
+          Replay
+        </button>
+      )}
     </div>
   )
 }

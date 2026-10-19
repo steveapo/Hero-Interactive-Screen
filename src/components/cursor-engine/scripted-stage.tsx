@@ -79,6 +79,11 @@ export type ScriptedStageProps = {
    * E.g. to move on to the next clip of a multi-clip demo.
    */
   onFinish?: () => void
+  /**
+   * The screen was handed to the visitor (see `held`): the run ended (`holdLastFrame`), failed, or
+   * the visitor took over (`takeOver`). E.g. to show the host's Replay only once the script is done.
+   */
+  onHandOver?: () => void
   className?: string
 }
 
@@ -104,6 +109,7 @@ export function ScriptedStage({
   paused = false,
   onStart,
   onFinish,
+  onHandOver,
   className,
 }: ScriptedStageProps) {
   /*
@@ -145,12 +151,19 @@ export function ScriptedStage({
   const onStartRef = useRef(onStart)
   const onFinishRef = useRef(onFinish)
   const takeOverRef = useRef(takeOver)
+  const onHandOverRef = useRef(onHandOver)
   useEffect(() => {
     scriptRef.current = script
     onStartRef.current = onStart
     onFinishRef.current = onFinish
     takeOverRef.current = takeOver
+    onHandOverRef.current = onHandOver
   })
+
+  // The screen is the visitor's now (run over, failed, or taken over): tell the host.
+  useEffect(() => {
+    if (held) onHandOverRef.current?.()
+  }, [held])
 
   // A fresh screen (after the crossfade) fades in. Cut loops hand over on the spot.
   const cutRef = useRef(false)
