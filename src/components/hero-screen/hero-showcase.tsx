@@ -69,9 +69,9 @@ const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_
  * have loaded), so each step has been loaded for well over a second before it shows. Each step
  * starts as the one before it lands:
  *   1. the Canvas window fades in, in place (WINDOW_FADE_MS)
- *   2. the Codebase frame's flat dashed placeholder is drawn all the way round, then the frame comes
- *      up from below and lands on it; once it has landed, the canvas elements glide in around it
- *      from their side of it, sweeping clockwise (the v1 directional move-in)
+ *   2. the Codebase frame fades in, its live app playing its own opening inside it; as that settles,
+ *      the canvas elements glide in around it from their side of it, sweeping clockwise (the v1
+ *      directional move-in)
  *   3. as the last elements settle, the bars come in from their own edges (top bar from the top,
  *      the sidebar rail from the left, the zoom readout from the bottom)
  *   4. the two side panels move in (the Components library grows out of the sidebar rail, the trip
@@ -79,10 +79,10 @@ const CODE_LINES_AT = INTRO.codeWindowAt + 450 * INTRO_TIME_SCALE * CODE_WINDOW_
  * It's interactive throughout: whatever has come in can already be pressed, dragged and panned.
  */
 const FLIP_INTRO = {
-  // Once the window has faded in. Its placeholder draws (0.5s), holds a beat, then the frame comes
-  // up and lands (≈2.1s in all).
+  // Once the window has faded in. The frame fades in (0.7s) and its live app's opening plays on
+  // inside it (≈2s).
   codebaseAt: 750,
-  // Once the Codebase frame has landed. The elements glide in around it from their side of it,
+  // As the live app's opening settles. The elements glide in around it from their side of it,
   // sweeping clockwise (the v1 move-in, at its pace); the last one settles ≈2.3s after this.
   elementsAt: 2850,
   chromeAt: 5000,
@@ -129,7 +129,7 @@ export function HeroShowcase({
   /**
    * How the showcase loads in. "rise" (default, the stored v1): the Canvas window scales up into
    * place and the canvas glides in (see INTRO). "flip": the window fades in, the Codebase frame
-   * comes up and lands, the canvas glides in, then its bars and panels (see FLIP_INTRO).
+   * fades in, the canvas glides in, then its bars and panels (see FLIP_INTRO).
    */
   introStyle?: "rise" | "flip"
   /**

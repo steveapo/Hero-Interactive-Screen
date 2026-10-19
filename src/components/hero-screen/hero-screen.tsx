@@ -15,7 +15,7 @@ import { AIRBNB_ELEMENTS, type AppElement } from "./airbnb-elements"
 import { CanvasText, DrawnFrame, TEXT_LINE_HEIGHT, type CanvasElement } from "./canvas-elements"
 import { builtVariantChange } from "./built-change"
 import { allChanges, CodeChangesPopover, totalsOf } from "./code-changes-popover"
-import { CodebaseFrame, CANVAS_ZOOM, CODEBASE_FLIP_MS, CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
+import { CodebaseFrame, CANVAS_ZOOM, CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
 import { CodebaseSettingsPanel } from "./codebase-settings-panel"
 import { trackDrag, useMeasuredRect, type CanvasRect } from "./drag"
 import { FrameSettingsPanel } from "./frame-settings-panel"
@@ -24,7 +24,6 @@ import { LayerSelectionOverlay } from "./layer-selection-overlay"
 import { LayerSettingsPanel } from "./layer-settings-panel"
 import { LeftSidebar, type RailPanel } from "./left-sidebar"
 import { PanelLoadInContext } from "./load-in"
-import { FlipPlaceholder, PLACEHOLDER_DRAW_MS } from "./flip-placeholder"
 import {
   builtComponentsChange,
   ComponentDragGhost,
@@ -231,8 +230,8 @@ export type LoadIntro = {
   phase: "waiting" | "play"
   /**
    * "glide" (default, the stored v1 load-in): the bars come in first, the Codebase frame fades in,
-   * the elements glide in around it in a clockwise sweep. "flip": the Codebase frame gets a dashed
-   * placeholder drawn at its place, then comes up from below and lands on it; then the elements
+   * the elements glide in around it in a clockwise sweep. "flip": the Codebase frame fades in (its
+   * live app's own opening plays inside it), as in "glide"; then the elements
    * glide in around it as in "glide" (paced by `elementsTimeScale`); then the bars slide in from their
    * own edges (`chromeAt` after `elementsAt`); then at `panelsAt` the side panels move in (the
    * sidebar's `sidebarPanel` grows out of its rail, the selected frame's settings slide in from the
@@ -263,12 +262,6 @@ type IntroStep = "chrome" | "codebase" | "github" | "elements" | "panels" | "set
 /** Bars and tools come in one after another, this far apart (ms). */
 const CHROME_STAGGER_MS = 90
 
-/**
- * "flip": the Codebase frame comes in this long after its dashed placeholder starts drawing (ms):
- * the outline draws all the way round (PLACEHOLDER_DRAW_MS), holds a beat, then the frame comes up
- * and lands on it.
- */
-const PLACEHOLDER_LEAD_MS = PLACEHOLDER_DRAW_MS + 300
 /** "flip": the panel step's entrance is over this long after it starts (ms); later panels open normally. */
 const PANELS_SETTLE_MS = 2200
 
@@ -1536,21 +1529,6 @@ export function HeroScreen({
         onPointerUp={endPan}
         onPointerCancel={endPan}
       >
-        {/* "flip" load-in: the Codebase frame's dashed placeholder, drawn all the way round before
-            the frame comes up onto it. Mounted, hidden, from the start. */}
-        {showCodebase && flipIntro && !introSteps.includes("settled") && (
-          <FlipPlaceholder
-            left={camera.x + (codebaseRect.x - codebaseRect.w / 2) * camera.zoom}
-            top={camera.y + (codebaseRect.y - codebaseRect.h / 2) * camera.zoom}
-            width={codebaseRect.w * camera.zoom}
-            height={codebaseRect.h * camera.zoom}
-            // The frame's rounded-md corners (screen px).
-            radius={6}
-            play={codebaseIn}
-            appearAt={0}
-            landAt={PLACEHOLDER_LEAD_MS + CODEBASE_FLIP_MS}
-          />
-        )}
         {showCodebase && (
           <CodebaseFrame
             // "emerge" load-in: highlighted (green, with its capture actions) while the app's pieces
@@ -1563,10 +1541,8 @@ export function HeroScreen({
             zoom={camera.zoom}
             offsetX={camera.x + codebaseRect.x * camera.zoom}
             offsetY={camera.y + codebaseRect.y * camera.zoom}
+            // Fades in with the live app's own opening playing inside it (the previous entrance).
             appear={hasIntro ? (codebaseIn ? "in" : "hidden") : undefined}
-            appearStyle={flipIntro ? "flip" : "fade"}
-            // "flip": it comes up once its placeholder has been drawn all the way round.
-            appearDelay={flipIntro ? PLACEHOLDER_LEAD_MS : 0}
             built={codebaseBuilt}
           />
         )}
