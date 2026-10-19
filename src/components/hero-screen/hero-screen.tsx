@@ -1771,8 +1771,8 @@ export function HeroScreen({
       >
         {portalOpen && !portalClosing ? (
           // In a panel with the Undo / Redo group's surface (PORTAL_TOP_GROUP's colour, still 38px tall
-          // overall), 2px less rounded; the button a 28px pill inset by a 4px padding, a shade darker
-          // than the panel.
+          // overall), 2px less rounded; the button a 28px pill inset by a 4px padding, with no background
+          // of its own: like the other top-bar buttons, it only tints on hover.
           <div className="rounded-[10px] border border-transparent bg-[#ededeb] p-1">
             <button
               type="button"
@@ -1781,7 +1781,7 @@ export function HeroScreen({
               // Not through cn(): tailwind-merge reads the custom `text-px-12` size as a text colour and
               // drops it in favour of `text-stone-900`. The arrow is drawn like the Portal toolbar's Back.
               // Inner radius = the panel's 10px − its 5px margin (1px transparent border + 4px padding).
-              className="flex h-7 items-center gap-1.5 rounded-[5px] bg-[#e4e4e2] px-2.5 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#dcdcda]"
+              className="flex h-7 items-center gap-1.5 rounded-[5px] px-2.5 text-px-12 font-medium text-stone-900 transition-colors hover:bg-stone-700/5"
             >
               <ArrowLeft className="size-3.5 shrink-0" strokeWidth={1.5} />
               Back to Canvas
