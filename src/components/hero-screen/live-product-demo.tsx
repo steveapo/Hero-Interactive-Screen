@@ -217,6 +217,11 @@ function allowsCodeToCanvas(target: Element) {
   return !!target.closest(CANVAS)
 }
 
+/** The canvas-to-code clip lets the visitor click anything on the screen (see ScriptedStage's `takeOver`). */
+function allowsAnything() {
+  return true
+}
+
 /**
  * 1. Live product on canvas; key moment: the captured trip card on the canvas, selected and
  * editable. In Build Mode the cursor goes straight to Capture (resting on it a moment), then takes
@@ -620,6 +625,7 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     componentLibrary: "fairbnb",
     seed: STORY.spaced,
     replayWhilePlaying: true,
+    takeOver: allowsAnything,
   },
   // Opens in Build Mode on the live app with the card built; no address in the title bar.
   test: {
