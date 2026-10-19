@@ -208,6 +208,16 @@
 }
 
 /*
+ * A scripted demo is playing (ScriptedStage's shielded screen): nothing inside it takes the
+ * visitor's pointer, no clicks and no hover states, even elements that set pointer-events: auto
+ * themselves. Only a visitor turn's targets (`data-visitor-turn`) stay clickable. The stage lifts
+ * the attribute for the instant its own synthetic input hit-tests the screen.
+ */
+[data-script-shielded] *:not([data-visitor-turn]) {
+  pointer-events: none !important;
+}
+
+/*
  * Portal Agent change applied in the live preview: the search button pulses (scale + a Rausch
  * ring that expands and fades). `scale` is its own property, so it doesn't fight the intro's
  * transform. The demo can hold it back (`data-pulse-held` on the preview) until it has zoomed in.

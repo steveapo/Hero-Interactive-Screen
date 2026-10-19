@@ -198,11 +198,14 @@ export function ScriptedStage({
     const live = <T,>(run: () => T): T => {
       const content = contentRef.current
       if (!content || interruptible) return run()
+      const wasShielded = content.hasAttribute("data-script-shielded")
       content.style.pointerEvents = "auto"
+      content.removeAttribute("data-script-shielded")
       try {
         return run()
       } finally {
         content.style.pointerEvents = "none"
+        if (wasShielded) content.setAttribute("data-script-shielded", "")
       }
     }
 
@@ -390,6 +393,9 @@ export function ScriptedStage({
         key={iteration}
         ref={contentRef}
         className="flex w-full flex-1 flex-col"
+        // Shielded: every element inside ignores the real pointer too, incl. ones that set
+        // pointer-events: auto themselves (see globals.css), so nothing clicks or hovers.
+        data-script-shielded={shielded ? "" : undefined}
         style={{
           // Shielded: not interactive while the script plays; the visitor's pointer passes through to
           // the stage (see `live` for the script's; a visitor turn's targets switch it back on).
