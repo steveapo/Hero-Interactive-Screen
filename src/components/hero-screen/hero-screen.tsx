@@ -1756,18 +1756,21 @@ export function HeroScreen({
         )}
       >
         {portalOpen && !portalClosing ? (
-          <button
-            type="button"
-            aria-label="Back to canvas"
-            onClick={closePortal}
-            // Not through cn(): tailwind-merge reads the custom `text-px-12` size as a text colour and
-            // drops it in favour of `text-stone-900`. Own surface (not PORTAL_TOP_GROUP): a slightly
-            // darker grey pill with a rounder corner; the arrow is drawn like the Portal toolbar's Back.
-            className="flex h-[42px] items-center gap-1.5 rounded-[10px] border border-transparent bg-[#efefed] px-3 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#e6e6e4]"
-          >
-            <ArrowLeft className="size-3.5 shrink-0" strokeWidth={1.5} />
-            Back to Canvas
-          </button>
+          // In a panel like the Undo / Redo group (PORTAL_TOP_GROUP, 38px tall), the button a 32px
+          // pill inset by the panel's 2px padding, a shade darker than the panel.
+          <div className={PORTAL_TOP_GROUP}>
+            <button
+              type="button"
+              aria-label="Back to canvas"
+              onClick={closePortal}
+              // Not through cn(): tailwind-merge reads the custom `text-px-12` size as a text colour and
+              // drops it in favour of `text-stone-900`. The arrow is drawn like the Portal toolbar's Back.
+              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[#e4e4e2] px-2.5 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#dcdcda]"
+            >
+              <ArrowLeft className="size-3.5 shrink-0" strokeWidth={1.5} />
+              Back to Canvas
+            </button>
+          </div>
         ) : (
           <div
             className={cn("flex items-center gap-1.5", TOP_GROUP, titleIntro.className)}
