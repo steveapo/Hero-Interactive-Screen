@@ -1788,16 +1788,17 @@ export function HeroScreen({
         )}
       >
         {portalOpen && !portalClosing ? (
-          // In a panel like the Undo / Redo group (PORTAL_TOP_GROUP, 38px tall), the button a 32px
-          // pill inset by the panel's 2px padding, a shade darker than the panel.
-          <div className={PORTAL_TOP_GROUP}>
+          // In a panel with the Undo / Redo group's surface (PORTAL_TOP_GROUP's colour, still 38px tall
+          // overall), 2px less rounded; the button a 28px pill inset by a 4px padding, a shade darker
+          // than the panel.
+          <div className="rounded-[10px] border border-transparent bg-[#ededeb] p-1">
             <button
               type="button"
               aria-label="Back to canvas"
               onClick={closePortal}
               // Not through cn(): tailwind-merge reads the custom `text-px-12` size as a text colour and
               // drops it in favour of `text-stone-900`. The arrow is drawn like the Portal toolbar's Back.
-              className="flex h-8 items-center gap-1.5 rounded-[10px] bg-[#e4e4e2] px-2.5 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#dcdcda]"
+              className="flex h-7 items-center gap-1.5 rounded-lg bg-[#e4e4e2] px-2.5 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#dcdcda]"
             >
               <ArrowLeft className="size-3.5 shrink-0" strokeWidth={1.5} />
               Back to Canvas
