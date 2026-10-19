@@ -73,7 +73,8 @@ export const ShareButton = memo(function ShareButton({
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
-        className="flex h-7 items-center rounded-md bg-mi-lime px-3 text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] hover:bg-mi-lime-deep"
+        // rounded-[7px]: the actions group's 12px radius − the 5px margin above and below this 28px button.
+        className="flex h-7 items-center rounded-[7px] bg-mi-lime px-3 text-px-13 font-medium text-stone-900 shadow-[0_1px_2px_rgba(22,33,10,0.12)] hover:bg-mi-lime-deep"
       >
         Share
       </button>

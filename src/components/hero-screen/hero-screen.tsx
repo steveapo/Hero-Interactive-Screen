@@ -86,6 +86,12 @@ const MEASURE_SETTLE_MS = 120
  * size holds), around the 32px buttons with the floating bars' 2px padding (38px tall). */
 const TOP_GROUP = "rounded-xl border border-transparent bg-[#f2f2f1] p-0.5"
 
+/**
+ * Corner radius of a 32px button inside a 12px-radius top-bar group or the tool bar: outer radius =
+ * inner radius + margin, and the margin is the 1px transparent border + 2px padding (12 − 3 = 9px).
+ */
+const TOP_BUTTON_RADIUS = "rounded-[9px]"
+
 /** The same groups over the Portal: flat (no shadow, transparent border so it keeps the same height), a solid shade just darker than its stone-100 background. */
 const PORTAL_TOP_GROUP = "rounded-xl border border-transparent bg-[#ededeb] p-0.5"
 
@@ -1774,7 +1780,8 @@ export function HeroScreen({
               onClick={closePortal}
               // Not through cn(): tailwind-merge reads the custom `text-px-12` size as a text colour and
               // drops it in favour of `text-stone-900`. The arrow is drawn like the Portal toolbar's Back.
-              className="flex h-7 items-center gap-1.5 rounded-lg bg-[#e4e4e2] px-2.5 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#dcdcda]"
+              // Inner radius = the panel's 10px − its 5px margin (1px transparent border + 4px padding).
+              className="flex h-7 items-center gap-1.5 rounded-[5px] bg-[#e4e4e2] px-2.5 text-px-12 font-medium text-stone-900 transition-colors hover:bg-[#dcdcda]"
             >
               <ArrowLeft className="size-3.5 shrink-0" strokeWidth={1.5} />
               Back to Canvas
@@ -1788,7 +1795,7 @@ export function HeroScreen({
             <button
               type="button"
               aria-label="Home"
-              className="flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+              className={cn("flex size-8 items-center justify-center text-stone-800 hover:bg-stone-700/5", TOP_BUTTON_RADIUS)}
             >
               <HomeIcon />
             </button>
@@ -1802,7 +1809,7 @@ export function HeroScreen({
           <button
             type="button"
             aria-label="Undo"
-            className="group relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+            className={cn("group relative flex size-8 items-center justify-center text-stone-800 hover:bg-stone-700/5", TOP_BUTTON_RADIUS)}
           >
             <UndoIcon />
             <Tooltip label="Undo" />
@@ -1810,7 +1817,7 @@ export function HeroScreen({
           <button
             type="button"
             aria-label="Redo"
-            className="group relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+            className={cn("group relative flex size-8 items-center justify-center text-stone-800 hover:bg-stone-700/5", TOP_BUTTON_RADIUS)}
           >
             <RedoIcon />
             <Tooltip label="Redo" />
@@ -1825,7 +1832,8 @@ export function HeroScreen({
             aria-expanded={changesOpen}
             onClick={() => setChangesOpen((open) => !open)}
             className={cn(
-              "group relative flex h-8 items-center gap-1.5 rounded-md px-2 text-px-11 font-medium tabular-nums hover:bg-stone-700/5",
+              "group relative flex h-8 items-center gap-1.5 px-2 text-px-11 font-medium tabular-nums hover:bg-stone-700/5",
+              TOP_BUTTON_RADIUS,
               changesOpen && "bg-stone-700/5",
             )}
           >
@@ -1838,7 +1846,7 @@ export function HeroScreen({
             <button
               type="button"
               aria-label="Open preview"
-              className="group relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+              className={cn("group relative flex size-8 items-center justify-center text-stone-800 hover:bg-stone-700/5", TOP_BUTTON_RADIUS)}
             >
               <PlayCircleIcon />
               <Tooltip label="Open preview" />
@@ -1896,7 +1904,8 @@ export function HeroScreen({
               if (toolsEnabled) setTool(id)
             }}
             className={cn(
-              "group relative flex size-8 items-center justify-center rounded-lg transition-colors",
+              "group relative flex size-8 items-center justify-center transition-colors",
+              TOP_BUTTON_RADIUS,
               tool === id
                 ? "bg-[#2f6bf6] text-white"
                 : toolsEnabled
@@ -2211,7 +2220,8 @@ function CanvasTitle() {
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((open) => !open)}
           className={cn(
-            "flex size-8 items-center justify-center rounded-md text-stone-700 hover:bg-stone-700/5",
+            "flex size-8 items-center justify-center text-stone-700 hover:bg-stone-700/5",
+            TOP_BUTTON_RADIUS,
             menuOpen && "bg-stone-700/5",
           )}
         >

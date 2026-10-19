@@ -98,7 +98,8 @@ export const GithubButton = memo(function GithubButton({
         // No background at rest or while open: like the other top-bar buttons, it only tints on hover.
         // Once synced it widens to hold the green dot, so the hover tint covers icon and dot together.
         className={cn(
-          "relative flex h-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5",
+          // rounded-[9px]: the actions group's 12px radius − its 3px margin (1px border + 2px padding).
+          "relative flex h-8 items-center justify-center rounded-[9px] text-stone-800 hover:bg-stone-700/5",
           synced ? "gap-1 pl-2 pr-1.5" : "w-8",
         )}
       >
