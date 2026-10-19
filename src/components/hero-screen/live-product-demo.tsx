@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { RotateCcw } from "lucide-react"
+import { Play, RotateCcw } from "lucide-react"
 import { TRIP } from "@/app/copy-project/airbnb-data"
 import { ScriptedStage, type DemoScript, type ScriptApi } from "@/components/cursor-engine"
 import { SCREEN_SCALE_ATTR, setScreenScale } from "@/lib/screen-scale"
@@ -563,6 +563,13 @@ type ClipConfig = {
    * Omitted: the screen is shielded while the clip plays.
    */
   takeOver?: (target: Element) => boolean
+  /** Replay shows on hover even while the script plays. Default off: hidden until the run is over or taken over. */
+  replayWhilePlaying?: boolean
+  /**
+   * The clip waits for the visitor to press Play (instead of starting when scrolled into view), and a
+   * progress line along the bottom shows how far it is. Its expected run length in ms (pace included).
+   */
+  playOnClick?: { estimateMs: number }
 }
 
 /** The story's clips show the trip card alone. */
@@ -580,11 +587,12 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     quickEntrance: true,
     takeOver: allowsCodeToCanvas,
   },
-  // Opens in the Portal on the live app: the change is made straight in the code.
+  // Opens in the Portal on the live app: the change is made straight in the code. Starts on Play.
   "portal-edit": {
     script: portalEditScript,
     start: "portal",
     elementIds: TRIP_ONLY,
+    playOnClick: { estimateMs: 12000 },
   },
   // The captured card alone; the library holds the Fairbnb app's own components.
   components: {
@@ -611,6 +619,7 @@ const CLIPS: Record<FeatureClipId, ClipConfig> = {
     showCodebase: false,
     componentLibrary: "fairbnb",
     seed: STORY.spaced,
+    replayWhilePlaying: true,
   },
   // Opens in Build Mode on the live app with the card built; no address in the title bar.
   test: {
@@ -673,9 +682,13 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
     showCodebase = true,
     seed,
     takeOver,
+    replayWhilePlaying = false,
+    playOnClick,
   } = CLIPS[clip]
 
   useEffect(() => {
+    // A play-on-click clip starts from its Play button, not from scrolling into view.
+    if (playOnClick) return
     const el = ref.current
     if (!el) return
     const observer = new IntersectionObserver(
@@ -690,14 +703,16 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [])
+  }, [playOnClick])
 
   /** Bumped by the reset button: remounts the stage, so the clip replays from its first frame. */
   const [runId, setRunId] = useState(0)
   /** The run whose script has handed the screen over (ended, or the visitor took over). Replay shows only then. */
   const [handedOverRun, setHandedOverRun] = useState<number | null>(null)
-  /** Replay is hidden while a script plays; a clip without a script can always be replayed. */
-  const showReplay = !script || handedOverRun === runId
+  /** Replay is hidden while a script plays (unless `replayWhilePlaying`); a clip without a script can always be replayed. */
+  const showReplay = !script || replayWhilePlaying || handedOverRun === runId
+  /** A play-on-click clip shows its Play button until the visitor starts it. */
+  const showPlay = !!playOnClick && !ready
 
   /**
    * 75% or more of the clip is out of the viewport (scrolled past the top or back below the
@@ -759,6 +774,7 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
             holdLastFrame
             takeOver={takeOver}
             onHandOver={() => setHandedOverRun(runId)}
+            progressEstimate={playOnClick?.estimateMs}
             className="min-h-0"
           >
             {screen}
@@ -769,6 +785,20 @@ export function FeatureClip({ clip, className }: { clip: FeatureClipId; classNam
         )}
       </ScaledScreen>
 
+      {/* Play (see `playOnClick`): the clip waits on its opening screen until this is pressed. */}
+      {showPlay && (
+        <button
+          type="button"
+          onClick={() => setReady(true)}
+          aria-label="Play"
+          className="absolute inset-0 z-50 flex items-center justify-center bg-black/5 transition-colors hover:bg-black/10"
+        >
+          <span className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-sm font-medium text-neutral-900 shadow-[0_0_0_1px_#c9c7c3,0_4px_12px_rgba(17,17,16,0.2)]">
+            <Play className="size-4 fill-current" aria-hidden />
+            Play
+          </span>
+        </button>
+      )}
       {/* Reset: hidden while the script plays; once it's done (or taken over), shown while the screen is hovered (or the button has keyboard focus). */}
       {showReplay && (
         <button

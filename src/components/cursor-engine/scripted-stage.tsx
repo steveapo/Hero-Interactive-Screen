@@ -11,6 +11,14 @@ export type DemoScript = (api: ScriptApi) => Promise<void>
 /** Crossfade between runs: the finished screen fades out, the fresh one fades in (ms). */
 const FADE_MS = 600
 
+/**
+ * How long each script's last full run took (run-clock ms, pauses excluded): the progress line
+ * (see `progressEstimate`) uses it instead of the estimate once a run has been measured.
+ */
+const measuredRunMs = new WeakMap<DemoScript, number>()
+/** The progress line never quite fills before the run is actually over (the estimate may be short). */
+const PROGRESS_CAP = 0.98
+
 /** The cursor's home spot (where a run starts and loops back to): 62% across, 70% down the stage.
  * In the stage's layout px, like every script coordinate (the stage may be drawn scaled). */
 function homeOf(stage: HTMLElement) {
@@ -84,6 +92,11 @@ export type ScriptedStageProps = {
    * the visitor took over (`takeOver`). E.g. to show the host's Replay only once the script is done.
    */
   onHandOver?: () => void
+  /**
+   * Show a thin progress line along the bottom while the script runs. The run's expected length in
+   * ms (pace included); replaced by the measured length once a run of this script has completed.
+   */
+  progressEstimate?: number
   className?: string
 }
 
@@ -110,6 +123,7 @@ export function ScriptedStage({
   onStart,
   onFinish,
   onHandOver,
+  progressEstimate,
   className,
 }: ScriptedStageProps) {
   /*
@@ -144,6 +158,12 @@ export function ScriptedStage({
   const [faded, setFaded] = useState(false)
   /** The run is over and the screen holds its last frame for the visitor (see `holdLastFrame`). */
   const [held, setHeld] = useState(false)
+  /** The script itself is running (started, not yet over): what the progress line tracks. */
+  const [runActive, setRunActive] = useState(false)
+  /** When the current run started, on the run clock. */
+  const runStartRef = useRef(0)
+  const progressRef = useRef<HTMLDivElement>(null)
+  const showProgress = progressEstimate !== undefined && runActive && playing && !held
   /** The visitor's mouse and keys are kept off the screen while the demo plays (it's not interactive until it's done). */
   const takeOverMode = !!takeOver
   const shielded = playing && !interruptible && !held && !takeOverMode
@@ -255,7 +275,12 @@ export function ScriptedStage({
         runner = api
         setCursorVisible(true)
         onStartRef.current?.()
-        await scriptRef.current(api)
+        const run = scriptRef.current
+        runStartRef.current = clockRef.current.now()
+        setRunActive(true)
+        await run(api)
+        measuredRunMs.set(run, clockRef.current.now() - runStartRef.current)
+        setRunActive(false)
         if (!loop) {
           // Hold the last frame as a still; the screen is the visitor's from here.
           if (holdLastFrame) setHeld(true)
@@ -281,6 +306,7 @@ export function ScriptedStage({
         setIteration((i) => i + 1)
       } catch (error) {
         if (!(error instanceof ScriptAborted)) console.error("[scripted-stage] demo step failed:", error)
+        if (!signal.aborted) setRunActive(false)
         // A one-shot run that failed hands over as if it had finished.
         if (!signal.aborted && !loop) {
           if (holdLastFrame) setHeld(true)
@@ -495,6 +521,21 @@ export function ScriptedStage({
     }
   }, [interrupted, resumeAfterIdle])
 
+  // The progress line: elapsed run-clock time over the expected run length (stands still while paused).
+  useEffect(() => {
+    if (!showProgress) return
+    const total = measuredRunMs.get(script) ?? progressEstimate ?? 1
+    let frame = 0
+    const tick = () => {
+      const bar = progressRef.current
+      const share = Math.min(PROGRESS_CAP, Math.max(0, (clockRef.current.now() - runStartRef.current) / total))
+      if (bar) bar.style.transform = `scaleX(${share})`
+      frame = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => cancelAnimationFrame(frame)
+  }, [showProgress, script, progressEstimate])
+
   return (
     <div ref={stageRef} className={cn("relative flex w-full flex-1 flex-col overflow-hidden", className)}>
       <div
@@ -519,6 +560,13 @@ export function ScriptedStage({
       <div ref={rippleLayerRef} aria-hidden="true" className="pointer-events-none absolute inset-0 z-[60] overflow-hidden">
         <SimulatedCursor ref={cursorRef} visible={cursorVisible && playing && !held} />
       </div>
+
+      {/* Progress line (see `progressEstimate`): how far the run is, along the stage's bottom edge. */}
+      {showProgress && (
+        <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 z-[61] h-0.5 bg-black/10">
+          <div ref={progressRef} className="h-full origin-left bg-mi-ink/70" style={{ transform: "scaleX(0)" }} />
+        </div>
+      )}
     </div>
   )
 }
