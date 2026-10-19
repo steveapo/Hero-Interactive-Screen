@@ -199,16 +199,20 @@ const liveTripCard = (api: ScriptApi) => () =>
 const CAPTURE_BUTTON = 'button[aria-label="Capture a selection to the canvas (⌘S)"]'
 const CAPTURE_PAGE_BUTTON = 'button[aria-label="Capture the page to the canvas (⇧⌘S)"]'
 const EXIT_CAPTURE = 'button[aria-label="Exit area capture"]'
+/** The selected Codebase frame's settings panel button that opens it in the Portal. */
+const OPEN_BUILD_MODE = '[data-cursor-id="open-build-mode"]'
 
 /**
  * What the visitor may click in the capture clip (see ScriptedStage's `takeOver`): code to canvas
- * only. In the Portal: Capture a selection / the page, exiting Area capture, Back to canvas, and the
- * live app only while in Area capture (a click there captures, it never drives the app). On the
- * canvas: its frames and empty space (select, move, pan; double-click the Codebase frame back into
- * the Portal). The rest of the UI (toolbars, panels, the agent chat, the app's own clicks) stays put.
+ * only, back and forth. In the Portal: Capture a selection / the page, exiting Area capture, Back to
+ * canvas, and the live app only while in Area capture (a click there captures, it never drives the
+ * app). On the canvas: its frames and empty space (select, move, pan; double-click the Codebase
+ * frame back into the Portal), and the Codebase settings panel's "Open Build Mode". The rest of the
+ * UI (toolbars, other panel controls, the agent chat, the app's own clicks) stays put.
  */
 function allowsCodeToCanvas(target: Element) {
-  if ([CAPTURE_BUTTON, CAPTURE_PAGE_BUTTON, EXIT_CAPTURE, BACK_TO_CANVAS].some((s) => target.closest(s))) return true
+  if ([CAPTURE_BUTTON, CAPTURE_PAGE_BUTTON, EXIT_CAPTURE, BACK_TO_CANVAS, OPEN_BUILD_MODE].some((s) => target.closest(s)))
+    return true
   if (target.closest(PORTAL_SCREEN)) return !!target.closest("[data-hero-root]")?.querySelector(EXIT_CAPTURE)
   return !!target.closest(CANVAS)
 }
