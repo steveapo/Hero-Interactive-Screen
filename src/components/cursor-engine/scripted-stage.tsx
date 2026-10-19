@@ -44,26 +44,14 @@ export type ScriptedStageProps = {
   ready?: boolean
   /**
    * true: a real click, wheel or key press on the stage stops the demo and hands control to the
-   * visitor. false (default): the demo is independent of the visitor's own mouse and keyboard;
-   * their input never reaches the screen, so it can't break the run (they can still scroll the page).
+   * visitor. false (default): while the script plays, the screen is not interactive: the visitor's
+   * mouse and keyboard never reach it, so they can't break the run (they can still scroll the
+   * page). Only a visitor turn's targets (see the runner's `yourTurn`) take their click. The screen
+   * becomes interactive once the script is done (see `holdLastFrame`).
    */
   interruptible?: boolean
   /** After an interruption, restart once the user has been idle this long (ms). `null` = never. */
   resumeAfterIdle?: number | null
-  /**
-   * Let the visitor play along without breaking the run (non-interruptible stages only). Their
-   * pointer hovers the whole screen; their presses and clicks work inside elements matching this
-   * selector (and on the targets of a visitor turn). Elsewhere a press does nothing (native text
-   * selection still works). While they're pressing, or have just clicked, the script holds
-   * before its next move. Without it, the screen ignores the visitor's pointer entirely.
-   */
-  visitorArea?: string
-  /**
-   * While an element matching this selector is on the screen (e.g. a chat the script is working
-   * in), the visitor's presses are held back everywhere, `visitorArea` included, except on a
-   * visitor turn's targets, so they can't close it. Hovering still works.
-   */
-  visitorLock?: string
   /**
    * Without `loop`: once the run is over, stay on its last frame as a still and hand the screen to
    * the visitor. The simulated cursor goes away and their pointer and keys reach the screen (plain
@@ -85,9 +73,6 @@ export type ScriptedStageProps = {
   className?: string
 }
 
-/** After the visitor's last press, the script waits this long before its next move (ms). */
-const VISITOR_SETTLE_MS = 1200
-
 /**
  * Plays a live script over a screen (see script-runner): the simulated cursor glides, clicks and
  * types for real, so the screen responds as it would to a user. Each run starts on a freshly
@@ -105,8 +90,6 @@ export function ScriptedStage({
   ready = true,
   interruptible = false,
   resumeAfterIdle = 8000,
-  visitorArea,
-  visitorLock,
   holdLastFrame = false,
   paused = false,
   onStart,
@@ -145,12 +128,8 @@ export function ScriptedStage({
   const [faded, setFaded] = useState(false)
   /** The run is over and the screen holds its last frame for the visitor (see `holdLastFrame`). */
   const [held, setHeld] = useState(false)
-  /** The visitor's mouse and keys are kept off the screen while the demo plays. */
+  /** The visitor's mouse and keys are kept off the screen while the demo plays (it's not interactive until it's done). */
   const shielded = playing && !interruptible && !held
-  /** Shielded, but the visitor's pointer may hover (and press inside `visitorArea`). */
-  const visitorPlays = shielded && !!visitorArea
-  /** The visitor is pressing on the screen, or released less than VISITOR_SETTLE_MS ago. */
-  const visitorRef = useRef({ pressing: false, releasedAt: 0 })
   const scriptRef = useRef(script)
   const onStartRef = useRef(onStart)
   const onFinishRef = useRef(onFinish)
@@ -218,17 +197,13 @@ export function ScriptedStage({
     /** Shielded screens ignore the pointer; synthetic hits switch it back on for the instant they need. */
     const live = <T,>(run: () => T): T => {
       const content = contentRef.current
-      if (!content || interruptible || visitorArea) return run()
+      if (!content || interruptible) return run()
       content.style.pointerEvents = "auto"
       try {
         return run()
       } finally {
         content.style.pointerEvents = "none"
       }
-    }
-    const visitorBusy = () => {
-      const v = visitorRef.current
-      return v.pressing || performance.now() - v.releasedAt < VISITOR_SETTLE_MS
     }
 
     let runner: ScriptApi | null = null
@@ -246,7 +221,6 @@ export function ScriptedStage({
           pace,
           start,
           live,
-          visitorBusy,
           clock: clockRef.current,
         })
         runner = api
@@ -299,7 +273,7 @@ export function ScriptedStage({
       controller.abort()
       resetHover()
     }
-  }, [playing, ready, iteration, pace, startDelay, loop, loopDelay, loopTransition, interruptible, visitorArea, holdLastFrame])
+  }, [playing, ready, iteration, pace, startDelay, loop, loopDelay, loopTransition, interruptible, holdLastFrame])
 
   /*
    * Holding the last frame (`holdLastFrame`): the visitor can play with the screen, but it mustn't
@@ -366,55 +340,6 @@ export function ScriptedStage({
     }
   }, [shielded])
 
-  /*
-   * Playing along (`visitorArea`): the visitor's pointer reaches the screen, so hovering works
-   * everywhere. Captured on `window` (before the app's own listeners):
-   * - Presses outside the area (and not on a visitor turn's target) never reach the app; their
-   *   click's default action (submitting a form, following a link) is cancelled too. The press's
-   *   own default isn't, so text can still be selected where the screen allows it.
-   * - Wheel over the screen scrolls the page, as before, instead of panning the canvas.
-   * - Presses are tracked so the script holds while the visitor is busy (see `visitorBusy`).
-   */
-  useEffect(() => {
-    if (!visitorPlays || !visitorArea) return
-    const stage = stageRef.current
-    const area = visitorArea
-    const ours = (target: EventTarget | null): target is Element => target instanceof Element && !!stage?.contains(target)
-    /** The script is working in something the visitor mustn't disturb (see `visitorLock`). */
-    const locked = () => !!visitorLock && !!stage?.querySelector(visitorLock)
-    const allowed = (target: Element) => !locked() && !!target.closest(area)
-
-    function onPress(e: Event) {
-      if (!e.isTrusted || !ours(e.target)) return
-      if (e.type === "pointerdown") visitorRef.current.pressing = true
-      // Double-clicks open things (a frame into a full-screen view) that would take the screen
-      // away from the script, so they're held back everywhere but a visitor turn's targets.
-      const isTurn = !!e.target.closest("[data-visitor-turn]")
-      if (isTurn || (allowed(e.target) && e.type !== "dblclick")) return
-      e.stopPropagation()
-      if (e.type === "click" || e.type === "dblclick" || e.type === "contextmenu" || e.type === "auxclick") e.preventDefault()
-    }
-    function onRelease(e: Event) {
-      if (!e.isTrusted || !visitorRef.current.pressing) return
-      visitorRef.current = { pressing: false, releasedAt: performance.now() }
-    }
-    function onWheel(e: Event) {
-      if (e.isTrusted && ours(e.target)) e.stopPropagation()
-    }
-    // (Releases always go through: a drag started on the canvas may end over a panel.)
-    const pressTypes = ["pointerdown", "mousedown", "click", "dblclick", "auxclick", "contextmenu"] as const
-    pressTypes.forEach((type) => window.addEventListener(type, onPress, true))
-    window.addEventListener("pointerup", onRelease, true)
-    window.addEventListener("pointercancel", onRelease, true)
-    window.addEventListener("wheel", onWheel, { capture: true, passive: true })
-    return () => {
-      pressTypes.forEach((type) => window.removeEventListener(type, onPress, true))
-      window.removeEventListener("pointerup", onRelease, true)
-      window.removeEventListener("pointercancel", onRelease, true)
-      window.removeEventListener("wheel", onWheel, true)
-    }
-  }, [visitorPlays, visitorArea, visitorLock])
-
   // A real click, wheel or key press stops the demo so the user can take over.
   useEffect(() => {
     if (!playing || !interruptible) return
@@ -466,9 +391,9 @@ export function ScriptedStage({
         ref={contentRef}
         className="flex w-full flex-1 flex-col"
         style={{
-          // Shielded: the visitor's pointer passes through to the stage (see `live` for the script's),
-          // unless they may play along (see `visitorArea`).
-          pointerEvents: shielded && !visitorPlays ? "none" : undefined,
+          // Shielded: not interactive while the script plays; the visitor's pointer passes through to
+          // the stage (see `live` for the script's; a visitor turn's targets switch it back on).
+          pointerEvents: shielded ? "none" : undefined,
           // Only while fading out: no lingering opacity layer over the screen otherwise.
           ...(faded ? { opacity: 0, transition: `opacity ${FADE_MS}ms ease-in-out` } : {}),
         }}

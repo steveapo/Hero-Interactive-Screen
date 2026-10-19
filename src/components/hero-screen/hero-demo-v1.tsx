@@ -264,9 +264,8 @@ async function clearOfPrompt(api: ScriptApi) {
 }
 
 /*
- * The visitor can play along on the canvas (see HeroDemo's `visitorArea`). A click of theirs on
- * empty canvas or another frame changes the selection, which closes the open chat; the helpers
- * below check that each chat step actually happened and redo it if it didn't.
+ * The screen isn't interactive while the demo plays, but a visitor turn's click can still change
+ * what's open; the helpers below check that each chat step actually happened and redo it if it didn't.
  */
 
 /** Open the Build Agent chat on a frame (select it, click its agent button), unless it's open. */
@@ -589,8 +588,6 @@ export function HeroDemoV1({ className }: { className?: string }) {
         loopTransition="cut"
         loopDelay={900}
         ready={ready}
-        visitorArea="[data-hero-canvas]"
-        visitorLock={COMPOSER}
       >
         {(iteration) => <HeroScreen className="h-auto min-h-0 flex-1" reopened={iteration > 0} />}
       </ScriptedStage>

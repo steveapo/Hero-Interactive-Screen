@@ -377,9 +377,7 @@ export function HeroDemo({ className }: { className?: string }) {
           take > 0 && !afterFinale && "animate-in fade-in duration-500",
         )}
       >
-        {/* The visitor can hover the whole screen and click on the canvas while the demo plays; the
-            script holds while they do. While a Build Agent chat is open, the canvas doesn't take
-            their clicks (a click there would close it), apart from a visitor turn's targets. */}
+        {/* Not interactive while the demo plays, apart from a visitor turn's targets. */}
         <ScriptedStage
           script={clip.script}
           className="min-h-0"
@@ -387,8 +385,6 @@ export function HeroDemo({ className }: { className?: string }) {
           loop={false}
           loopDelay={Math.round(900 * DEMO_PACE)}
           ready={ready}
-          visitorArea="[data-hero-canvas]"
-          visitorLock={COMPOSER}
           onStart={() => setStarted(true)}
           onFinish={() => playClip((clipIndex + 1) % CLIPS.length, clipIndex === CLIPS.length - 1)}
         >

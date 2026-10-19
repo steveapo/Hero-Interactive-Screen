@@ -338,6 +338,7 @@ export function HeroScreen({
   toolsEnabled = true,
   scrollPans = true,
   loadIntro,
+  onIntroSettled,
   portalLoadMs,
   portalShowUrl = true,
   maxZoom = MAX_ZOOM,
@@ -405,6 +406,11 @@ export function HeroScreen({
   portalShowUrl?: boolean
   /** Load-in intro (see LoadIntro). Omitted: everything is simply there. */
   loadIntro?: LoadIntro
+  /**
+   * The load-in intro is over (its "settled" step). Until then the screen isn't interactive (it's
+   * `inert`); from here on it's the visitor's.
+   */
+  onIntroSettled?: () => void
   /**
    * Plain scroll / trackpad swipes over the canvas pan it. Off for the homepage hero: the canvas
    * doesn't scroll and the page scrolls through it (pinch or ⌘/Ctrl + scroll still zoom; dragging
@@ -570,7 +576,19 @@ export function HeroScreen({
       ...(intro.style === "emerge" && intro.settledAt !== undefined
         ? ([["settled", intro.settledAt]] as [IntroStep, number][])
         : []),
+      // "glide": settled once the last element's entrance (the end of the sweep) has landed.
+      ...(intro.style === undefined || intro.style === "glide"
+        ? ([
+            [
+              "settled",
+              intro.elementsAt +
+                Math.round((ENTER_BASE_DELAY + ENTER_SWEEP_MS + ENTRANCE_DURATION_MS) * (intro.elementsTimeScale ?? 1)),
+            ],
+          ] as [IntroStep, number][])
+        : []),
     ]
+    // An intro without its own settle time is over once its elements are in.
+    if (!steps.some(([step]) => step === "settled")) steps.push(["settled", intro.elementsAt])
     const timers = steps.map(([step, at]) =>
       setTimeout(() => setIntroSteps((reached) => (reached.includes(step) ? reached : [...reached, step])), at),
     )
@@ -602,6 +620,18 @@ export function HeroScreen({
     if (selectIn && id) setSelectedIds([id])
   }, [selectIn])
   const hasIntro = loadIntro !== undefined
+  /**
+   * The load-in is waiting or playing: the screen isn't interactive (inert) until it has settled.
+   * Without an intro it's interactive from the start.
+   */
+  const introRunning = hasIntro && !introSteps.includes("settled")
+  const onIntroSettledRef = useRef(onIntroSettled)
+  useEffect(() => {
+    onIntroSettledRef.current = onIntroSettled
+  })
+  useEffect(() => {
+    if (hasIntro && !introRunning) onIntroSettledRef.current?.()
+  }, [hasIntro, introRunning])
   /** The bars and tools play a load-in (not in "emerge", where they're simply there). */
   const chromeHasIntro = hasIntro && !emergeIntro
   // Bars and tools, in the order they come in: the canvas title, the tool bar and the sidebar, the
@@ -1429,9 +1459,9 @@ export function HeroScreen({
     setPanning(false)
   }
 
-  // Single-key tool shortcuts shown in the toolbar labels (V, F, T, P)
+  // Single-key tool shortcuts shown in the toolbar labels (V, F, T, P). Off while the load-in plays.
   useEffect(() => {
-    if (!toolsEnabled) return
+    if (!toolsEnabled || introRunning) return
     function onKeyDown(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target as HTMLElement | null
@@ -1441,13 +1471,15 @@ export function HeroScreen({
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [toolsEnabled])
+  }, [toolsEnabled, introRunning])
 
   return (
     <PanelLoadInContext.Provider value={panelsEntering}>
     <div
       ref={rootRef}
       data-hero-root
+      // Not interactive while the load-in plays (see `introRunning`).
+      inert={introRunning}
       className={cn("relative h-dvh w-full select-none overflow-hidden bg-mi-canvas", className)}
     >
       {/*

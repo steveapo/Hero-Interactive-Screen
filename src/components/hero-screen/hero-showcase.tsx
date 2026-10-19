@@ -154,6 +154,8 @@ export function HeroShowcase({
 
   const desktopRef = useRef<HTMLDivElement>(null)
   const [intro, setIntro] = useState<IntroPhase>("waiting")
+  /** The canvas's load-in has settled: until then the whole Desktop Area (windows included) isn't interactive. */
+  const [introSettled, setIntroSettled] = useState(false)
 
   // "flip": the load-in waits until everything it shows is loaded: at least PRELOAD_MS after mount
   // (the whole screen is mounted, hidden, from the start), the fonts, and the wallpaper (or
@@ -248,6 +250,8 @@ export function HeroShowcase({
     <div
       ref={desktopRef}
       data-desktop-area
+      // Not interactive while the load-in plays (window dragging and focusing included).
+      inert={!introSettled}
       className={cn(
         // Its dark tone shows while the wallpaper loads.
         "relative flex min-h-0 w-full flex-1 overflow-hidden bg-[#12120e]",
@@ -291,6 +295,7 @@ export function HeroShowcase({
               toolsEnabled={false}
               scrollPans={false}
               loadIntro={canvasIntro}
+              onIntroSettled={() => setIntroSettled(true)}
               // Opens with the Layers panel showing and the trip card frame selected (its settings panel
               // open). "flip": the sidebar's Components panel opens during the load-in instead.
               layersOpen={introStyle !== "flip"}
