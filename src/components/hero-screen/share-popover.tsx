@@ -152,12 +152,10 @@ function SharePopover({
   }, [copied])
 
   function copy() {
-    // The toast shows either way: a scripted click (no user gesture) can't write the clipboard.
+    // A demo: Copy only shows the "Copied" state and toast. It never touches the real clipboard, so
+    // the browser never asks the visitor for clipboard permission.
     setCopied(true)
     onCopied()
-    navigator.clipboard?.writeText(previewUrl).catch(() => {
-      // Clipboard access denied: nothing else to do
-    })
   }
 
   return (
