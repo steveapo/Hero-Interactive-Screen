@@ -375,7 +375,7 @@ export const heroDemoV1Script: DemoScript = async (api) => {
 
   await scene(api, "back to canvas", async () => {
     if (api.exists('button[aria-label="Back to canvas"]')) await api.click('button[aria-label="Back to canvas"]')
-    await api.until(() => !api.exists("[data-portal-screen]"), 4000)
+    await api.until(() => !api.stage.querySelector("[data-portal-screen]"), 4000)
     await api.wait(2300) // the canvas sweeps in around the Codebase frame
   })
 
@@ -489,7 +489,7 @@ export const heroDemoV1Script: DemoScript = async (api) => {
     await api.moveTo('[data-cursor-id="built-variant"]', { fx: 0.7, fy: 0.75, duration: 800 })
     await api.wait(2200)
     await api.click('button[aria-label="Back to canvas"]')
-    await api.until(() => !api.exists("[data-portal-screen]"), 4000)
+    await api.until(() => !api.stage.querySelector("[data-portal-screen]"), 4000)
     await api.wait(1700) // the canvas sweeps back in
   })
 

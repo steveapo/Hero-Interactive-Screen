@@ -248,7 +248,9 @@ const captureScript: DemoScript = async (api) => {
   })
   await scene(api, "back to canvas", async () => {
     await api.click(BACK_TO_CANVAS)
-    await api.until(() => !api.exists("[data-portal-screen]"), 4000)
+    // Only this clip's own Portal: api.exists also searches the whole page, where other clips
+    // (portal-edit, test) show theirs, so it would hold here until the timeout.
+    await api.until(() => !api.stage.querySelector(PORTAL_SCREEN), 4000)
     // The captured card glides in beside the Codebase frame (a quick glide, see `quickEntrance`,
     // ≈ 0.6s). No pause here: the cursor heads for the card straight away (moveTo re-measures it
     // every frame, so it follows the glide) and the zoom starts as the card lands.
