@@ -434,7 +434,8 @@ const portalEditScript: DemoScript = async (api) => {
     await api.wait(300)
     // On the button's left edge, clear of its icon, so the whole button is selected (not the svg).
     await api.moveTo(PORTAL_SEARCH_BUTTON, { fx: 0.15, fy: 0.5 })
-    await api.wait(300)
+    // Rest on it, so its tinted highlight and name tag read before the click.
+    await api.wait(600)
     await api.click(PORTAL_SEARCH_BUTTON, { fx: 0.15, fy: 0.5 })
     await api.find(PORTAL_SELECTED_ELEMENT)
     await api.wait(600)

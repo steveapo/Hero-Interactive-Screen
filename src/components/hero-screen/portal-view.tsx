@@ -23,6 +23,7 @@ import {
   ScanLine,
   Smartphone,
   SquareDashedMousePointer,
+  Square,
   SquarePen,
   Tablet,
   ThumbsDown,
@@ -93,8 +94,11 @@ const PORTAL_PATH = "/"
  */
 type LoadPhase = "start" | "loading" | "loaded"
 
-/** A highlighted area in preview-box px (left/top relative to the preview), with the element's corner radius. */
-type Box = { left: number; top: number; width: number; height: number; radius: string }
+/**
+ * A highlighted area in preview-box px (left/top relative to the preview), with the element's corner
+ * radius and its name (tag, e.g. "div") for Select's name tag.
+ */
+type Box = { left: number; top: number; width: number; height: number; radius: string; name?: string }
 
 /** A capture flash: an element's box, or the whole page. `id` restarts the animation per capture. */
 type Pulse = { id: number; box: Box | "page" }
@@ -294,6 +298,7 @@ export const PortalView = memo(function PortalView({
       width: r.width / k,
       height: r.height / k,
       radius: getComputedStyle(el).borderRadius,
+      name: el.tagName.toLowerCase(),
     }
   }
 
@@ -516,23 +521,33 @@ export const PortalView = memo(function PortalView({
               </div>
             )}
 
-            {/* Area capture / Select: outline of the element under the cursor */}
+            {/* Area capture: outline of the element under the cursor. Select: outlined and tinted, with its name tag. */}
             {picking && hover && (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute z-20 border-2"
-                style={{ ...boxStyle(hover), borderColor: CAPTURE_BLUE }}
-              />
+              <>
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute z-20 border-2"
+                  style={{
+                    ...boxStyle(hover),
+                    borderColor: CAPTURE_BLUE,
+                    background: selecting ? `${CAPTURE_BLUE}33` : undefined,
+                  }}
+                />
+                {selecting && <ElementTag box={hover} />}
+              </>
             )}
 
-            {/* The element selected for the agent: outlined and tinted until the message is sent */}
-            {selected && (
-              <div
-                aria-hidden="true"
-                data-cursor-id="portal-selected-element"
-                className="pointer-events-none absolute z-20 border-2"
-                style={{ ...boxStyle(selected), borderColor: CAPTURE_BLUE, background: `${CAPTURE_BLUE}1f` }}
-              />
+            {/* The element selected for the agent: outlined, with its name tag, until the message is sent */}
+            {selected && !(selecting && hover) && (
+              <>
+                <div
+                  aria-hidden="true"
+                  data-cursor-id="portal-selected-element"
+                  className="pointer-events-none absolute z-20 border-2"
+                  style={{ ...boxStyle(selected), borderColor: CAPTURE_BLUE }}
+                />
+                <ElementTag box={selected} />
+              </>
             )}
 
             {/* Capture flash: blue overlay over the captured element, or the whole page */}
@@ -562,7 +577,9 @@ export const PortalView = memo(function PortalView({
         onBuildFrames={onBuildFrames}
         initialAttached={initialAttached}
         selecting={selecting}
+        selectedName={selected?.name ?? null}
         onToggleSelect={toggleSelect}
+        onClearSelection={clearSelection}
         onSent={clearSelection}
       />
     </div>
@@ -575,7 +592,28 @@ function boxStyle(box: Box): React.CSSProperties {
 }
 
 function sameBox(a: Box, b: Box) {
-  return a.left === b.left && a.top === b.top && a.width === b.width && a.height === b.height && a.radius === b.radius
+  return (
+    a.left === b.left &&
+    a.top === b.top &&
+    a.width === b.width &&
+    a.height === b.height &&
+    a.radius === b.radius &&
+    a.name === b.name
+  )
+}
+
+/** Select: the element's name in a blue tag just below its outline (left-aligned with it). */
+function ElementTag({ box }: { box: Box }) {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute z-20 mt-1 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-px-12 font-medium leading-4 text-white"
+      style={{ left: box.left, top: box.top + box.height, background: CAPTURE_BLUE }}
+    >
+      <Square className="size-3" strokeWidth={1.75} />
+      {box.name}
+    </div>
+  )
 }
 
 /** The live app plays its intro first; the built variant swaps in once it has settled (ms after load). */
@@ -1299,7 +1337,9 @@ const PortalChat = memo(function PortalChat({
   onBuildFrames,
   initialAttached,
   selecting = false,
+  selectedName = null,
   onToggleSelect,
+  onClearSelection,
   onSent,
 }: {
   onApply: (change: string) => void
@@ -1310,8 +1350,12 @@ const PortalChat = memo(function PortalChat({
   initialAttached?: string[]
   /** Select mode is on (the composer's Select button is pressed). */
   selecting?: boolean
+  /** The selected app element's name (a chip above the prompt). Null: nothing selected. */
+  selectedName?: string | null
   /** The composer's Select button: toggle Select mode in the live app. */
   onToggleSelect?: () => void
+  /** The selected element's chip ✕: deselect it. */
+  onClearSelection?: () => void
   /** A message was sent (it takes the selected element with it). */
   onSent?: () => void
 }) {
@@ -1635,8 +1679,26 @@ const PortalChat = memo(function PortalChat({
         }}
         className="mx-1.5 mb-1.5 flex flex-col rounded-xl border border-stone-200 bg-white px-2.5 pb-2 pt-2.5 shadow-[0_1px_2px_rgba(17,17,16,0.04)]"
       >
-        {attached.length > 0 && (
+        {(selectedName || attached.length > 0) && (
           <div className="mb-2 flex flex-wrap gap-1">
+            {/* The app element picked with Select (green, like the pressed Select button) */}
+            {selectedName && (
+              <span
+                data-cursor-id="portal-selected-chip"
+                className="flex h-7 max-w-full items-center gap-1.5 rounded-lg border border-stone-300 bg-stone-50 pl-1.5 pr-1 text-px-12 font-medium text-[#1e7b36] animate-in fade-in zoom-in-95 duration-150"
+              >
+                <MousePointerClick className="size-3.5 shrink-0" strokeWidth={1.5} />
+                <span className="min-w-0 truncate">{selectedName}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${selectedName}`}
+                  onClick={onClearSelection}
+                  className="flex size-5 shrink-0 items-center justify-center rounded text-stone-600 hover:bg-stone-700/5"
+                >
+                  <X className="size-3" strokeWidth={1.75} />
+                </button>
+              </span>
+            )}
             {attached.map((id) => {
               const name = canvasFrames.find((f) => f.id === id)?.name ?? id
               return (
@@ -1683,7 +1745,14 @@ const PortalChat = memo(function PortalChat({
         />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-0.5 text-stone-600">
-            <BarButton label="Select (⌘E)" side="top" onClick={onToggleSelect} pressed={selecting} active={selecting}>
+            {/* Pressed (Select mode on): a green circle with a green icon. */}
+            <BarButton
+              label="Select (⌘E)"
+              side="top"
+              onClick={onToggleSelect}
+              pressed={selecting}
+              className={cn(selecting && "rounded-full bg-[#e3f1e5] text-[#1e7b36] hover:bg-[#e3f1e5]")}
+            >
               <MousePointerClick className="size-3.5" strokeWidth={1.5} />
             </BarButton>
             <BarButton label="Capture page" side="top">
@@ -1874,6 +1943,7 @@ function BarButton({
   align = "center",
   active,
   pressed,
+  className,
   children,
 }: {
   label: string
@@ -1884,6 +1954,8 @@ function BarButton({
   active?: boolean
   /** Toggle button state (e.g. a thumb that's been given). */
   pressed?: boolean
+  /** Extra classes for the button (e.g. a pressed look). */
+  className?: string
   children: React.ReactNode
 }) {
   /** Horizontal px nudge that keeps the label inside the window (0 = default placement). */
@@ -1922,6 +1994,7 @@ function BarButton({
       className={cn(
         "group relative flex size-7 items-center justify-center rounded-md text-stone-700 hover:bg-stone-700/5",
         active && "bg-stone-700/5",
+        className,
       )}
     >
       {children}
