@@ -163,7 +163,7 @@ export type PortalTurn = {
   /** The agent ran the test suite: what's shown under the reply. */
   tests?: { file: string; names: string[]; passed: number }
   /**
-   * Builds the canvas frames attached to the message (see PortalChat's "Add canvas frame") into the
+   * Builds the canvas frames attached to the message (by the canvas's "Add to Build Chat") into the
    * codebase, as designed: their library components show on the same cards in the live app.
    */
   buildsFrames?: boolean

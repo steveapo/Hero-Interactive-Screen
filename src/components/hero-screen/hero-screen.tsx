@@ -696,7 +696,7 @@ export function HeroScreen({
   const [elementNames, setElementNames] = useState<Record<string, string>>(() =>
     Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.name])),
   )
-  /** The canvas's own frames, offered by the Portal Agent's "Add canvas frame" (memoized: the Portal is). */
+  /** The canvas's own frames, for the Portal Agent's attached frames (memoized: the Portal is). */
   const portalFrames = useMemo(
     () => canvasElements.filter((el) => !el.exploration).map((el) => ({ id: el.id, name: elementNames[el.id] })),
     [canvasElements, elementNames],
