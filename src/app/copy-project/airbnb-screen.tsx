@@ -149,15 +149,17 @@ export function UserMenu() {
 export function SearchHeader() {
   return (
     <header
-      className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center border-b border-[#ebebeb] bg-white px-[4cqw]"
+      className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-x-[1.5cqw] border-b border-[#ebebeb] bg-white px-[4cqw]"
       style={{ height: cqw(LAYOUT.header) }}
     >
+      {/* Side columns may shrink below their content (minmax(0, …)) so the centred search pill
+          never pushes the menu out of the header; the host link truncates first. */}
       <Logo />
       <SearchPill />
-      <div className="flex items-center justify-end gap-[0.4cqw] text-[#222222]">
+      <div className="flex min-w-0 items-center justify-end gap-[0.4cqw] text-[#222222]">
         <BecomeHostLink />
         <GlobeButton />
-        <span data-anim="nav-item" className="ml-[0.3cqw]">
+        <span data-anim="nav-item" className="ml-[0.3cqw] shrink-0">
           <UserMenu />
         </span>
       </div>
@@ -169,7 +171,7 @@ export function BecomeHostLink() {
   return (
     <span
       data-anim="nav-item"
-      className="rounded-full px-[0.9cqw] py-[0.7cqw] text-[0.98cqw] leading-none font-semibold whitespace-nowrap text-[#222222]"
+      className="min-w-0 truncate rounded-full px-[0.9cqw] py-[0.7cqw] text-[0.98cqw] leading-none font-semibold text-[#222222]"
     >
       Become a host
     </span>
@@ -178,7 +180,7 @@ export function BecomeHostLink() {
 
 export function GlobeButton() {
   return (
-    <span data-anim="nav-item" className="flex size-[2.8cqw] items-center justify-center rounded-full text-[#222222]">
+    <span data-anim="nav-item" className="flex size-[2.8cqw] shrink-0 items-center justify-center rounded-full text-[#222222]">
       <Globe className="size-[1.15cqw]" strokeWidth={2} />
     </span>
   );
@@ -218,7 +220,7 @@ export function CategoryItem({
       aria-pressed={selected}
       onClick={onSelect}
       className={cn(
-        "relative flex h-full cursor-pointer flex-col items-center justify-center gap-[0.5cqw] transition-colors duration-200",
+        "relative flex h-full shrink-0 cursor-pointer flex-col items-center justify-center gap-[0.5cqw] transition-colors duration-200",
         selected ? "text-[#222222]" : "text-[#6a6a6a] hover:text-[#222222]",
       )}
     >
@@ -240,7 +242,7 @@ export function FiltersButton() {
   return (
     <span
       data-anim="category"
-      className="flex h-[3.4cqw] items-center gap-[0.6cqw] self-center rounded-[0.9cqw] border border-[#dddddd] px-[1.1cqw] text-[0.85cqw] leading-none font-semibold whitespace-nowrap text-[#222222]"
+      className="flex h-[3.4cqw] shrink-0 items-center gap-[0.6cqw] self-center rounded-[0.9cqw] border border-[#dddddd] px-[1.1cqw] text-[0.85cqw] leading-none font-semibold whitespace-nowrap text-[#222222]"
     >
       <SlidersHorizontal className="size-[1.1cqw]" strokeWidth={2} />
       Filters
@@ -260,7 +262,9 @@ export function CategoryBar({
       className="flex shrink-0 items-stretch gap-[4cqw] bg-white px-[4cqw]"
       style={{ height: cqw(LAYOUT.categories) }}
     >
-      <div className="flex flex-1 items-stretch justify-between">
+      {/* Spread out when there's room; never closer than the minimum gap: when the labels don't
+          fit, the row scrolls sideways (scrollbar hidden) instead of running them together. */}
+      <div className="flex min-w-0 flex-1 items-stretch justify-between gap-[2cqw] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {CATEGORIES.map(({ label, icon }, index) => (
           <CategoryItem
             key={label}
@@ -314,7 +318,7 @@ export function TripCard({
     <div
       data-anim="block"
       data-order={order}
-      className="flex size-full flex-col justify-between rounded-[1cqw] border border-[#ebebeb] bg-white p-[1.6cqw] shadow-[0_0.3cqw_1.2cqw_rgba(0,0,0,0.08)]"
+      className="flex size-full flex-col justify-between gap-[0.3cqw] rounded-[1cqw] border border-[#ebebeb] bg-white p-[1.6cqw] shadow-[0_0.3cqw_1.2cqw_rgba(0,0,0,0.08)]"
     >
       {/* Both blocks hug their content (self-start), so the card's right side is the card
           itself: pointing there selects the whole card, not a line of its text. */}
@@ -390,10 +394,17 @@ export function DirectionsButton() {
   );
 }
 
-/** The stay's photo as a wide banner, with how and when to get in. */
+/**
+ * The stay's photo as a wide banner, with how and when to get in. The overlays are laid out in
+ * flow (pill on top, check-in and directions along the bottom) over the absolutely placed photo,
+ * so they keep clear of each other however much room the text needs.
+ */
 export function CheckInTile({ trip = TRIP }: { trip?: Trip }) {
   return (
-    <div data-anim="tile" className="relative size-full overflow-hidden rounded-[1cqw] bg-[#2b2b2b]">
+    <div
+      data-anim="tile"
+      className="relative flex size-full flex-col justify-between gap-[1cqw] overflow-hidden rounded-[1cqw] bg-[#2b2b2b] px-[1.6cqw] pt-[1.4cqw] pb-[1.5cqw]"
+    >
       <Image
         data-anim="tile-photo"
         src={trip.photo}
@@ -406,20 +417,22 @@ export function CheckInTile({ trip = TRIP }: { trip?: Trip }) {
         style={{ objectPosition: "50% 62%" }}
       />
       <div className="absolute inset-0 bg-linear-to-r from-black/65 via-black/20 to-transparent" />
-      <span className="absolute top-[1.4cqw] left-[1.6cqw]">
+      <span className="relative self-start">
         <SelfCheckInPill label={trip.access} />
       </span>
-      <div className="absolute bottom-[1.5cqw] left-[1.6cqw] text-white">
-        <p data-anim="tile-text" className="text-[0.75cqw] font-semibold tracking-[0.1em] text-white/75 uppercase">
-          Check-in
-        </p>
-        <p data-anim="tile-text" className="mt-[0.2cqw] text-[1.5cqw] leading-tight font-semibold tracking-tight">
-          {trip.checkIn}
-        </p>
+      <div className="relative flex items-end justify-between gap-[1cqw]">
+        <div className="min-w-0 text-white">
+          <p data-anim="tile-text" className="text-[0.75cqw] font-semibold tracking-[0.1em] text-white/75 uppercase">
+            Check-in
+          </p>
+          <p data-anim="tile-text" className="mt-[0.2cqw] text-[1.5cqw] leading-tight font-semibold tracking-tight">
+            {trip.checkIn}
+          </p>
+        </div>
+        <span className="shrink-0">
+          <DirectionsButton />
+        </span>
       </div>
-      <span className="absolute right-[1.6cqw] bottom-[1.5cqw]">
-        <DirectionsButton />
-      </span>
     </div>
   );
 }
@@ -428,7 +441,7 @@ export function GuestFavoritePill() {
   return (
     <span
       data-anim="pill"
-      className="block rounded-full bg-white px-[0.75cqw] py-[0.45cqw] text-[0.8cqw] leading-none font-semibold whitespace-nowrap text-[#222222] shadow-[0_0.1cqw_0.5cqw_rgba(0,0,0,0.18)]"
+      className="block truncate rounded-full bg-white px-[0.75cqw] py-[0.45cqw] text-[0.8cqw] leading-none font-semibold text-[#222222] shadow-[0_0.1cqw_0.5cqw_rgba(0,0,0,0.18)]"
     >
       Guest favorite
     </span>
@@ -487,7 +500,8 @@ export function ListingPhoto({
         style={{ objectPosition: listing.focus }}
       />
       {listing.guestFavorite && (
-        <span className="absolute top-[0.9cqw] left-[0.9cqw]">
+        // Kept clear of the heart (right): the pill truncates rather than running under it.
+        <span className="absolute top-[0.9cqw] left-[0.9cqw] max-w-[calc(100%-4.2cqw)]">
           <GuestFavoritePill />
         </span>
       )}
@@ -599,20 +613,23 @@ export const AirbnbScreen = memo(function AirbnbScreen({
 
       <main className="relative min-h-0 flex-1 overflow-hidden px-[4cqw]" style={{ paddingTop: cqw(LAYOUT.contentTop) }}>
         <SectionHead title="Your upcoming trip" action="All trips" />
+        {/* Minimum (not fixed) heights: at the design's proportions the rows are exactly these
+            sizes, but if the text ever needs more room the row grows instead of spilling over. */}
         <div
-          className="flex transition-[height] duration-500 ease-out"
+          className="flex transition-[min-height] duration-500 ease-out"
           style={{
             gap: cqw(LAYOUT.columnGap),
             marginTop: cqw(LAYOUT.sectionHeadGap),
-            height: cqw(LAYOUT.tripRow + tripNumeralGap),
+            minHeight: cqw(LAYOUT.tripRow + tripNumeralGap),
           }}
         >
-          {/* Each card sits in its own positioned host: the Portal builds components onto it there. */}
-          <div data-anim="trip" className="relative h-full shrink-0" style={{ width: cqw(TRIP_CARD_WIDTH) }}>
+          {/* Each card sits in its own positioned host: the Portal builds components onto it there.
+              The hosts stretch to the row's height (the taller of the two). */}
+          <div data-anim="trip" className="relative shrink-0" style={{ width: cqw(TRIP_CARD_WIDTH) }}>
             <TripCard numeralGap={tripNumeralGap} animateGap />
             {tripExtras}
           </div>
-          <div className="relative h-full shrink-0" style={{ width: cqw(CHECK_IN_WIDTH) }}>
+          <div className="relative shrink-0" style={{ width: cqw(CHECK_IN_WIDTH) }}>
             <CheckInTile />
           </div>
         </div>
@@ -625,7 +642,7 @@ export const AirbnbScreen = memo(function AirbnbScreen({
           style={{ columnGap: cqw(LAYOUT.columnGap), marginTop: cqw(LAYOUT.sectionHeadGap) }}
         >
           {LISTINGS.map((listing, index) => (
-            <div key={listing.id} className="relative" style={{ height: cqw(LISTING_HEIGHT) }}>
+            <div key={listing.id} className="relative min-w-0" style={{ minHeight: cqw(LISTING_HEIGHT) }}>
               <ListingCard
                 listing={listing}
                 order={index}

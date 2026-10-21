@@ -45,9 +45,10 @@ export function SiteHero({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="flex items-center gap-2">
+          {/* Below sm only the primary action fits beside the logo */}
           <a
             href="#"
-            className="rounded-lg border border-white/70 bg-[#ecebe7] px-[15px] py-[5px] text-base leading-6 shadow-[0_4px_12px_-6px_rgba(60,80,20,0.3)] transition-colors hover:bg-white"
+            className="hidden rounded-lg border border-white/70 bg-[#ecebe7] px-[15px] py-[5px] text-base leading-6 shadow-[0_4px_12px_-6px_rgba(60,80,20,0.3)] transition-colors hover:bg-white sm:block"
           >
             Sign in
           </a>

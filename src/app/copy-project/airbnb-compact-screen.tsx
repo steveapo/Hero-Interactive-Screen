@@ -247,7 +247,7 @@ function TabletScreen({ category, onCategory, saved, onToggleSave, builtTrip }: 
 
       {/* Categories */}
       <div className="flex h-[11cqw] shrink-0 items-stretch gap-[3cqw] px-[4cqw]">
-        <div className="flex flex-1 items-stretch justify-between">
+        <div className="flex min-w-0 flex-1 items-stretch justify-between gap-[2.5cqw] overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {CATEGORIES.slice(0, TABLET_CATEGORIES).map(({ label, icon: Icon }, index) => (
             <button
               key={label}
@@ -255,7 +255,7 @@ function TabletScreen({ category, onCategory, saved, onToggleSave, builtTrip }: 
               aria-pressed={index === category}
               onClick={() => onCategory(index)}
               className={cn(
-                "relative flex cursor-pointer flex-col items-center justify-center gap-[0.9cqw]",
+                "relative flex shrink-0 cursor-pointer flex-col items-center justify-center gap-[0.9cqw]",
                 index === category ? "text-[#222222]" : "text-[#6a6a6a]",
               )}
             >
@@ -267,7 +267,7 @@ function TabletScreen({ category, onCategory, saved, onToggleSave, builtTrip }: 
             </button>
           ))}
         </div>
-        <span className="flex h-[6cqw] items-center gap-[1cqw] self-center rounded-[1.6cqw] border border-[#dddddd] px-[1.8cqw] text-[1.6cqw] font-semibold">
+        <span className="flex h-[6cqw] shrink-0 items-center gap-[1cqw] self-center rounded-[1.6cqw] border border-[#dddddd] px-[1.8cqw] text-[1.6cqw] font-semibold">
           <SlidersHorizontal className="size-[2cqw]" strokeWidth={2} />
           Filters
         </span>
@@ -278,10 +278,10 @@ function TabletScreen({ category, onCategory, saved, onToggleSave, builtTrip }: 
         <SectionTitle className="text-[3cqw]" action="All trips" actionClass="text-[1.9cqw]">
           Your upcoming trip
         </SectionTitle>
-        <div className="mt-[2.2cqw] grid h-[26cqw] grid-cols-2 gap-[3cqw]">
+        <div className="mt-[2.2cqw] grid min-h-[26cqw] grid-cols-2 gap-[3cqw]">
           <div
             data-trip-card
-            className="relative flex flex-col justify-between rounded-[2cqw] border border-[#ebebeb] bg-white p-[3cqw] shadow-[0_0.6cqw_2.4cqw_rgba(0,0,0,0.08)]"
+            className="relative flex flex-col justify-between gap-[2cqw] rounded-[2cqw] border border-[#ebebeb] bg-white p-[3cqw] shadow-[0_0.6cqw_2.4cqw_rgba(0,0,0,0.08)]"
           >
             <div className="flex flex-col gap-[0.4cqw]">
               <p className="text-[2.8cqw] font-semibold tracking-tight">{TRIP.title}</p>

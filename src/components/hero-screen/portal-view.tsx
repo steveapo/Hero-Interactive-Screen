@@ -16,6 +16,7 @@ import {
   Link,
   Mic,
   Monitor,
+  MousePointerClick,
   Plus,
   RotateCw,
   Scaling,
@@ -166,7 +167,13 @@ export const PortalView = memo(function PortalView({
   /** Bumped by reload: restarts the loading and remounts the app. */
   const [loadId, setLoadId] = useState(0)
   const [capturing, setCapturing] = useState(false)
-  /** Element under the cursor in Area capture mode. */
+  /** The agent chat's Select mode: hovering outlines an app element, clicking selects it for the agent. */
+  const [selecting, setSelecting] = useState(false)
+  /** The app element selected for the agent (outlined until the next message is sent). */
+  const [selected, setSelected] = useState<Box | null>(null)
+  /** Hovering the app outlines the element under the cursor, and the app's own clicks are blocked. */
+  const picking = capturing || selecting
+  /** Element under the cursor in Area capture / Select mode. */
   const [hover, setHover] = useState<Box | null>(null)
   const [pulse, setPulse] = useState<Pulse | null>(null)
   /** Changes the Portal Agent has applied to the live app (see `data-portal-applied` in globals.css). */
@@ -213,11 +220,12 @@ export const PortalView = memo(function PortalView({
       const isShiftO = e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "o"
       if (e.key !== "Escape" && !isShiftO) return
       if (capturing) stopCapture()
+      else if (selecting) stopSelect()
       else onClose()
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [onClose, capturing])
+  }, [onClose, capturing, selecting])
 
   function reload() {
     setPhase(instant ? "loaded" : "start")
@@ -227,6 +235,44 @@ export const PortalView = memo(function PortalView({
   function stopCapture() {
     setCapturing(false)
     setHover(null)
+  }
+
+  function stopSelect() {
+    setSelecting(false)
+    setHover(null)
+  }
+
+  /**
+   * The composer's Select button (and ⌘E): enter Select mode (leaving Area capture), or leave it.
+   * Stable, so the memoized chat doesn't re-render with every hover here.
+   */
+  const toggleSelect = useCallback(() => {
+    setCapturing(false)
+    setHover(null)
+    setSelecting((s) => !s)
+  }, [])
+
+  /** A message was sent: it took the selection with it. */
+  const clearSelection = useCallback(() => setSelected(null), [])
+
+  // ⌘E toggles the agent chat's Select mode (also from the composer).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "e") return
+      e.preventDefault()
+      toggleSelect()
+    }
+    window.addEventListener("keydown", onKeyDown)
+    return () => window.removeEventListener("keydown", onKeyDown)
+  }, [toggleSelect])
+
+  /** Select mode click: the element stays outlined as the agent's selection, and the mode ends. */
+  function selectElement(target: EventTarget) {
+    const el = captureTarget(target)
+    const box = el && boxOf(el)
+    if (!box) return
+    setSelected(box)
+    stopSelect()
   }
 
   /** The app element under the pointer (inside the device screen), or null. SVG parts resolve to their whole icon. */
@@ -349,7 +395,13 @@ export const PortalView = memo(function PortalView({
                 </button>
               </span>
             ) : (
-              <BarButton label="Capture a selection to the canvas (⌘S)" onClick={() => setCapturing(true)}>
+              <BarButton
+                label="Capture a selection to the canvas (⌘S)"
+                onClick={() => {
+                  setSelecting(false)
+                  setCapturing(true)
+                }}
+              >
                 <SquareDashedMousePointer className="size-4" strokeWidth={1.25} />
               </BarButton>
             )}
@@ -386,13 +438,13 @@ export const PortalView = memo(function PortalView({
           >
             {/*
               isolate: the app's own z-indexes stay below the loading overlay.
-              In Area capture mode the app's own clicks are blocked (capture phase): hovering
-              outlines the element under the cursor, clicking captures it.
+              In Area capture / Select mode the app's own clicks are blocked (capture phase): hovering
+              outlines the element under the cursor, clicking captures (or selects) it.
             */}
             <div
-              className={cn("isolate flex size-full p-6", capturing && "[&_*]:!cursor-default")}
+              className={cn("isolate flex size-full p-6", picking && "[&_*]:!cursor-default")}
               onPointerMoveCapture={
-                capturing
+                picking
                   ? (e) => {
                       const el = captureTarget(e.target)
                       const next = el ? boxOf(el) : null
@@ -401,9 +453,9 @@ export const PortalView = memo(function PortalView({
                     }
                   : undefined
               }
-              onPointerLeave={capturing ? () => setHover(null) : undefined}
+              onPointerLeave={picking ? () => setHover(null) : undefined}
               onPointerDownCapture={
-                capturing
+                picking
                   ? (e) => {
                       e.stopPropagation()
                       e.preventDefault()
@@ -411,11 +463,12 @@ export const PortalView = memo(function PortalView({
                   : undefined
               }
               onClickCapture={
-                capturing
+                picking
                   ? (e) => {
                       e.stopPropagation()
                       e.preventDefault()
-                      captureElement(e.target)
+                      if (selecting) selectElement(e.target)
+                      else captureElement(e.target)
                     }
                   : undefined
               }
@@ -463,12 +516,22 @@ export const PortalView = memo(function PortalView({
               </div>
             )}
 
-            {/* Area capture: outline of the element under the cursor */}
-            {capturing && hover && (
+            {/* Area capture / Select: outline of the element under the cursor */}
+            {picking && hover && (
               <div
                 aria-hidden="true"
                 className="pointer-events-none absolute z-20 border-2"
                 style={{ ...boxStyle(hover), borderColor: CAPTURE_BLUE }}
+              />
+            )}
+
+            {/* The element selected for the agent: outlined and tinted until the message is sent */}
+            {selected && (
+              <div
+                aria-hidden="true"
+                data-cursor-id="portal-selected-element"
+                className="pointer-events-none absolute z-20 border-2"
+                style={{ ...boxStyle(selected), borderColor: CAPTURE_BLUE, background: `${CAPTURE_BLUE}1f` }}
               />
             )}
 
@@ -498,6 +561,9 @@ export const PortalView = memo(function PortalView({
         canvasFrames={canvasFrames}
         onBuildFrames={onBuildFrames}
         initialAttached={initialAttached}
+        selecting={selecting}
+        onToggleSelect={toggleSelect}
+        onSent={clearSelection}
       />
     </div>
   )
@@ -1232,6 +1298,9 @@ const PortalChat = memo(function PortalChat({
   canvasFrames,
   onBuildFrames,
   initialAttached,
+  selecting = false,
+  onToggleSelect,
+  onSent,
 }: {
   onApply: (change: string) => void
   autoPrompt?: boolean
@@ -1239,6 +1308,12 @@ const PortalChat = memo(function PortalChat({
   onBuildFrames?: (frameIds: string[]) => void
   /** Frames sent by "Add to Build Chat": a fresh chat opens with them attached. Only read on mount. */
   initialAttached?: string[]
+  /** Select mode is on (the composer's Select button is pressed). */
+  selecting?: boolean
+  /** The composer's Select button: toggle Select mode in the live app. */
+  onToggleSelect?: () => void
+  /** A message was sent (it takes the selected element with it). */
+  onSent?: () => void
 }) {
   const [prompt, setPrompt] = useState("")
   /**
@@ -1340,6 +1415,7 @@ const PortalChat = memo(function PortalChat({
     setPrompt("")
     setAutoGoal(null)
     setAttached([])
+    onSent?.()
     const byVisitor = typedByVisitor.current
     typedByVisitor.current = false
     const at = (ms: number, run: () => void) => timers.current.push(setTimeout(run, ms))
@@ -1607,8 +1683,8 @@ const PortalChat = memo(function PortalChat({
         />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-0.5 text-stone-600">
-            <BarButton label="Select element" side="top">
-              <SquareDashedMousePointer className="size-3.5" strokeWidth={1.5} />
+            <BarButton label="Select (⌘E)" side="top" onClick={onToggleSelect} pressed={selecting} active={selecting}>
+              <MousePointerClick className="size-3.5" strokeWidth={1.5} />
             </BarButton>
             <BarButton label="Capture page" side="top">
               <ScanLine className="size-3.5" strokeWidth={1.5} />
