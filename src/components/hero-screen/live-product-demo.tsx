@@ -126,11 +126,11 @@ async function zoomToFill(api: ScriptApi, target: string, { quick = false } = {}
     const share = Math.max(frame.width / canvas.width, frame.height / canvas.height)
     if (share >= FILL_SHARE) break
     const deltaY = -Math.log(FILL_AIM / share) / WHEEL_ZOOM_SPEED
-    await api.moveTo(target, { fx: 0.5, fy: 0.5, ...(quick ? { duration: 450 } : {}) })
-    await api.wheel(0, deltaY, { mods: { ctrl: true }, duration: quick ? 750 : 1100 })
-    await api.wait(quick ? 100 : 200)
+    await api.moveTo(target, { fx: 0.5, fy: 0.5, ...(quick ? { duration: 380 } : {}) })
+    await api.wheel(0, deltaY, { mods: { ctrl: true }, duration: quick ? 650 : 1100 })
+    await api.wait(quick ? 40 : 200)
   }
-  await panToShow(api, [target], { fx: FOCUS_FX, fy: 0.5, ...(quick ? { duration: 600 } : {}) })
+  await panToShow(api, [target], { fx: FOCUS_FX, fy: 0.5, ...(quick ? { duration: 500 } : {}) })
 }
 
 /* ------------------------------- The story -------------------------------- */
@@ -250,8 +250,8 @@ const captureScript: DemoScript = async (api) => {
     await api.click(BACK_TO_CANVAS)
     await api.until(() => !api.exists("[data-portal-screen]"), 4000)
     // The captured card glides in beside the Codebase frame (a quick glide, see `quickEntrance`,
-    // ≈ 0.6s); the zoom sets off as it lands.
-    await api.wait(450)
+    // ≈ 0.6s). No pause here: the cursor heads for the card straight away (moveTo re-measures it
+    // every frame, so it follows the glide) and the zoom starts as the card lands.
   })
   await scene(api, "the snapshot on canvas", async () => {
     await zoomToFill(api, TRIP_CARD, { quick: true })
