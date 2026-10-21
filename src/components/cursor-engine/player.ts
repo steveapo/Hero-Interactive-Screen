@@ -3,7 +3,7 @@ import { spawnClickRipple } from "./cursor"
 import { dispatchDown, dispatchGesture, dispatchHover, dispatchKey, dispatchMove, dispatchUp, dispatchWheel, resetHover } from "./dispatch"
 import { bakeTrack, sampleTrack } from "./smoothing"
 import { readEditable, resolveField, textAtStep, typingSteps, writeEditable, type EditableElement } from "./typing"
-import type { BakedTrack, CursorRecording, PressTarget, SmoothingOptions, ZoomSegment } from "./types"
+import type { BakedTrack, CursorRecording, KeyModifiers, PressTarget, SmoothingOptions, ZoomSegment } from "./types"
 import { cameraAt, IDENTITY_CAMERA, type Camera } from "./zoom"
 
 /** A press target that moved by more than this (px) since the bake gets the track re-aimed. */
@@ -13,6 +13,8 @@ const REAIM_THRESHOLD = 1.5
  * reply still arriving, a popover still opening) before carrying on without it.
  */
 const MAX_TARGET_WAIT = 4000
+/** Quiet time (ms) after the last stage resize before the track is re-baked. */
+const RESIZE_REBAKE_DELAY = 150
 
 export type PlayerElements = {
   /** The stage: coordinates are relative to it. Never transformed. */
@@ -57,6 +59,8 @@ export class CursorPlayer {
   private nextGesture = 0
   /** Mouse button of the current press (while `pressed`). */
   private pressedButton = 0
+  /** Modifier keys held with the current press (Shift-click, …). */
+  private pressedMods: KeyModifiers | undefined = undefined
   /** Last point a hover move was sent at. */
   private lastHover: { clientX: number; clientY: number } | null = null
   private activeTyping: ActiveTyping[] = []
@@ -85,16 +89,24 @@ export class CursorPlayer {
     private hooks: PlayerHooks,
   ) {
     // Anchors depend on layout: re-bake on resize, keeping the current playback time. Fired
-    // presses were measured at the old size, so they're measured again too.
+    // presses were measured at the old size, so they're measured again too. Debounced so a
+    // continuously resizing stage (e.g. a scroll-driven grow) re-bakes once it settles.
     this.observer = new ResizeObserver(() => {
-      if (!this.track) return
-      this.pins.clear()
-      this.blend = null
-      this.track = this.bake()
-      this.hooks.onTrack?.(this.track)
-      this.applyCamera(this.time)
+      clearTimeout(this.resizeTimer)
+      this.resizeTimer = setTimeout(this.rebakeForResize, RESIZE_REBAKE_DELAY)
     })
     this.observer.observe(el.stage)
+  }
+
+  private resizeTimer: ReturnType<typeof setTimeout> | undefined
+
+  private rebakeForResize = () => {
+    if (this.destroyed || !this.track) return
+    this.pins.clear()
+    this.blend = null
+    this.track = this.bake()
+    this.hooks.onTrack?.(this.track)
+    this.applyCamera(this.time)
   }
 
   get currentTime() {
@@ -161,6 +173,7 @@ export class CursorPlayer {
     this.destroyed = true
     this.pause()
     this.observer.disconnect()
+    clearTimeout(this.resizeTimer)
     resetHover()
     this.el.cursor.dataset.pressed = "false"
     this.el.camera.style.transform = ""
@@ -361,20 +374,22 @@ export class CursorPlayer {
         continue
       }
       const point = this.toClient(e.x, e.y)
+      const mods = e.source >= 0 ? this.recording.events[e.source]?.mods : undefined
       // Keep where this press was aimed, so later re-bakes don't move presses already made.
       if (e.source >= 0) this.pins.set(e.source, track.targets[e.source] ?? null)
       if (e.type === "down") {
-        this.pressed = dispatchDown(point, e.button)
+        this.pressed = dispatchDown(point, e.button, mods)
         this.pressedButton = e.button
+        this.pressedMods = mods
         this.el.cursor.dataset.pressed = "true"
         if (!this.fastForwarding) spawnClickRipple(this.el.rippleLayer, e.x, e.y)
       } else {
-        dispatchUp(this.pressed, point, e.button)
+        dispatchUp(this.pressed, point, e.button, mods)
         this.pressed = null
         this.el.cursor.dataset.pressed = "false"
       }
     }
-    if (this.pressed) dispatchMove(this.pressed, client, this.pressedButton)
+    if (this.pressed) dispatchMove(this.pressed, client, this.pressedButton, this.pressedMods)
 
     // Start typing runs that are due (after presses, which usually focus their field).
     while (this.nextTyping < track.typing.length && track.typing[this.nextTyping].t <= t) {

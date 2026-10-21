@@ -31,7 +31,7 @@ const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "CapsLock", "F
 const FIELD_KEYS = new Set(["Enter", "Escape", "Tab"])
 
 /** Only the modifiers actually held, so the JSON stays compact. Undefined when none are. */
-function modifiers(e: KeyboardEvent | WheelEvent): KeyModifiers | undefined {
+function modifiers(e: KeyboardEvent | MouseEvent): KeyModifiers | undefined {
   const mods: KeyModifiers = {}
   if (e.ctrlKey) mods.ctrl = true
   if (e.metaKey) mods.meta = true
@@ -137,6 +137,8 @@ export function useCursorRecorder(stageRef: RefObject<HTMLElement | null>) {
         anchor: target ? describeAnchor(el, target, e.clientX, e.clientY) : undefined,
       }
       if (e.button !== 0) press.button = e.button
+      const mods = modifiers(e)
+      if (mods) press.mods = mods
       events.current.push(press)
       // Presses are also positions: guarantees the path passes exactly through each click.
       samples.current.push([t, p.x, p.y])
