@@ -56,8 +56,8 @@ import {
  *                     preview link → the Preview URL window, published; then Copy → "Copied
  *                     Preview Link" slides up at the bottom right and back down.
  *
- * "portal-edit" stands on its own too: in the Portal, the Portal Agent makes the live app's search
- * button pulse, edited straight into the code (see portalEditScript).
+ * "portal-edit" stands on its own too: in the Portal, the search button is selected in the live app,
+ * then the Portal Agent makes it pulse, edited straight into the code (see portalEditScript).
  */
 
 const BACK_TO_CANVAS = 'button[aria-label="Back to canvas"]'
@@ -416,13 +416,26 @@ const SEARCH_PULSE_DONE = SEARCH_PULSE_TURN?.workedFor ?? "Worked for"
 
 /**
  * Edit directly in code; key moment: in the Portal, the live app's search button pulsing, changed
- * straight in the codebase by the Portal Agent, no canvas in between. A new agent is opened, asked
- * to make the search button pulse, and the cursor rests beside the button while the change lands.
+ * straight in the codebase by the Portal Agent, no canvas in between. The cursor first selects the
+ * search button in the live app (Area capture outlines it, the click flashes it blue); then a new
+ * agent is opened, asked to make the search button pulse, and the cursor rests beside the button
+ * while the change lands.
  */
 const portalEditScript: DemoScript = async (api) => {
-  await scene(api, "ask the portal agent", async () => {
+  await scene(api, "select the search button", async () => {
     await api.find(PORTAL_SCREEN)
     await api.wait(400)
+    await api.click(CAPTURE_BUTTON)
+    await api.wait(250)
+    // On the button's left edge, clear of its icon, so the whole button is selected (not the svg).
+    await api.moveTo(PORTAL_SEARCH_BUTTON, { fx: 0.15, fy: 0.5 })
+    await api.wait(300)
+    await api.click(PORTAL_SEARCH_BUTTON, { fx: 0.15, fy: 0.5 })
+    await api.wait(900)
+    await api.click(EXIT_CAPTURE)
+    await api.wait(250)
+  })
+  await scene(api, "ask the portal agent", async () => {
     await api.click('button[aria-label="New agent"]')
     await api.wait(350)
     await api.click(PORTAL_FIELD)
