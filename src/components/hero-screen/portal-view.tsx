@@ -78,7 +78,58 @@ type PortalMessage = {
 }
 
 /** A canvas frame the Portal Agent can be given (attached by the canvas's "Add to Build Chat"). */
-export type CanvasFrameOption = { id: string; name: string }
+export type CanvasFrameOption = {
+  id: string
+  name: string
+  /** The frame's natural size, in canvas units. */
+  size: { w: number; h: number }
+  /** How the frame is painted on the canvas: fill, corner radius (canvas units), 1px border; null = none. */
+  fill: string | null
+  radius: number | null
+  border: string | null
+  /** The artwork paints its own shape: the frame itself stays transparent. */
+  bare?: boolean
+  /** The frame's artwork (authored in cqw of the desktop screen), drawn scaled down as its thumbnail. */
+  content: React.ReactNode
+}
+
+/** The attached-frame chip's thumbnail box (px): the frame is scaled to fit inside it. */
+const FRAME_THUMB = { w: 20, h: 16 }
+
+/**
+ * A canvas frame drawn small: its own artwork scaled to fit FRAME_THUMB, laid out exactly as on
+ * the canvas (inside a Codebase-wide @container, so its cqw sizes resolve the same).
+ */
+function FrameThumbnail({ frame }: { frame: CanvasFrameOption }) {
+  const { w, h } = frame.size
+  const scale = Math.min(FRAME_THUMB.w / w, FRAME_THUMB.h / h)
+  return (
+    <span
+      aria-hidden="true"
+      className="flex shrink-0 items-center justify-center"
+      style={{ width: FRAME_THUMB.w, height: FRAME_THUMB.h }}
+    >
+      <span
+        className="pointer-events-none relative block overflow-hidden"
+        style={{
+          width: w * scale,
+          height: h * scale,
+          background: frame.bare ? undefined : (frame.fill ?? undefined),
+          borderRadius: frame.radius ? Math.max(frame.radius * scale, 2) : 2,
+          boxShadow: frame.border && !frame.bare ? `inset 0 0 0 0.5px ${frame.border}` : undefined,
+        }}
+      >
+        <span className="absolute left-0 top-0 block origin-top-left" style={{ width: w, height: h, transform: `scale(${scale})` }}>
+          <span className="@container absolute left-0 top-0 block h-full" style={{ width: CQW * 100 }}>
+            <span className="relative block h-full" style={{ width: w }}>
+              {frame.content}
+            </span>
+          </span>
+        </span>
+      </span>
+    </span>
+  )
+}
 
 /** How long the darkened loading state shows before the live Fairbnb app loads in. */
 const PORTAL_LOAD_MS = 2000
@@ -1700,17 +1751,22 @@ const PortalChat = memo(function PortalChat({
               </span>
             )}
             {attached.map((id) => {
-              const name = canvasFrames.find((f) => f.id === id)?.name ?? id
+              const frame = canvasFrames.find((f) => f.id === id)
+              const name = frame?.name ?? id
               return (
-                // As in the real app: a light chip with a blank frame thumbnail, labelled "Frame".
+                // As in the real app: a light chip with the frame's thumbnail and its title.
                 <span
                   key={id}
                   data-cursor-id="portal-attached-frame"
                   title={name}
-                  className="flex h-7 max-w-full items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 pl-1.5 pr-1 text-px-12 font-medium text-stone-800 animate-in fade-in zoom-in-95 duration-150"
+                  className="flex h-7 max-w-full items-center gap-1.5 rounded-lg border border-stone-200 bg-stone-50 pl-1 pr-1 text-px-12 font-medium text-stone-800 animate-in fade-in zoom-in-95 duration-150"
                 >
-                  <span aria-hidden="true" className="size-4 shrink-0 rounded-[4px] bg-stone-200" />
-                  <span className="min-w-0 truncate">Frame</span>
+                  {frame ? (
+                    <FrameThumbnail frame={frame} />
+                  ) : (
+                    <span aria-hidden="true" className="size-4 shrink-0 rounded-[4px] bg-stone-200" />
+                  )}
+                  <span className="min-w-0 truncate">{name}</span>
                   <button
                     type="button"
                     aria-label={`Remove ${name}`}

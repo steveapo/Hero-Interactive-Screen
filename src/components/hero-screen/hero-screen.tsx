@@ -37,7 +37,7 @@ import {
   type InsertableComponent,
 } from "./library-components"
 import { BuildAgentButton, DesignFrame, ENTRANCE_DURATION_MS, type CanvasEntrance, type Corner } from "./planner-frame"
-import { PortalView } from "./portal-view"
+import { PortalView, type CanvasFrameOption } from "./portal-view"
 import { ShareButton } from "./share-popover"
 import { TextSettingsPanel } from "./text-settings-panel"
 import { AgentCursor, agentPartSelector, VariantFrame } from "./variant-frame"
@@ -696,10 +696,28 @@ export function HeroScreen({
   const [elementNames, setElementNames] = useState<Record<string, string>>(() =>
     Object.fromEntries(AIRBNB_ELEMENTS.map((el) => [el.id, el.name])),
   )
-  /** The canvas's own frames, for the Portal Agent's attached frames (memoized: the Portal is). */
-  const portalFrames = useMemo(
-    () => canvasElements.filter((el) => !el.exploration).map((el) => ({ id: el.id, name: elementNames[el.id] })),
-    [canvasElements, elementNames],
+  /**
+   * The canvas's own frames, for the Portal Agent's attached frames (memoized: the Portal is): each
+   * with how it looks on the canvas, for its thumbnail (the trip card with its designed spacing).
+   */
+  const portalFrames = useMemo<CanvasFrameOption[]>(
+    () =>
+      canvasElements
+        .filter((el) => !el.exploration)
+        .map((el) => {
+          const isTrip = el.id === TRIP_CARD_ID
+          return {
+            id: el.id,
+            name: elementNames[el.id],
+            size: isTrip ? { w: el.rect.w, h: el.rect.h + numeralGap } : { w: el.rect.w, h: el.rect.h },
+            fill: elementFills[el.id] ?? null,
+            radius: elementRadii[el.id] ?? null,
+            border: el.border,
+            bare: el.bare,
+            content: isTrip ? <TripCard numeralGap={numeralGap / CQW} /> : el.content,
+          }
+        }),
+    [canvasElements, elementNames, elementFills, elementRadii, numeralGap],
   )
   /**
    * The Portal Agent builds the attached frames into the codebase, with the components designed
