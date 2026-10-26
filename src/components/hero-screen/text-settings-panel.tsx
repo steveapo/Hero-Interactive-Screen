@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { memo, useState } from "react"
 import { AlignCenter, AlignJustify, AlignLeft, AlignRight, Ellipsis } from "lucide-react"
 import { TEXT_FONT_SIZE, TEXT_LINE_HEIGHT } from "./canvas-elements"
 import {
@@ -44,9 +44,10 @@ const TEXT_COLOR = "#0c0a09"
 
 /**
  * Right-side settings for a selected text element. Text sits on the canvas absolutely, pinned
- * left / top at its position, and hugs its content.
+ * left / top at its position, and hugs its content. Memoized (primitive props), so camera frames
+ * skip it.
  */
-export function TextSettingsPanel({
+export const TextSettingsPanel = memo(function TextSettingsPanel({
   ref,
   x,
   y,
@@ -116,7 +117,7 @@ export function TextSettingsPanel({
       <FillSection fill={null} />
     </SettingsPanelShell>
   )
-}
+})
 
 /* --------------------------------- Icons ---------------------------------- */
 

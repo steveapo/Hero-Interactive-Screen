@@ -1,31 +1,101 @@
 "use client"
 
-import { useState } from "react"
+import { memo, useContext, useLayoutEffect, useRef, useState } from "react"
 import { FileText, Layers, MessageCircleQuestionMark, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { CALENDAR_ELEMENTS } from "./calendar-elements"
+import { AIRBNB_ELEMENTS, type AppElement } from "./airbnb-elements"
 import { COMPONENT_PREVIEWS } from "./component-previews"
+import { FAIRBNB_COMPONENT_PREVIEWS } from "./fairbnb-component-previews"
+import { isInsertable, type ComponentLibrary, type InsertableComponent } from "./library-components"
+import { LOAD_ITEM, PanelLoadInContext, playExpandFrom } from "./load-in"
 import { FrameGlyph } from "./planner-frame"
 
 export type RailPanel = "layers" | "components" | "help"
 
 const PANEL_BG = "bg-[#f2f2f1]"
 
-export function LeftSidebar({ ref }: { ref?: React.Ref<HTMLElement> }) {
-  const [panel, setPanel] = useState<RailPanel | null>(null)
+/**
+ * `onLibraryDragStart`: a press on an insertable component tile in the Components library; the
+ * canvas takes over the drag (a ghost follows the pointer, dropping it on a frame inserts it).
+ * Memoized (the canvas passes stable props), so camera frames don't re-render the library.
+ */
+export const LeftSidebar = memo(function LeftSidebar({
+  ref,
+  onLibraryDragStart,
+  names,
+  library = "default",
+  initialPanel = null,
+  cuePanel = null,
+  preloadPanel = null,
+  elements = AIRBNB_ELEMENTS,
+  className,
+  style,
+}: {
+  ref?: React.Ref<HTMLElement>
+  /** The element frames the Layers panel lists. Default: the Fairbnb app's own. */
+  elements?: AppElement[]
+  /** The rail panel open on mount (e.g. "layers"). Default: none. Only read on mount. */
+  initialPanel?: RailPanel | null
+  /**
+   * A panel mounted (hidden) ahead of time, e.g. the one a load-in's cue will open: its contents
+   * are loaded and laid out long before it shows.
+   */
+  preloadPanel?: RailPanel | null
+  /**
+   * Opens this panel when it's set (e.g. at its step of a load-in). Opened during the load-in's
+   * panel step (PanelLoadInContext), it grows out of the rail and its pieces appear one by one.
+   */
+  cuePanel?: RailPanel | null
+  onLibraryDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
+  /** Current frame names by element id (renamed on the canvas); falls back to each element's own name. */
+  names?: Record<string, string>
+  /** The design system the Components library shows (see ComponentLibrary). Default: "default". */
+  library?: ComponentLibrary
+  /** Extra classes / style on the sidebar (e.g. a load-in entrance). */
+  className?: string
+  style?: React.CSSProperties
+}) {
+  const [panel, setPanel] = useState<RailPanel | null>(initialPanel)
   const open = panel === "layers" || panel === "components"
+
+  // The cue opens its panel (adjusted during render, so it opens in the same commit as the cue).
+  const [cued, setCued] = useState<RailPanel | null>(null)
+  if (cuePanel && cuePanel !== cued) {
+    setCued(cuePanel)
+    setPanel(cuePanel)
+  }
+  const loadIn = useContext(PanelLoadInContext)
+  const asideRef = useRef<HTMLElement | null>(null)
+  const railRef = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    const aside = asideRef.current
+    const rail = railRef.current
+    if (!cued || !loadIn || !aside || !rail) return
+    const animations = playExpandFrom(aside, { width: rail.offsetWidth, height: rail.offsetHeight })
+    return () => animations.forEach((a) => a.cancel())
+    // Plays once, when the cue opens the panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cued])
+  const setRef = (node: HTMLElement | null) => {
+    asideRef.current = node
+    if (typeof ref === "function") ref(node)
+    else if (ref) ref.current = node
+  }
 
   return (
     <aside
-      ref={ref}
+      ref={setRef}
+      style={style}
       className={cn(
-        "absolute left-1 top-[46px] z-30 flex overflow-hidden rounded-xl border border-stone-700/10 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)]",
+        // Soft shadow cast to the right (onto the canvas), plus a faint hairline so it lifts off it.
+        "absolute left-1 top-[46px] z-30 flex overflow-hidden rounded-xl border border-transparent shadow-[6px_4px_20px_-6px_rgba(17,17,16,0.14),2px_1px_4px_-1px_rgba(17,17,16,0.06),0_0_0_1px_rgba(17,17,16,0.05)]",
         PANEL_BG,
         open && "bottom-1",
+        className,
       )}
     >
       {/* Rail */}
-      <nav className={cn("flex flex-col items-center gap-1 p-1", open && "border-r border-stone-700/10")}>
+      <nav ref={railRef} className={cn("flex flex-col items-center gap-0.5 p-0.5", open && "border-r border-stone-700/10")}>
         {RAIL.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -35,7 +105,7 @@ export function LeftSidebar({ ref }: { ref?: React.Ref<HTMLElement> }) {
             aria-pressed={panel === id}
             onClick={() => setPanel((current) => (current === id ? null : id))}
             className={cn(
-              "flex size-8 items-center justify-center rounded-[6px] text-stone-700 transition-colors",
+              "flex size-8 items-center justify-center rounded-lg text-stone-700 transition-colors",
               panel === id ? "bg-mi-selected text-stone-900" : "hover:bg-stone-700/5",
             )}
           >
@@ -44,19 +114,28 @@ export function LeftSidebar({ ref }: { ref?: React.Ref<HTMLElement> }) {
         ))}
       </nav>
 
-      {panel === "layers" && <LayersPanel />}
-      {panel === "components" && <ComponentsPanel />}
+      {(panel === "layers" || cuePanel === "layers" || preloadPanel === "layers") && (
+        // Kept mounted (hidden) when it's preloaded for the load-in, so opening it only reveals it.
+        <div className={panel === "layers" ? "contents" : "hidden"}>
+          <LayersPanel names={names} elements={elements} />
+        </div>
+      )}
+      {(panel === "components" || cuePanel === "components" || preloadPanel === "components") && (
+        <div className={panel === "components" ? "contents" : "hidden"}>
+          <ComponentsPanel onDragStart={onLibraryDragStart} library={library} />
+        </div>
+      )}
     </aside>
   )
-}
+})
 
 /* --------------------------------- Layers --------------------------------- */
 
-function LayersPanel() {
+function LayersPanel({ names, elements }: { names?: Record<string, string>; elements: AppElement[] }) {
   return (
     <div className="flex w-[280px] flex-col">
       <section className="flex h-[30%] shrink-0 flex-col px-1.5 pt-2.5">
-        <div className="mb-1.5 flex items-center justify-between pl-1 pr-0.5">
+        <div {...LOAD_ITEM} className="mb-1.5 flex items-center justify-between pl-1 pr-0.5">
           <h2 className="text-px-11 font-semibold text-stone-900">Pages</h2>
           <button
             type="button"
@@ -67,6 +146,7 @@ function LayersPanel() {
           </button>
         </div>
         <button
+          {...LOAD_ITEM}
           type="button"
           className="flex h-7 w-full items-center gap-2 rounded-[6px] bg-mi-selected px-2 text-left text-px-12 text-stone-900"
         >
@@ -76,25 +156,27 @@ function LayersPanel() {
       </section>
 
       <section className="flex min-h-0 flex-1 flex-col overflow-y-auto border-t border-stone-700/10 px-1.5 pt-2.5">
-        <div className="mb-1.5 flex items-center justify-between pl-1 pr-0.5">
+        <div {...LOAD_ITEM} className="mb-1.5 flex items-center justify-between pl-1 pr-0.5">
           <h2 className="text-px-11 font-semibold text-stone-900">Layers</h2>
           <Layers className="size-3.5 text-stone-500" strokeWidth={1.5} />
         </div>
         <button
+          {...LOAD_ITEM}
           type="button"
           className="flex h-7 w-full items-center gap-2 rounded-md pl-4 pr-2 text-left text-px-12 text-stone-900 hover:bg-stone-700/5"
         >
           <CodebaseIcon />
           Codebase
         </button>
-        {CALENDAR_ELEMENTS.map((el) => (
+        {elements.map((el) => (
           <button
             key={el.id}
+            {...LOAD_ITEM}
             type="button"
             className="flex h-7 w-full shrink-0 items-center gap-2 rounded-md pl-4 pr-2 text-left text-px-12 text-stone-900 hover:bg-stone-700/5"
           >
             <FrameGlyph />
-            <span className="truncate">{el.name}</span>
+            <span className="truncate">{names?.[el.id] ?? el.name}</span>
           </button>
         ))}
       </section>
@@ -104,16 +186,25 @@ function LayersPanel() {
 
 /* ------------------------------- Components ------------------------------- */
 
-function ComponentsPanel() {
+function ComponentsPanel({
+  onDragStart,
+  library,
+}: {
+  onDragStart?: (e: React.PointerEvent, component: InsertableComponent) => void
+  library: ComponentLibrary
+}) {
   const [query, setQuery] = useState("")
-  const results = COMPONENT_PREVIEWS.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()))
+  const previews = library === "fairbnb" ? FAIRBNB_COMPONENT_PREVIEWS : COMPONENT_PREVIEWS
+  const results = previews.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()))
 
   return (
     <div className="flex w-[280px] flex-col">
       <div className="px-2.5 pt-2.5">
-        <h2 className="mb-2 text-px-11 font-semibold text-stone-900">Components</h2>
+        <h2 {...LOAD_ITEM} className="mb-2 text-px-11 font-semibold text-stone-900">Components</h2>
         <input
+          {...LOAD_ITEM}
           type="search"
+          aria-label="Search components"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search components..."
@@ -121,18 +212,41 @@ function ComponentsPanel() {
         />
       </div>
 
-      <ul className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-x-1.5 gap-y-3.5 overflow-y-auto px-2 pb-3 pt-3.5 [scrollbar-width:thin]">
-        {results.map(({ name, preview }) => (
-          <li key={name} className="min-w-0">
-            <p className="mb-1 truncate pl-0.5 text-px-12 text-stone-800">{name}</p>
-            <div
-              inert
-              className="relative flex h-16 items-center justify-center overflow-hidden rounded-md bg-stone-200/80"
+      <ul
+        data-cursor-id="components-list"
+        className="grid min-h-0 flex-1 auto-rows-min grid-cols-2 gap-x-1.5 gap-y-3.5 overflow-y-auto px-2 pb-3 pt-3.5 [scrollbar-width:thin]"
+      >
+        {results.map(({ name, preview }) => {
+          const insertable = isInsertable(name, library)
+          return (
+            <li
+              key={name}
+              {...LOAD_ITEM}
+              data-cursor-id={`library-${name}`}
+              className={cn("group/tile min-w-0", insertable && onDragStart && "cursor-grab active:cursor-grabbing")}
+              onPointerDown={
+                insertable && onDragStart
+                  ? (e) => {
+                      if (e.button !== 0) return
+                      e.preventDefault() // no text selection while dragging
+                      onDragStart(e, name)
+                    }
+                  : undefined
+              }
             >
-              {preview}
-            </div>
-          </li>
-        ))}
+              <p className="mb-1 truncate pl-0.5 text-px-12 text-stone-800">{name}</p>
+              <div
+                inert
+                className={cn(
+                  "relative flex h-16 items-center justify-center overflow-hidden rounded-md bg-stone-200/80",
+                  insertable && onDragStart && "transition-shadow group-hover/tile:shadow-[0_0_0_1px_rgba(47,107,246,0.6)]",
+                )}
+              >
+                {preview}
+              </div>
+            </li>
+          )
+        })}
         {results.length === 0 && (
           <li className="col-span-2 pt-4 text-center text-px-12 text-stone-500">No components match “{query}”</li>
         )}
@@ -151,33 +265,39 @@ const RAIL: { id: RailPanel; label: string; icon: RailIcon }[] = [
   { id: "help", label: "Help", icon: HelpIcon },
 ]
 
-/** Outline icon; slightly heavier stroke when its panel is open. */
+/**
+ * Rail icons share one rendered stroke weight with the toolbar icons: ~1.14px at 16px (1 unit on
+ * the 14-unit custom icons, 1.7 on lucide's 24-unit grid), ~1.33px when the panel is open.
+ */
+const LUCIDE_STROKE = { rest: 1.7, active: 2 }
+const CUSTOM_STROKE = { rest: 1, active: 7 / 6 }
+
 function LayersIcon({ active }: { active: boolean }) {
-  return <Layers className="size-4" strokeWidth={active ? 1.5 : 1.25} />
+  return <Layers className="size-4" strokeWidth={active ? LUCIDE_STROKE.active : LUCIDE_STROKE.rest} />
 }
 
 function GridIcon({ active }: { active: boolean }) {
   return (
     <svg
-      width="15"
-      height="15"
+      width="16"
+      height="16"
       viewBox="0 0 14 14"
       fill="none"
       stroke="currentColor"
-      strokeWidth={active ? 1.25 : 1}
+      strokeWidth={active ? CUSTOM_STROKE.active : CUSTOM_STROKE.rest}
       strokeLinejoin="round"
       aria-hidden="true"
     >
-      <rect x="1" y="1" width="5" height="5" rx="1" />
-      <rect x="8" y="1" width="5" height="5" rx="1" />
-      <rect x="1" y="8" width="5" height="5" rx="1" />
-      <rect x="8" y="8" width="5" height="5" rx="1" />
+      <rect x="1.5" y="1.5" width="4.5" height="4.5" rx="1" />
+      <rect x="8" y="1.5" width="4.5" height="4.5" rx="1" />
+      <rect x="1.5" y="8" width="4.5" height="4.5" rx="1" />
+      <rect x="8" y="8" width="4.5" height="4.5" rx="1" />
     </svg>
   )
 }
 
 function HelpIcon({ active }: { active: boolean }) {
-  return <MessageCircleQuestionMark className="size-4" strokeWidth={active ? 1.5 : 1.25} />
+  return <MessageCircleQuestionMark className="size-4" strokeWidth={active ? LUCIDE_STROKE.active : LUCIDE_STROKE.rest} />
 }
 
 function CodebaseIcon() {

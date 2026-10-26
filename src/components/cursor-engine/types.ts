@@ -50,6 +50,8 @@ export type CursorPressEvent = {
   y: number
   /** Mouse button (0 left, 1 middle, 2 right). Missing = left, as in older takes. */
   button?: number
+  /** Modifier keys held during the press (Shift-click adds to the selection, …). Missing = none. */
+  mods?: KeyModifiers
   anchor?: CursorAnchor
 }
 

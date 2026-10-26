@@ -1,34 +1,96 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import { Ellipsis, SquarePen, X } from "lucide-react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { flushSync } from "react-dom"
+import { ArrowLeft, Check, Ellipsis, SquarePen, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { screenScale } from "@/lib/screen-scale"
+import { TripCard } from "@/app/copy-project/airbnb-screen"
+import { INK, RAUSCH } from "@/app/copy-project/airbnb-data"
+import { COMPONENT_PULL_REQUEST, PULL_REQUEST, type PullRequest } from "./agent-script"
+import { AgentsPopover } from "./agents-popover"
 import { BuildAgentComposer, COMPOSER_HEIGHT, COMPOSER_WIDTH } from "./build-agent-composer"
-import { CALENDAR_ELEMENTS } from "./calendar-elements"
+import { useBuildAgents, type PlaceVariants, type VariantState } from "./build-agents"
+import { AIRBNB_ELEMENTS, type AppElement } from "./airbnb-elements"
 import { CanvasText, DrawnFrame, TEXT_LINE_HEIGHT, type CanvasElement } from "./canvas-elements"
-import { CodeChangesPopover, CODE_CHANGES_TOTAL } from "./code-changes-popover"
+import { builtVariantChange } from "./built-change"
+import { allChanges, CodeChangesPopover, totalsOf } from "./code-changes-popover"
 import { CodebaseFrame, CANVAS_ZOOM, CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
 import { CodebaseSettingsPanel } from "./codebase-settings-panel"
 import { trackDrag, useMeasuredRect, type CanvasRect } from "./drag"
-import { FrameSettingsPanel } from "./frame-settings-panel"
+import { AddToChatIcon, FrameSettingsPanel } from "./frame-settings-panel"
 import { GithubButton } from "./github-popover"
-import { LeftSidebar } from "./left-sidebar"
-import { DesignFrame, type Corner } from "./planner-frame"
-import { PortalView } from "./portal-view"
+import { LayerSelectionOverlay } from "./layer-selection-overlay"
+import { LayerSettingsPanel, PaddingLayerSettingsPanel } from "./layer-settings-panel"
+import { LeftSidebar, type RailPanel } from "./left-sidebar"
+import { PanelLoadInContext } from "./load-in"
+import {
+  builtComponentsChange,
+  ComponentDragGhost,
+  ComponentSettingsPanel,
+  CQW,
+  FrameBadge,
+  FrameComponentsLayer,
+  newComponentOf,
+  type ComponentLibrary,
+  type FrameComponent,
+  type InsertableComponent,
+} from "./library-components"
+import { BuildAgentButton, DesignFrame, ENTRANCE_DURATION_MS, type CanvasEntrance, type Corner } from "./planner-frame"
+import { PortalView, type CanvasFrameOption, type PortalInsets } from "./portal-view"
 import { ShareButton } from "./share-popover"
 import { TextSettingsPanel } from "./text-settings-panel"
+import { AgentCursor, agentPartSelector, FinishedEventCard, VariantFrame } from "./variant-frame"
+import { CapturedFrame, captureUnits, type CanvasCapture, type CapturedElement } from "./capture-frame"
 
 type Tool = "select" | "frame" | "text" | "code"
+
+/**
+ * What the visitor just did on the screen, for a guide that follows along (the onboarding tour).
+ * Reported as it happens; the screen itself doesn't depend on anyone listening.
+ */
+export type GuideEvent =
+  /** The selected canvas frames changed (ids; empty: nothing selected). */
+  | { type: "selection"; ids: string[] }
+  /** The Build Agent chat beside the selection opened / closed. */
+  | { type: "agent"; open: boolean }
+  /** A message was sent to the Build Agent on the canvas. */
+  | { type: "agent-sent" }
+  /** The Build Agent's first variants landed on the canvas. */
+  | { type: "variants-generated" }
+  /**
+   * The latest variant run moved on: `done` of its `total` variants are built; `settled` once the
+   * whole run is over.
+   */
+  | { type: "variants-progress"; done: number; total: number; settled: boolean }
+  /** A library component was dropped into a frame. */
+  | { type: "component-added"; frameId: string }
+  /** A frame's style was changed in its controls panel (e.g. its fill). */
+  | { type: "style-changed"; frameId: string }
+  /** A frame that can go into the Portal is being dragged (`active`), or was let go. */
+  | { type: "frame-drag"; active: boolean }
+  /** The Portal (Build mode) opened, with these canvas frames attached to its chat (maybe none). */
+  | { type: "portal-opened"; attached: string[] }
+  /** The Portal closed: back on the canvas. */
+  | { type: "portal-closed" }
+  /** A message was sent in the Portal's agent chat. */
+  | { type: "portal-sent" }
+  /** The Portal's agent built attached canvas frames into the codebase. */
+  | { type: "frames-built"; frameIds: string[] }
+  /** Something in the live app was captured to the canvas (it's now a frame there). */
+  | { type: "captured" }
+  /** The GitHub sequence moved on: repo created, canvas synced to a branch, PR opened, PR merged. */
+  | { type: "github"; stage: "created" | "synced" | "pr-opened" | "merged" }
 
 /* ------------------------------ Camera limits ------------------------------ */
 // The hero canvas is a showcase, not an infinite canvas: zoom and pan are both bounded.
 
 /**
- * Furthest the user can zoom out / in. The floor reads as 0% in the zoom readout; it stays just
- * above a true 0 because zoom is multiplicative (0 × anything = 0, so it could never zoom back in).
+ * Furthest the user can zoom out / in: 12% to 40% in the zoom readout (the canvas opens at 30%).
+ * Zoomed right out, the ring of explored screens around the app's elements comes into view.
  */
-const MIN_ZOOM = 0.004
-const MAX_ZOOM = 1.5
+const MIN_ZOOM = 0.12
+const MAX_ZOOM = 0.4
 
 /**
  * Pan limits follow the frames: the viewport centre can travel over the area the frames cover
@@ -37,8 +99,8 @@ const MAX_ZOOM = 1.5
 const PAN_MARGIN_X = 20
 const PAN_MARGIN_Y = 10
 
-/** Wheel → zoom sensitivity for pinch / ⌘-scroll. */
-const WHEEL_ZOOM_SPEED = 0.01
+/** Wheel → zoom sensitivity for pinch / ⌘-scroll: zoom × exp(−deltaY × this). */
+export const WHEEL_ZOOM_SPEED = 0.01
 
 /** Smallest a frame can be resized to, in canvas units. */
 const MIN_FRAME_SIZE = 80
@@ -54,14 +116,88 @@ function elementRect(el: CanvasElement): CanvasRect {
 
 /** Screen-px gap between the Build Agent input and the frame / side panels / screen edges. */
 const COMPOSER_GAP = 12
-/** Top bar height: the input never slides under it. */
-const TOP_BAR_HEIGHT = 44
+/** Top bar height (4px margin + 38px groups): the input never slides under it. */
+const TOP_BAR_HEIGHT = 42
+/** Measured sizes (for the Build Agent chat's placement) update once a resize has settled (ms). */
+const MEASURE_SETTLE_MS = 120
+/** A top-bar group's panel: flat, no visible border or shadow (the 1px border is transparent so the
+ * size holds), around the 32px buttons with the floating bars' 2px padding (38px tall). */
+const TOP_GROUP = "rounded-xl border border-transparent bg-[#f2f2f1] p-0.5"
+
+/**
+ * Corner radius of a 32px button inside a 12px-radius top-bar group or the tool bar: outer radius =
+ * inner radius + margin, and the margin is the 1px transparent border + 2px padding (12 − 3 = 9px).
+ */
+const TOP_BUTTON_RADIUS = "rounded-[9px]"
+
+/** The same groups over the Portal: flat (no shadow, transparent border so it keeps the same height), a solid shade just darker than its stone-100 background. */
+const PORTAL_TOP_GROUP = "rounded-xl border border-transparent bg-[#ededeb] p-0.5"
+
+/**
+ * Canvas entrance after leaving the Portal: elements start this fraction of their (screen-px)
+ * distance from the Codebase frame further out, at least ENTER_MIN_TRAVEL px. Their delays sweep
+ * clockwise around the frame over ENTER_SWEEP_MS, starting at the top-left diagonal; the sweep is
+ * shorter than each element's glide (see ENTRANCE_DURATION_MS in planner-frame), so sides overlap.
+ */
+const ENTER_SPREAD = 0.6
+const ENTER_MIN_TRAVEL = 60
+/** Portal fade-out before the canvas entrance starts (matches PortalView's `closing` transition). */
+const PORTAL_EXIT_MS = 300
+/** After the Portal opens, it has faded in (150ms) and fully covers the canvas by then (ms). */
+const PORTAL_COVER_MS = 400
+const ENTER_BASE_DELAY = 120
+const ENTER_SWEEP_MS = 1440
+/** Quick entrance (HeroScreen's `quickEntrance`): no sweep, a short glide (ms). */
+const QUICK_ENTER_DELAY = 60
+const QUICK_ENTER_DURATION_MS = 520
+/** Where the sweep starts, in turns clockwise from straight up (−⅛ = the top-left diagonal). */
+const ENTER_SWEEP_START = -1 / 8
+/**
+ * "emerge" load-in: the app's pieces lift off the Codebase frame this far apart (ms), in the app's
+ * reading order, each gliding out over EMERGE_DURATION_MS. A piece without a spot in the app grows
+ * out of the frame's centre from EMERGE_START_SCALE.
+ */
+const EMERGE_START_SCALE = 0.2
+const EMERGE_STAGGER_MS = 160
+const EMERGE_DURATION_MS = 1400
+
+/**
+ * Build Agent variants: each source's variants form a row below everything on the canvas, starting
+ * under the source's left edge, VARIANT_GAP apart; rows are VARIANT_ROW_GAP apart (canvas units).
+ */
+const VARIANT_GAP = 90
+const VARIANT_ROW_GAP = 240
+/** Guided: between the Codebase frame's bottom edge and the variant row (canvas units; clears the row's labels). */
+const GUIDED_VARIANT_GAP = 110
+
+/** Guided camera glides (see glideToBox): length (ms), and the room kept around what's shown (layout px). */
+const GLIDE_MS = 900
+/** Space between the Codebase frame and captured frames, and between captures (canvas units). */
+const CAPTURE_GAP = 140
+const FOCUS_MARGIN_X = 90
+const FOCUS_MARGIN_Y = 28
+/** Kept clear at the bottom for the guide card docked there (layout px). */
+const GUIDE_CLEARANCE = 280
+/** Kept clear at the left while the Components library is open (its rail and panel, layout px). */
+const LIBRARY_CLEARANCE = 330
+/** Screen-px gap from the agent's cursor badge to the corner of the piece it's editing. */
+const AGENT_CURSOR_INSET = 2
 
 /** x/y: screen-px offset of the canvas origin from the viewport centre. */
 type Camera = { x: number; y: number; zoom: number }
 
-/** Canvas-unit area the viewport centre may pan over. */
-type Bounds = { minX: number; maxX: number; minY: number; maxY: number }
+/**
+ * Canvas-unit area the viewport centre may pan over, and the canvas's `fit`: its width over
+ * REFERENCE_CANVAS_WIDTH. Zoom levels (the opening view, the limits, every scripted zoom) are
+ * tuned at the reference width and scale with the fit, so the canvas shows the same composition
+ * at any screen size.
+ */
+type Bounds = { minX: number; maxX: number; minY: number; maxY: number; fit: number; maxZoom: number }
+
+/** Canvas width (px) the zoom levels are tuned at; see Bounds.fit. */
+const REFERENCE_CANVAS_WIDTH = 1280
+/** Canvas height (px) the opening view is tuned at, with that width (guided screens fit by it too). */
+const REFERENCE_CANVAS_HEIGHT = 720
 
 /** Selection box in screen px. */
 type Marquee = { left: number; top: number; width: number; height: number }
@@ -70,17 +206,19 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value))
 }
 
-function frameBounds(rects: CanvasRect[]): Bounds {
+function frameBounds(rects: CanvasRect[], fit: number, maxZoom: number): Bounds {
   return {
     minX: Math.min(...rects.map((r) => r.x - r.w / 2)) - PAN_MARGIN_X,
     maxX: Math.max(...rects.map((r) => r.x + r.w / 2)) + PAN_MARGIN_X,
     minY: Math.min(...rects.map((r) => r.y - r.h / 2)) - PAN_MARGIN_Y,
     maxY: Math.max(...rects.map((r) => r.y + r.h / 2)) + PAN_MARGIN_Y,
+    fit,
+    maxZoom,
   }
 }
 
 function clampCamera({ x, y, zoom }: Camera, bounds: Bounds): Camera {
-  const z = clamp(zoom, MIN_ZOOM, MAX_ZOOM)
+  const z = clamp(zoom, MIN_ZOOM * bounds.fit, bounds.maxZoom * bounds.fit)
   return {
     zoom: z,
     x: clamp(x, -bounds.maxX * z, -bounds.minX * z),
@@ -90,14 +228,15 @@ function clampCamera({ x, y, zoom }: Camera, bounds: Bounds): Camera {
 
 /** Zoom to `nextZoom`, keeping the point under the cursor (px, py from viewport centre) fixed. */
 function zoomAt(camera: Camera, nextZoom: number, px: number, py: number, bounds: Bounds): Camera {
-  const zoom = clamp(nextZoom, MIN_ZOOM, MAX_ZOOM)
+  const zoom = clamp(nextZoom, MIN_ZOOM * bounds.fit, bounds.maxZoom * bounds.fit)
   const ratio = zoom / camera.zoom
   return clampCamera({ zoom, x: px - (px - camera.x) * ratio, y: py - (py - camera.y) * ratio }, bounds)
 }
 
 /**
  * Opening view: the Codebase frame (centred on the canvas origin) centred in the viewport, with
- * the iPad Calendar elements spread around it.
+ * the Fairbnb desktop elements spread around it. This is the view at the reference width; it's
+ * scaled to the canvas's real width before the first paint (see the fit effect in HeroScreen).
  */
 function initialCamera(): Camera {
   return { zoom: CANVAS_ZOOM, x: 0, y: 0 }
@@ -106,35 +245,746 @@ function initialCamera(): Camera {
 /** Safari's trackpad-pinch event (not in lib.dom). */
 type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number }
 
-export function HeroScreen() {
+/**
+ * Where the screen opens (the demo clips each start from one of these):
+ * - "portal": in the Portal, the live app (default).
+ * - "canvas": on the canvas, the Portal already left.
+ * - "designed": on the canvas, with the "Check in" badge designed into the trip card's frame.
+ * - "built": like "designed", and that badge is already built into the codebase (live app).
+ * - "wired": like "built", and the built badge already checks in when tapped.
+ */
+export type HeroStart = "portal" | "canvas" | "designed" | "built" | "wired"
+
+/** The trip card's frame: the one card whose nights numeral can be selected as a layer and spaced. */
+export const TRIP_CARD_ID = "card-upcoming-trip"
+/** The trip card's natural (unspaced) size, in canvas units. */
+const TRIP_CARD_RECT = AIRBNB_ELEMENTS.find((el) => el.id === TRIP_CARD_ID)!.rect
+/** The nights numeral's font size, in canvas units (4.6cqw, see NightsNumeral). */
+const NIGHTS_FONT_SIZE = 4.6 * CQW
+/** The nights layer, hovered: a selection-blue outline (its width set per zoom in --layer-line). */
+const NIGHTS_LAYER_HOVER = "[&_[data-layer=nights]:hover]:[outline:var(--layer-line)_solid_#2f6bf6]"
+/** A frame's padding layer, hovered: the same selection-blue outline (see AppElement.paddingLayer). */
+const PADDING_LAYER_HOVER = "[&_[data-layer]:hover]:[outline:var(--layer-line)_solid_#2f6bf6]"
+
+/**
+ * Edits already made to the trip card when the screen opens (the feature cards' story, where each
+ * clip opens on the previous one's result). Only read on mount.
+ */
+export type HeroSeed = {
+  /** Library components already in its frame (they replace the start's own seeded badge). */
+  components?: FrameComponent[]
+  /** Extra space above its nights numeral (its top margin), in canvas units: the card grows by as much. */
+  numeralGap?: number
+  /** Those edits are already built into the codebase (they show in the live app). */
+  built?: boolean
+}
+
+/**
+ * Load-in intro for a screen that opens on the canvas. While `phase` is "waiting" the screen is
+ * an empty canvas; once it's "play", each part comes in at its time (ms after that):
+ * `chromeAt` the bars and tools (top bar groups, tool bar, layers / components sidebar, zoom),
+ * `codebaseAt` the Codebase frame fades in (its live app's own opening plays from then),
+ * `githubAt` the GitHub Sync popover opens, `elementsAt` the canvas elements glide in around the
+ * Codebase frame (the canvas entrance).
+ */
+export type LoadIntro = {
+  phase: "waiting" | "play"
+  /**
+   * "glide" (default, the stored v1 load-in): the bars come in first, the Codebase frame fades in,
+   * the elements glide in around it in a clockwise sweep. "flip": the Codebase frame fades in (its
+   * live app's own opening plays inside it), as in "glide"; then the elements
+   * glide in around it as in "glide" (paced by `elementsTimeScale`); then the bars slide in from their
+   * own edges (`chromeAt` after `elementsAt`); then at `panelsAt` the side panels move in (the
+   * sidebar's `sidebarPanel` grows out of its rail, the selected frame's settings slide in from the
+   * right), their contents appearing one by one.
+   * "emerge" (the "Everything in one place" feature clip): the bars and tools are simply there on an
+   * empty canvas; at `codebaseAt` the Codebase frame fades in and its live app boots; at `elementsAt`
+   * the Codebase frame is highlighted and the app's pieces lift off it one by one, each from its own
+   * spot in the live app (its `appRect`), and glide out to their places on the canvas; at
+   * `settledAt` the highlight clears.
+   */
+  style?: "glide" | "flip" | "emerge"
+  chromeAt: number
+  codebaseAt: number
+  githubAt: number
+  elementsAt: number
+  /** Time scale of the canvas elements' entrance (its delays and glides): 0.8 = 20% faster. Default 1. */
+  elementsTimeScale?: number
+  /** "flip": when the side panels move in. */
+  panelsAt?: number
+  /** "flip": the left sidebar panel that opens at `panelsAt`. */
+  sidebarPanel?: RailPanel
+  /** "emerge": when the Codebase frame's highlight clears, once everything is out. */
+  settledAt?: number
+}
+
+type IntroStep = "chrome" | "codebase" | "github" | "elements" | "panels" | "settled"
+
+/** Bars and tools come in one after another, this far apart (ms). */
+const CHROME_STAGGER_MS = 90
+
+/** "flip": the panel step's entrance is over this long after it starts (ms); later panels open normally. */
+const PANELS_SETTLE_MS = 2200
+
+/**
+ * A bar / tool's load-in: hidden until the chrome step, then it fades and slides in from `from`,
+ * `order` places into the stagger. "flip" slides it all the way in from beyond its edge, slower.
+ * Without an intro it's left alone.
+ */
+function chromeIntro(
+  hasIntro: boolean,
+  chromeIn: boolean,
+  order: number,
+  from: "top" | "left" | "bottom",
+  flip = false,
+): { className?: string; style?: React.CSSProperties } {
+  if (!hasIntro) return {}
+  if (!chromeIn) return { style: { visibility: "hidden" } }
+  if (flip) {
+    const slide =
+      from === "top"
+        ? "slide-in-from-top-[56px]"
+        : from === "left"
+          ? "slide-in-from-left-[120%]"
+          : "slide-in-from-bottom-[40px]"
+    return {
+      className: `animate-in fade-in ${slide} duration-700 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none`,
+      style: { animationDelay: `${order * CHROME_STAGGER_MS}ms`, animationFillMode: "both" },
+    }
+  }
+  const slide = from === "top" ? "slide-in-from-top-2" : from === "left" ? "slide-in-from-left-2" : "slide-in-from-bottom-2"
+  return {
+    className: `animate-in fade-in ${slide} duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:animate-none`,
+    style: { animationDelay: `${order * CHROME_STAGGER_MS}ms`, animationFillMode: "both" },
+  }
+}
+
+/** Badge size in the trip card frame, in canvas units (a large "Check in", see library-components). */
+const DESIGNED_BADGE_SIZE = { w: 8 * (CODEBASE_WIDTH / 100), h: 2.55 * (CODEBASE_WIDTH / 100) }
+
+/**
+ * The "Check in" badge as the demo designs it: red, large, in the trip card's top-right corner,
+ * inset by the card's own padding (≈ 4.5% of its width).
+ */
+function designedCheckInBadge(): FrameComponent {
+  const card = AIRBNB_ELEMENTS.find((el) => el.id === "card-upcoming-trip")!
+  const inset = card.rect.w * 0.045
+  return {
+    id: "component-1",
+    component: "Badge",
+    frameId: card.id,
+    cardTitle: card.cardTitle!,
+    x: card.rect.w - inset - DESIGNED_BADGE_SIZE.w,
+    y: inset,
+    label: "Check in",
+    tone: "red",
+    size: "lg",
+  }
+}
+
+export function HeroScreen({
+  className,
+  reopened = false,
+  start = "portal",
+  githubSyncOpen = false,
+  githubPopoverOpen = true,
+  portalEnabled = true,
+  toolsEnabled = true,
+  scrollPans = true,
+  loadIntro,
+  onIntroSettled,
+  portalLoadMs,
+  portalShowUrl = true,
+  maxZoom = MAX_ZOOM,
+  canvasEntrance = true,
+  quickEntrance = false,
+  portalAutoPrompt = false,
+  githubPrSheet = true,
+  elementIds,
+  componentLibrary = "default",
+  layersOpen = false,
+  initialSelectedId,
+  showCodebase = true,
+  seed,
+  guided = false,
+  onGuideEvent,
+  agentCursors = true,
+  guideFocus = null,
+  portalPrompt = null,
+  agentPrompt,
+  extraElements,
+  openOnId,
+}: {
+  className?: string
+  /**
+   * More frames for this canvas, on top of the Fairbnb app's own (e.g. the canvas-only
+   * onboarding's frames). They're regular element frames: selectable, movable, resizable, with
+   * their settings panel. Only read on mount.
+   */
+  extraElements?: AppElement[]
+  /** The canvas opens centred on this element frame (by id) instead of the Codebase frame. Only read on mount. */
+  openOnId?: string
+  /** Preset for the canvas Build Agent: an empty chat opens with it written in, not editable, ready to send. */
+  agentPrompt?: string
+  /** Guided: typed into the Portal chat's composer (a character at a time) when it's set. */
+  portalPrompt?: string | null
+  /** The Build Agent's cursors show on the variants it's working on. Default on. */
+  agentCursors?: boolean
+  /**
+   * Guided: what the camera should show right now. "overview": the Codebase frame and the app
+   * frames; "variants": the variant row (clear of the Components library); "captures": the pieces
+   * captured in Build mode. Each time it changes to a value, the camera glides there (clear of the
+   * guide card).
+   */
+  guideFocus?: "overview" | "variants" | "captures" | null
+  /**
+   * Guided onboarding: whatever the visitor types to an agent (on the canvas or in the Portal) gets a
+   * working reply instead of the sign-up reply, and a frame dropped into the Codebase opens the
+   * Portal with the build prompt already written. Only read on mount.
+   */
+  guided?: boolean
+  /** Told about what the visitor does (see GuideEvent), for a guide that follows along. */
+  onGuideEvent?: (event: GuideEvent) => void
+  /**
+   * The Codebase frame is on the canvas. Off: only the app element frames (see `elementIds`), and
+   * the canvas opens centred on the first of them. Only read on mount.
+   */
+  showCodebase?: boolean
+  /** Edits already made to the trip card (see HeroSeed). Only read on mount. */
+  seed?: HeroSeed
+  /** The left sidebar opens with its Layers panel showing. Only read on mount. */
+  layersOpen?: boolean
+  /**
+   * The app element frame (by id) selected when the screen opens, so its settings panel shows.
+   * With a load-in intro it's selected once the canvas elements come in. Only read on mount.
+   */
+  initialSelectedId?: string
+  /**
+   * The design system the left sidebar's Components library shows, and what a dragged-out Badge
+   * looks like: "default" (generic shadcn/ui) or "fairbnb" (the Fairbnb app's own components).
+   */
+  componentLibrary?: ComponentLibrary
+  /**
+   * Only these app element frames are on the canvas (by id), for a calmer canvas where one frame
+   * has to stand out (the "Live product on canvas" showcase). Omitted: all of them.
+   */
+  elementIds?: string[]
+  /** The GitHub popover's "View on Github" opens the pull request sheet. Off: it does nothing but show a hint. */
+  githubPrSheet?: boolean
+  /**
+   * In the Portal's agent chat, the visitor's keystrokes write the next scripted prompt a few words
+   * at a time; once it's complete they send it and get its proper scripted reply (see PortalChat).
+   */
+  portalAutoPrompt?: boolean
+  /**
+   * Leaving the Portal the first time, the canvas elements glide in around the Codebase frame.
+   * Off: they're already on the canvas, in place.
+   */
+  canvasEntrance?: boolean
+  /**
+   * The canvas entrance is a quick glide (no clockwise sweep across many elements): for a calm
+   * canvas with a single frame (see `elementIds`). Default off.
+   */
+  quickEntrance?: boolean
+  /**
+   * Furthest the canvas zooms in (at the reference width; 0.4 = 40% in the zoom readout). Raise it
+   * where a single frame needs to fill much of the canvas (the "Live product on canvas" showcase).
+   */
+  maxZoom?: number
+  /** How long the Portal's live app takes to load (ms). Omitted: the Portal's default. */
+  portalLoadMs?: number
+  /** The Portal's browser window shows the live app's address. Default on. */
+  portalShowUrl?: boolean
+  /** Load-in intro (see LoadIntro). Omitted: everything is simply there. */
+  loadIntro?: LoadIntro
+  /**
+   * The load-in intro is over (its "settled" step). Until then the screen isn't interactive (it's
+   * `inert`); from here on it's the visitor's.
+   */
+  onIntroSettled?: () => void
+  /**
+   * Plain scroll / trackpad swipes over the canvas pan it. Off for the homepage hero: the canvas
+   * doesn't scroll and the page scrolls through it (pinch or ⌘/Ctrl + scroll still zoom; dragging
+   * empty canvas still pans).
+   */
+  scrollPans?: boolean
+  /**
+   * The top toolbar switches tools (clicks and the V / F / T / P shortcuts). Off for the homepage
+   * hero: the toolbar shows, but the Select tool always stays selected.
+   */
+  toolsEnabled?: boolean
+  /** Opens with the repo linked and the GitHub Sync popover open ("Sync to Github" showing). Only read on mount. */
+  githubSyncOpen?: boolean
+  /** With `githubSyncOpen`, whether the GitHub Sync popover opens. Off: linked, popover closed. Default on. */
+  githubPopoverOpen?: boolean
+  /**
+   * The Codebase frame can be opened in the Portal (double-click it, or "Open Build Mode" in its
+   * settings). Off for the homepage hero: frames can still be selected and moved, but the Portal
+   * never opens from the canvas.
+   */
+  portalEnabled?: boolean
+  /** Follows a previous demo run: open the Portal out of the canvas colour it ended on. */
+  reopened?: boolean
+  /** Where the screen opens; see HeroStart. Only read on mount. */
+  start?: HeroStart
+} = {}) {
+  /** Every element frame this screen knows: the Fairbnb app's own, then `extraElements`. Only read on mount. */
+  const [allElements] = useState(() => (extraElements ? [...AIRBNB_ELEMENTS, ...extraElements] : AIRBNB_ELEMENTS))
+  /** The app element frames on this canvas (see `elementIds`). Only read on mount. */
+  const [canvasElements] = useState(() =>
+    elementIds ? allElements.filter((el) => elementIds.includes(el.id)) : allElements,
+  )
+  /** Library components already in frames when the screen opens. */
+  const [seededComponents] = useState<FrameComponent[]>(
+    () =>
+      seed?.components ??
+      (start === "designed" || start === "built" || start === "wired" ? [designedCheckInBadge()] : []),
+  )
   const [tool, setTool] = useState<Tool>("select")
   const [codebaseSelected, setCodebaseSelected] = useState(false)
-  /** Ids of the selected iPad Calendar element frames. */
-  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  /** Ids of the selected Fairbnb element frames. */
+  const [selectedIds, setSelectedIds] = useState<string[]>(() =>
+    initialSelectedId && !loadIntro ? [initialSelectedId] : [],
+  )
   const [agentOpen, setAgentOpen] = useState(false)
-  /** The Build Agent is "working" on the active frame (its prompt was sent, no reply yet). */
-  const [agentWorking, setAgentWorking] = useState(false)
+  /** Simulated Build Agents: sessions per selection, the variants they generate, their cursors. */
+  const agents = useBuildAgents(
+    seed
+      ? seed.built
+        ? seededComponents
+        : []
+      : start === "built"
+        ? seededComponents
+        : start === "wired"
+          ? seededComponents.map((c) => ({ ...c, functional: true }))
+          : [],
+    // The guided onboarding builds a run's variants all at once.
+    { parallel: guided },
+  )
+  /**
+   * Extra space above the trip card's nights numeral (its top margin, canvas units), edited from
+   * the layer's settings panel; the card's frame grows by as much (see changeNumeralGap).
+   */
+  const [numeralGap, setNumeralGap] = useState(() => seed?.numeralGap ?? 0)
+  const numeralGapRef = useRef(numeralGap)
+  /** That gap as built into the codebase (canvas units): the live app's card grows by it. */
+  const [builtNumeralGap, setBuiltNumeralGap] = useState(() => (seed?.built ? (seed.numeralGap ?? 0) : 0))
+  /**
+   * What the Codebase frame must show on top of its screenshot: the trip card's built components
+   * (placed in cqw from the card's top-left, as in the live app) and its built spacing. Memoized,
+   * so the frame's memoized live app only re-renders when a build changes them. None: undefined.
+   */
+  const { builtComponents: builtForCodebase } = agents
+  const codebaseBuilt = useMemo(() => {
+    const onTrip = builtForCodebase.filter((c) => c.frameId === TRIP_CARD_ID)
+    if (onTrip.length === 0 && !builtNumeralGap) return undefined
+    return {
+      tripNumeralGap: builtNumeralGap / CQW,
+      tripExtras: onTrip.map((c) => (
+        <div
+          key={c.id}
+          className="pointer-events-none absolute flex"
+          style={{ left: `${c.x / CQW}cqw`, top: `${c.y / CQW}cqw` }}
+        >
+          <FrameBadge instance={c} />
+        </div>
+      )),
+    }
+  }, [builtForCodebase, builtNumeralGap])
+  /**
+   * A layer selected inside a frame, with its own settings panel: "nights" (the trip card's nights
+   * numeral), or the id of an element frame whose padding layer is selected (see AppElement.paddingLayer).
+   */
+  const [selectedLayer, setSelectedLayer] = useState<string | null>(null)
+  /** Padding per element frame's padding layer (canvas px), edited from that layer's settings panel. */
+  const [layerPaddings, setLayerPaddings] = useState<Record<string, { x: number; y: number }>>(() =>
+    Object.fromEntries(allElements.flatMap((el) => (el.paddingLayer ? [[el.id, el.paddingLayer.padding]] : []))),
+  )
+  /** Where each generating agent's cursor sits, in canvas units (measured from the piece it edits). */
+  const [cursorAt, setCursorAt] = useState<Record<number, { x: number; y: number }>>({})
+  /** "Choose where to build" is on for this agent session: clicking one of its variants builds it. */
+  const [pickSession, setPickSession] = useState<number | null>(null)
+  /** Code changes made this session (the built variant's / components' diffs) on top of the project's. */
+  // Memoized (along with what's derived from it) so the top bar's memoized controls skip camera frames.
+  const { builtComponents, builtVariant } = agents
+  const sessionChanges = useMemo(
+    () => [
+      ...(builtComponents.length > 0 ? [builtComponentsChange(builtComponents)] : []),
+      ...(builtVariant ? [builtVariantChange(builtVariant)] : []),
+    ],
+    [builtComponents, builtVariant],
+  )
+  /** Every changed file, once each (a file changed this session and before shows as one). */
+  const allFiles = useMemo(() => allChanges(sessionChanges), [sessionChanges])
+  const changeTotals = useMemo(() => totalsOf(allFiles), [allFiles])
+  const githubChanges = useMemo(
+    () => ({ files: allFiles.length, ...changeTotals }),
+    [allFiles, changeTotals],
+  )
+  /** The agents' thumbs for the AgentsPopover (memoized: it only changes with the sessions). */
+  const agentThumbs = useMemo(() => agents.sessions.map((s) => ({ id: s.id, working: s.working })), [agents.sessions])
+  /** What syncing opens: the library-component story's PR once a frame was built, else the variants one. */
+  const pullRequest: PullRequest = agents.builtComponents.length > 0 ? COMPONENT_PULL_REQUEST : PULL_REQUEST
+  /** Library components dropped into frames (see library-components), and the selected one. */
+  const [frameComponents, setFrameComponents] = useState<FrameComponent[]>(seededComponents)
+  const [selectedComponentId, setSelectedComponentId] = useState<string | null>(null)
+  const selectedComponent = frameComponents.find((c) => c.id === selectedComponentId)
+  const nextComponentId = useRef(seededComponents.length + 1)
+  /** A library component being dragged out of the sidebar: the ghost's spot, in root px, and which one. */
+  const [libraryDrag, setLibraryDrag] = useState<{ x: number; y: number; component: InsertableComponent } | null>(null)
+  /** The pull request was merged: the canvas closes (end of the story). */
+  const [canvasClosed, setCanvasClosed] = useState(false)
+  const closeCanvas = useCallback(() => setCanvasClosed(true), [])
   /** Rendered Build Agent height (it grows with the chat), so it can be kept on screen. */
   const [composerHeight, setComposerHeight] = useState(COMPOSER_HEIGHT)
   const [changesOpen, setChangesOpen] = useState(false)
   const closeChanges = useCallback(() => setChangesOpen(false), [])
-  /** The Codebase frame is open in the Portal View (double-click the frame). */
-  const [portalOpen, setPortalOpen] = useState(false)
-  const closePortal = useCallback(() => setPortalOpen(false), [])
-  const [camera, setCamera] = useState<Camera>(initialCamera)
+  /**
+   * The Codebase frame is open in the Portal View (double-click the frame). The screen opens
+   * inside the Portal; leaving it reveals the canvas.
+   */
+  const [portalOpen, setPortalOpen] = useState(start === "portal")
+  /** Frames sent to the Portal's agent by "Add to Build Chat" (attached when it opens). */
+  const [portalAttach, setPortalAttach] = useState<string[] | undefined>(undefined)
+  /** Report what the visitor did to the guide (if any); a ref, so callbacks stay stable. */
+  const onGuideEventRef = useRef(onGuideEvent)
+  useEffect(() => {
+    onGuideEventRef.current = onGuideEvent
+  })
+  const emitGuide = useCallback((event: GuideEvent) => onGuideEventRef.current?.(event), [])
+  /** The camera and the Codebase frame as last rendered, for where the Portal expands from. */
+  const cameraRef = useRef<Camera | null>(null)
+  const codebaseRectRef = useRef<CanvasRect | null>(null)
+  /** Where the Codebase frame sat on screen when the Portal opened: it expands out of there. */
+  const [portalExpandFrom, setPortalExpandFrom] = useState<PortalInsets | null>(null)
+  /**
+   * Open the Codebase frame in the Portal, unless this screen keeps the Portal shut (`portalEnabled`).
+   * The Portal expands out of the frame (from its box on screen right now), so it reads as going
+   * into the frame rather than to a new place.
+   */
+  const openPortal = useCallback(() => {
+    if (!portalEnabled) return
+    const canvas = canvasRef.current
+    const cam = cameraRef.current
+    const frame = codebaseRectRef.current
+    if (showCodebase && canvas && cam && frame) {
+      const width = canvas.clientWidth
+      const height = canvas.clientHeight
+      const left = width / 2 + cam.x + (frame.x - frame.w / 2) * cam.zoom
+      const top = height / 2 + cam.y + (frame.y - frame.h / 2) * cam.zoom
+      setPortalExpandFrom({
+        top: Math.max(0, top),
+        left: Math.max(0, left),
+        right: Math.max(0, width - left - frame.w * cam.zoom),
+        bottom: Math.max(0, height - top - frame.h * cam.zoom),
+      })
+    } else {
+      setPortalExpandFrom(null)
+    }
+    setPortalOpen(true)
+  }, [portalEnabled, showCodebase])
+  /** The Portal is fading out (PORTAL_EXIT_MS); the canvas elements stay hidden until it's gone. */
+  const [portalClosing, setPortalClosing] = useState(false)
+  /** Bumped once the Portal has closed: the canvas elements replay their entrance (see `entranceFor`). */
+  const [revealId, setRevealId] = useState(0)
+  /** Load-in steps reached so far (see LoadIntro); read on each step's own timer. */
+  const [introSteps, setIntroSteps] = useState<IntroStep[]>([])
+  const introPhase = loadIntro?.phase
+  const introRef = useRef(loadIntro)
+  useEffect(() => {
+    introRef.current = loadIntro
+  })
+  useEffect(() => {
+    const intro = introRef.current
+    if (introPhase !== "play" || !intro) return
+    const steps: [IntroStep, number][] = [
+      ["chrome", intro.chromeAt],
+      ["codebase", intro.codebaseAt],
+      ["github", intro.githubAt],
+      ["elements", intro.elementsAt],
+      ...(intro.style === "flip" && intro.panelsAt !== undefined
+        ? ([
+            ["panels", intro.panelsAt],
+            ["settled", intro.panelsAt + PANELS_SETTLE_MS],
+          ] as [IntroStep, number][])
+        : []),
+      ...(intro.style === "emerge" && intro.settledAt !== undefined
+        ? ([["settled", intro.settledAt]] as [IntroStep, number][])
+        : []),
+      // "glide": settled once the last element's entrance (the end of the sweep) has landed.
+      ...(intro.style === undefined || intro.style === "glide"
+        ? ([
+            [
+              "settled",
+              intro.elementsAt +
+                Math.round((ENTER_BASE_DELAY + ENTER_SWEEP_MS + ENTRANCE_DURATION_MS) * (intro.elementsTimeScale ?? 1)),
+            ],
+          ] as [IntroStep, number][])
+        : []),
+    ]
+    // An intro without its own settle time is over once its elements are in.
+    if (!steps.some(([step]) => step === "settled")) steps.push(["settled", intro.elementsAt])
+    const timers = steps.map(([step, at]) =>
+      setTimeout(() => setIntroSteps((reached) => (reached.includes(step) ? reached : [...reached, step])), at),
+    )
+    return () => timers.forEach(clearTimeout)
+  }, [introPhase])
+  const chromeIn = introSteps.includes("chrome")
+  const codebaseIn = introSteps.includes("codebase")
+  const githubIn = introSteps.includes("github")
+  /** "flip" load-in (see LoadIntro). */
+  const flipIntro = loadIntro?.style === "flip"
+  /** "emerge" load-in (see LoadIntro). */
+  const emergeIntro = loadIntro?.style === "emerge"
+  const panelsIn = introSteps.includes("panels")
+  /** The panel step's entrance is playing: side panels mounting now move in (PanelLoadInContext). */
+  const panelsEntering = panelsIn && !introSteps.includes("settled")
+  // The canvas elements' step reveals the canvas (the first reveal plays the entrance). Layout
+  // effect, so the frame that reaches it never paints the elements in place first.
+  const elementsIn = introSteps.includes("elements")
+  useLayoutEffect(() => {
+    if (elementsIn) setRevealId((id) => (id === 0 ? 1 : id))
+  }, [elementsIn])
+  // With an intro, the initially selected frame gets selected as the elements come in (not before,
+  // so its settings panel doesn't show over an empty canvas). "flip": at the panel step, so its
+  // settings panel moves in with the sidebar's.
+  const initialSelectedIdRef = useRef(initialSelectedId)
+  const selectIn = flipIntro ? panelsIn : elementsIn
+  useLayoutEffect(() => {
+    const id = initialSelectedIdRef.current
+    if (selectIn && id) setSelectedIds([id])
+  }, [selectIn])
+  const hasIntro = loadIntro !== undefined
+  /**
+   * The load-in is waiting or playing: the screen isn't interactive (inert) until it has settled.
+   * Without an intro it's interactive from the start.
+   */
+  const introRunning = hasIntro && !introSteps.includes("settled")
+  const onIntroSettledRef = useRef(onIntroSettled)
+  useEffect(() => {
+    onIntroSettledRef.current = onIntroSettled
+  })
+  useEffect(() => {
+    if (hasIntro && !introRunning) onIntroSettledRef.current?.()
+  }, [hasIntro, introRunning])
+  /** The bars and tools play a load-in (not in "emerge", where they're simply there). */
+  const chromeHasIntro = hasIntro && !emergeIntro
+  // Bars and tools, in the order they come in: the canvas title, the tool bar and the sidebar, the
+  // actions (with the avatar), then the zoom readout.
+  const titleIntro = chromeIntro(chromeHasIntro, chromeIn, 0, "top", flipIntro)
+  const toolbarIntro = chromeIntro(chromeHasIntro, chromeIn, 1, "top", flipIntro)
+  const actionsIntro = chromeIntro(chromeHasIntro, chromeIn, 2, "top", flipIntro)
+  const zoomIntro = chromeIntro(chromeHasIntro, chromeIn, 3, "bottom", flipIntro)
+  /** The sidebar's intro props, memoized: it's a memo component and the canvas re-renders every camera frame. */
+  const sidebarIntro = useMemo(
+    () => chromeIntro(chromeHasIntro, chromeIn, 1, "left", flipIntro),
+    [chromeHasIntro, chromeIn, flipIntro],
+  )
+  /** "flip": the sidebar panel opened at the panel step. */
+  const sidebarCue = flipIntro && panelsIn ? (loadIntro?.sidebarPanel ?? null) : null
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // Sequence: fade the Portal out first, then unmount it and start the canvas entrance. Only the
+  // first close plays the entrance; after that the elements are simply there when the Portal goes.
+  // A screen that opened on the canvas never plays it (its elements were there from the start).
+  const opensInPortal = start === "portal"
+  const closePortal = useCallback(() => {
+    if (closeTimerRef.current !== undefined) return // already closing
+    setPortalClosing(true)
+    closeTimerRef.current = setTimeout(() => {
+      closeTimerRef.current = undefined
+      setPortalClosing(false)
+      setPortalOpen(false)
+      // The next opening (e.g. Open Build Mode) starts without frames attached.
+      setPortalAttach(undefined)
+      setPortalExpandFrom(null)
+      if (opensInPortal && canvasEntrance) setRevealId((id) => (id === 0 ? 1 : id))
+    }, PORTAL_EXIT_MS)
+  }, [opensInPortal, canvasEntrance])
+  useEffect(() => () => clearTimeout(closeTimerRef.current), [])
+  // Without the Codebase frame, the canvas opens centred on the first app element frame instead
+  // (or on `openOnId`'s frame, when it's set).
+  const [camera, setCamera] = useState<Camera>(() => {
+    const focus = openOnId
+      ? canvasElements.find((el) => el.id === openOnId)?.rect
+      : showCodebase
+        ? undefined
+        : canvasElements[0]?.rect
+    const opening = initialCamera()
+    return focus ? { ...opening, x: -focus.x * opening.zoom, y: -focus.y * opening.zoom } : opening
+  })
   const [panning, setPanning] = useState(false)
   /** Select-tool selection box, in screen px relative to the hero root. */
   const [marquee, setMarquee] = useState<Marquee | null>(null)
   /** Frame positions/sizes in canvas units (centre-based); the Codebase frame starts at the origin. */
   const [codebaseRect, setCodebaseRect] = useState<CanvasRect>({ x: 0, y: 0, w: CODEBASE_WIDTH, h: CODEBASE_HEIGHT })
+  useLayoutEffect(() => {
+    cameraRef.current = camera
+    codebaseRectRef.current = codebaseRect
+  })
+  /**
+   * Frames are being dragged toward the Codebase frame (they can be dropped into the Portal's Build
+   * Chat): "dragging" while they're on their way, "over" while the pointer is over the Codebase.
+   */
+  const [portalDrop, setPortalDrop] = useState<"dragging" | "over" | null>(null)
+  /** A finished variant being carried (toward the Codebase frame): how far it's moved (layout px). */
+  const [variantDrag, setVariantDrag] = useState<{ id: string; x: number; y: number } | null>(null)
+  /** Pieces of the live app captured in Build mode: frames on the canvas, right of the Codebase frame. */
+  const [captures, setCaptures] = useState<CanvasCapture[]>([])
+  const nextCaptureId = useRef(1)
+  // A seeded numeral gap opens with the trip card's frame already grown by it (its top edge stays put).
   const [elementRects, setElementRects] = useState<Record<string, CanvasRect>>(() =>
-    Object.fromEntries(CALENDAR_ELEMENTS.map((el) => [el.id, el.rect])),
+    Object.fromEntries(
+      allElements.map((el) => [
+        el.id,
+        el.id === TRIP_CARD_ID && numeralGap ? { ...el.rect, y: el.rect.y + numeralGap / 2, h: el.rect.h + numeralGap } : el.rect,
+      ]),
+    ),
   )
-  /** Corner radius per iPad Calendar element frame, in canvas units (null = square); editable via the radius thumbs. */
+  /** Corner radius per Fairbnb element frame, in canvas units (null = square); editable via the radius thumbs. */
   const [elementRadii, setElementRadii] = useState<Record<string, number | null>>(() =>
-    Object.fromEntries(CALENDAR_ELEMENTS.map((el) => [el.id, el.radius])),
+    Object.fromEntries(allElements.map((el) => [el.id, el.radius])),
   )
+  /** Fill per Fairbnb element frame; editable via the settings panel's Fill swatch. */
+  const [elementFills, setElementFills] = useState<Record<string, string | null>>(() =>
+    Object.fromEntries(allElements.map((el) => [el.id, el.fill])),
+  )
+  /** Name per Fairbnb element frame; renamed by double-clicking its title on the canvas. */
+  const [elementNames, setElementNames] = useState<Record<string, string>>(() =>
+    Object.fromEntries(allElements.map((el) => [el.id, el.name])),
+  )
+  /**
+   * The canvas's own frames, for the Portal Agent's attached frames (memoized: the Portal is): each
+   * with how it looks on the canvas, for its thumbnail (the trip card with its designed spacing).
+   */
+  const { variants: agentVariants } = agents
+  const portalFrames = useMemo<CanvasFrameOption[]>(
+    () => [
+      ...canvasElements
+        .filter((el) => !el.exploration)
+        .map((el) => {
+          const isTrip = el.id === TRIP_CARD_ID
+          return {
+            id: el.id,
+            name: elementNames[el.id],
+            size: isTrip ? { w: el.rect.w, h: el.rect.h + numeralGap } : { w: el.rect.w, h: el.rect.h },
+            fill: elementFills[el.id] ?? null,
+            radius: elementRadii[el.id] ?? null,
+            border: el.border,
+            bare: el.bare,
+            content: isTrip ? <TripCard numeralGap={numeralGap / CQW} /> : el.content,
+          }
+        }),
+      // The Build Agent's finished variants can go into Build mode too (dragged onto the Codebase).
+      ...agentVariants
+        .filter((v) => v.status === "done")
+        .map((v) => ({
+          id: v.id,
+          name: v.name,
+          size: { w: v.rect.w, h: v.rect.h },
+          fill: null,
+          radius: null,
+          border: null,
+          bare: true,
+          content: <FinishedEventCard variant={v} />,
+          kind: "variant" as const,
+        })),
+    ],
+    [canvasElements, elementNames, elementFills, elementRadii, numeralGap, agentVariants],
+  )
+  /**
+   * The Portal Agent builds the attached frames into the codebase, with the components designed
+   * into them (and, for the trip card, the space designed above its nights). An attached variant is
+   * built in place of its source card.
+   */
+  const { buildFrames, buildVariant } = agents
+  const buildFramesFromPortal = useCallback(
+    (frameIds: string[]) => {
+      const variantIds = frameIds.filter((id) => agentVariants.some((v) => v.id === id))
+      const appFrameIds = frameIds.filter((id) => !variantIds.includes(id))
+      if (variantIds.length > 0) {
+        const built = variantIds[variantIds.length - 1]
+        buildVariant(built)
+        // The components dropped into it ship with it (on the card it replaces in the live app).
+        buildFrames([built], frameComponents)
+      }
+      if (appFrameIds.length > 0) buildFrames(appFrameIds, frameComponents)
+      if (appFrameIds.includes(TRIP_CARD_ID)) setBuiltNumeralGap(numeralGap)
+      emitGuide({ type: "frames-built", frameIds })
+    },
+    [buildFrames, buildVariant, agentVariants, frameComponents, numeralGap, emitGuide],
+  )
+  /**
+   * Change the space above the trip card's nights (its numeral's top margin, canvas units): the
+   * card's frame grows or shrinks by the difference, its top edge staying put, and the components
+   * in its lower half (a bottom-right Reserve button) move down with the bottom edge.
+   */
+  const changeNumeralGap = useCallback((next: number) => {
+    const delta = next - numeralGapRef.current
+    if (!delta) return
+    numeralGapRef.current = next
+    setNumeralGap(next)
+    setElementRects((current) => {
+      const r = current[TRIP_CARD_ID]
+      return r ? { ...current, [TRIP_CARD_ID]: { ...r, y: r.y + delta / 2, h: r.h + delta } } : current
+    })
+    setFrameComponents((list) =>
+      list.map((c) => (c.frameId === TRIP_CARD_ID && c.y > TRIP_CARD_RECT.h / 2 ? { ...c, y: c.y + delta } : c)),
+    )
+  }, [])
   const canvasRef = useRef<HTMLDivElement>(null)
+  /**
+   * The canvas's width over REFERENCE_CANVAS_WIDTH (see Bounds). Measured before the first paint
+   * and on every resize; when it changes, the camera is scaled by the same ratio (zoom and pan
+   * offset alike), so whatever was in view stays in view at the same place, just larger or smaller.
+   */
+  const [fit, setFit] = useState(1)
+  const fitRef = useRef(1)
+  useLayoutEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const canvas = el
+    function measure() {
+      const width = canvas.clientWidth
+      if (!width) return
+      // Guided (full-screen onboarding): short or ultra-wide screens fit by height too, so the
+      // opening view (tuned at 1280 × 720) never runs off the bottom of the screen.
+      const height = canvas.clientHeight
+      const next = Math.min(
+        width / REFERENCE_CANVAS_WIDTH,
+        guided && height ? height / REFERENCE_CANVAS_HEIGHT : Infinity,
+      )
+      const ratio = next / fitRef.current
+      if (Math.abs(ratio - 1) < 1e-4) return
+      fitRef.current = next
+      setFit(next)
+      setCamera((c) => ({ zoom: c.zoom * ratio, x: c.x * ratio, y: c.y * ratio }))
+    }
+    measure()
+    // Applied synchronously, within the frame that resized the canvas (ResizeObserver runs after
+    // layout, before paint). A regular update would commit after that frame is painted, so while
+    // the hero window grows with the page scroll the canvas would trail its window by a frame and
+    // wobble; flushed here, the window and its contents move as one.
+    const observer = new ResizeObserver(() => flushSync(measure))
+    observer.observe(canvas)
+    return () => observer.disconnect()
+  }, [guided])
+  /**
+   * The Portal has fully faded in over the canvas (it's opaque and covers the whole screen). The
+   * Codebase frame's live app underneath is then skipped from rendering (see CodebaseFrame's
+   * `covered`): it keeps its state, but no longer re-lays out and repaints, unseen, on every frame
+   * of the hero window's growth or its intro. It's back the moment the Portal starts closing (and
+   * while the Portal fades in over it), so nothing visible ever changes.
+   */
+  const [portalSettled, setPortalSettled] = useState(false)
+  useEffect(() => {
+    if (!portalOpen || portalClosing) return
+    const timer = setTimeout(() => setPortalSettled(true), PORTAL_COVER_MS)
+    return () => {
+      clearTimeout(timer)
+      setPortalSettled(false)
+    }
+  }, [portalOpen, portalClosing])
+  const canvasCovered = portalSettled && portalOpen && !portalClosing
   const lastPointer = useRef<{ x: number; y: number } | null>(null)
   /** Frames and text the user adds with the Frame / Text tools (selected via `selectedIds` too). */
   const [drawnElements, setDrawnElements] = useState<CanvasElement[]>([])
@@ -142,20 +992,95 @@ export function HeroScreen() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const nextDrawnId = useRef(1)
   const frameCount = useRef(0)
-  const [rootRef, rootRect] = useMeasuredRect()
-  const [sidebarRef, sidebarRect] = useMeasuredRect()
-  const [panelRef, panelRect] = useMeasuredRect()
+  // The root and the settings panel resize every frame while the hero window grows / shrinks with
+  // the page scroll; re-measure once that settles rather than re-rendering the screen each frame
+  // (the canvas itself is laid out in CSS and follows along on its own).
+  const [rootRef, rootRect, rootBox] = useMeasuredRect(MEASURE_SETTLE_MS)
+  const [sidebarRef, , sidebarBox] = useMeasuredRect()
+  const [panelRef, , panelBox] = useMeasuredRect(MEASURE_SETTLE_MS)
+
+  /**
+   * A screen point (pointer clientX / Y) in the root's layout px, with the root's layout size.
+   * The hero window may draw the screen scaled while it grows (see lib/screen-scale), so screen
+   * distances are divided by that scale; unscaled it's a plain offset. Measured fresh, so it's
+   * right wherever the page has scrolled to. (The canvas fills the root exactly.)
+   */
+  function toLocal(clientX: number, clientY: number) {
+    const canvas = canvasRef.current!
+    const r = canvas.getBoundingClientRect()
+    const k = screenScale(canvas)
+    return { x: (clientX - r.left) / k, y: (clientY - r.top) / k, width: r.width / k, height: r.height / k, k }
+  }
 
   /** The one element frame that owns the settings panel and Build Agent (single selection only). */
   const activeElement =
-    !codebaseSelected && selectedIds.length === 1 ? CALENDAR_ELEMENTS.find((el) => el.id === selectedIds[0]) : undefined
+    !codebaseSelected && selectedIds.length === 1 ? allElements.find((el) => el.id === selectedIds[0]) : undefined
   const activeRect = activeElement ? elementRects[activeElement.id] : undefined
+  /**
+   * "flip": until the panel step, the initially selected frame's settings panel is already mounted,
+   * concealed, so it's loaded and laid out long before it moves in (the frame gets selected then).
+   */
+  const preloadSettings =
+    flipIntro && !panelsIn && !activeElement && selectedIds.length === 0 && !codebaseSelected && !selectedComponentId
+      ? allElements.find((el) => el.id === initialSelectedId)
+      : undefined
+  const settingsElement = activeElement ?? preloadSettings
+  const settingsRect = settingsElement ? elementRects[settingsElement.id] : undefined
+  const settingsConcealed = !activeElement
+  /** Stable per selected frame, so the memoized settings panel skips camera frames. */
+  const activeElementId = activeElement?.id
+  const changeActiveFill = useCallback(
+    (color: string) => {
+      if (!activeElementId) return
+      setElementFills((current) => ({ ...current, [activeElementId]: color }))
+      emitGuide({ type: "style-changed", frameId: activeElementId })
+    },
+    [activeElementId, emitGuide],
+  )
+  /** "Add to Build Chat" on the selected frame: the Portal opens with it attached to a fresh chat. */
+  const addActiveToChat = useCallback(() => {
+    if (!activeElementId) return
+    setPortalAttach([activeElementId])
+    openPortal()
+  }, [activeElementId, openPortal])
+  /** "Add to Build Chat" on a layer inside the trip card: the card's frame is what gets attached. */
+  const addTripCardToChat = useCallback(() => {
+    setPortalAttach([TRIP_CARD_ID])
+    openPortal()
+  }, [openPortal])
+  /** The element frame whose padding layer is selected (see AppElement.paddingLayer). */
+  const paddingLayerElement =
+    selectedLayer && selectedLayer !== "nights"
+      ? canvasElements.find((el) => el.id === selectedLayer && el.paddingLayer)
+      : undefined
   /** A single selected drawn frame / text (its settings panel shows). */
   const activeDrawn =
     !codebaseSelected && selectedIds.length === 1 ? drawnElements.find((el) => el.id === selectedIds[0]) : undefined
 
   // The native wheel/gesture listeners are registered once, so they read the bounds from a ref.
-  const bounds = frameBounds([codebaseRect, ...Object.values(elementRects), ...drawnElements.map(elementRect)])
+  // Panning stays over the working cluster (the Codebase frame and the app's own elements, plus
+  // anything drawn or generated): the ring of explored screens further out doesn't widen it, so a
+  // new visitor can't drift off into mostly empty canvas.
+  const bounds = useMemo(
+    () =>
+      frameBounds(
+        [
+          ...(showCodebase ? [codebaseRect] : []),
+          ...canvasElements.filter((el) => !el.exploration).map((el) => elementRects[el.id]),
+          ...drawnElements.map(elementRect),
+          ...agents.variants.map((v) => v.rect),
+          ...captures.map((c) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2, w: c.w, h: c.h })),
+        ],
+        fit,
+        maxZoom,
+      ),
+    [showCodebase, codebaseRect, canvasElements, elementRects, drawnElements, agents.variants, captures, fit, maxZoom],
+  )
+  /** What the Share button compares against its last publish (memoized: same values, same array). */
+  const shareChanges = useMemo(
+    () => [drawnElements, elementRects, elementRadii, elementFills, frameComponents],
+    [drawnElements, elementRects, elementRadii, elementFills, frameComponents],
+  )
   const boundsRef = useRef(bounds)
   useEffect(() => {
     boundsRef.current = bounds
@@ -167,22 +1092,68 @@ export function HeroScreen() {
     if (codebaseSelected) return
     setCodebaseSelected(true)
     setSelectedIds([])
+    setSelectedComponentId(null)
+    setSelectedLayer(null)
     setAgentOpen(false)
   }
 
-  function selectElement(id: string) {
+  /** Select a frame; with Shift, add it to (or remove it from) the selection instead. */
+  function selectElement(id: string, additive = false) {
+    setSelectedComponentId(null)
+    setSelectedLayer(null)
+    if (additive) {
+      setAgentOpen(false)
+      setCodebaseSelected(false)
+      setSelectedIds((ids) => (ids.includes(id) ? ids.filter((i) => i !== id) : [...ids, id]))
+      return
+    }
     if (selectedIds.includes(id)) return
     setAgentOpen(false)
     setSelectedIds([id])
     setCodebaseSelected(false)
   }
 
+  /** Select the trip card's nights numeral, a layer inside its frame: its own settings panel shows. */
+  function selectNightsLayer() {
+    setSelectedLayer("nights")
+    setSelectedIds([])
+    setSelectedComponentId(null)
+    setCodebaseSelected(false)
+    setAgentOpen(false)
+    setPickSession(null)
+  }
+
+  /** Whether a press landed on the trip card's nights numeral (inside its frame's artwork). */
+  function onNightsLayer(e: React.PointerEvent) {
+    return e.target instanceof Element && e.target.closest('[data-layer="nights"]') !== null
+  }
+
+  /** Select an element frame's padding layer (see AppElement.paddingLayer): its own settings panel shows. */
+  function selectPaddingLayer(elementId: string) {
+    setSelectedLayer(elementId)
+    setSelectedIds([])
+    setSelectedComponentId(null)
+    setCodebaseSelected(false)
+    setAgentOpen(false)
+    setPickSession(null)
+  }
+
+  /** Whether a press landed on an element frame's padding layer (inside its frame's artwork). */
+  function onPaddingLayer(e: React.PointerEvent, el: AppElement) {
+    return (
+      !!el.paddingLayer &&
+      e.target instanceof Element &&
+      e.target.closest(`[data-layer="${el.paddingLayer.id}"]`) !== null
+    )
+  }
+
   /**
    * Drag a frame with the Select tool: screen-px movement ÷ zoom = canvas units. Pressing a frame
    * that was already selected moves every selected frame; otherwise only the pressed one.
+   * Shift-presses only change the selection.
    */
   function startMove(e: React.PointerEvent, frame: "codebase" | { elementId: string }) {
-    if (tool !== "select" || e.button !== 0) return
+    if (tool !== "select" || e.button !== 0 || e.shiftKey) return
     const zoom = camera.zoom
     const pressedId = frame === "codebase" ? null : frame.elementId
     const wasSelected = pressedId === null ? codebaseSelected : selectedIds.includes(pressedId)
@@ -191,31 +1162,116 @@ export function HeroScreen() {
     const fromCodebase = codebaseRect
     const fromElements = elementRects
     const fromDrawn = drawnElements
-    trackDrag(e, (dx, dy) => {
-      if (moveCodebase) setCodebaseRect({ ...fromCodebase, x: fromCodebase.x + dx / zoom, y: fromCodebase.y + dy / zoom })
-      if (movedIds.length === 0) return
-      setElementRects((current) => {
-        const next = { ...current }
-        for (const id of movedIds) {
-          const from = fromElements[id]
-          if (!from) continue // a drawn element, moved below
-          next[id] = { ...from, x: from.x + dx / zoom, y: from.y + dy / zoom }
+    // App frames dragged onto the Codebase frame are handed to the Portal's Build Chat: the Portal
+    // opens with them attached, and they go back to where they were on the canvas.
+    const attachable =
+      portalEnabled && showCodebase && !moveCodebase
+        ? movedIds.filter((id) => portalFrames.some((f) => f.id === id))
+        : []
+    const pressedAt = toCanvas(e.clientX, e.clientY)
+    let dragged = false
+    let overCodebase = false
+    trackDrag(
+      e,
+      (dx, dy) => {
+        if (moveCodebase) setCodebaseRect({ ...fromCodebase, x: fromCodebase.x + dx / zoom, y: fromCodebase.y + dy / zoom })
+        if (attachable.length > 0) {
+          if (!dragged) emitGuide({ type: "frame-drag", active: true })
+          dragged = true
+          const px = pressedAt.x + dx / zoom
+          const py = pressedAt.y + dy / zoom
+          overCodebase = Math.abs(px - fromCodebase.x) <= fromCodebase.w / 2 && Math.abs(py - fromCodebase.y) <= fromCodebase.h / 2
+          setPortalDrop(overCodebase ? "over" : "dragging")
         }
-        return next
-      })
-      const moved = new Map(
-        fromDrawn.filter((el) => movedIds.includes(el.id)).map((el) => [el.id, { x: el.x + dx / zoom, y: el.y + dy / zoom }]),
-      )
-      if (moved.size > 0) setDrawnElements((els) => els.map((el) => (moved.has(el.id) ? { ...el, ...moved.get(el.id) } : el)))
-    })
+        if (movedIds.length === 0) return
+        setElementRects((current) => {
+          const next = { ...current }
+          for (const id of movedIds) {
+            const from = fromElements[id]
+            if (!from) continue // a drawn element, moved below
+            next[id] = { ...from, x: from.x + dx / zoom, y: from.y + dy / zoom }
+          }
+          return next
+        })
+        const moved = new Map(
+          fromDrawn.filter((el) => movedIds.includes(el.id)).map((el) => [el.id, { x: el.x + dx / zoom, y: el.y + dy / zoom }]),
+        )
+        if (moved.size > 0) setDrawnElements((els) => els.map((el) => (moved.has(el.id) ? { ...el, ...moved.get(el.id) } : el)))
+      },
+      () => {
+        if (!dragged) return
+        setPortalDrop(null)
+        emitGuide({ type: "frame-drag", active: false })
+        if (!overCodebase) return
+        // Dropped into the Codebase: everything that moved goes back, and the Portal opens with the frames attached.
+        setElementRects((current) => {
+          const next = { ...current }
+          for (const id of movedIds) if (fromElements[id]) next[id] = fromElements[id]
+          return next
+        })
+        const back = new Map(fromDrawn.filter((el) => movedIds.includes(el.id)).map((el) => [el.id, { x: el.x, y: el.y }]))
+        if (back.size > 0) setDrawnElements((els) => els.map((el) => (back.has(el.id) ? { ...el, ...back.get(el.id) } : el)))
+        setSelectedIds([])
+        setAgentOpen(false)
+        setPortalAttach(attachable)
+        openPortal()
+      },
+    )
+  }
+
+  /**
+   * Carry a finished variant: it follows the pointer and goes back to its place on release. Let go
+   * over the Codebase frame, the Portal opens with the variant attached to its Build Chat.
+   */
+  function startVariantDrag(e: React.PointerEvent, variantId: string) {
+    if (tool !== "select" || e.button !== 0 || !portalEnabled || !showCodebase) return
+    const zoom = camera.zoom
+    const target = codebaseRect
+    const pressedAt = toCanvas(e.clientX, e.clientY)
+    let dragged = false
+    let overCodebase = false
+    trackDrag(
+      e,
+      (dx, dy) => {
+        if (!dragged) emitGuide({ type: "frame-drag", active: true })
+        dragged = true
+        setVariantDrag({ id: variantId, x: dx, y: dy })
+        const px = pressedAt.x + dx / zoom
+        const py = pressedAt.y + dy / zoom
+        overCodebase = Math.abs(px - target.x) <= target.w / 2 && Math.abs(py - target.y) <= target.h / 2
+        setPortalDrop(overCodebase ? "over" : "dragging")
+      },
+      () => {
+        setVariantDrag(null)
+        if (!dragged) return
+        setPortalDrop(null)
+        emitGuide({ type: "frame-drag", active: false })
+        if (!overCodebase) return
+        setSelectedIds([])
+        setAgentOpen(false)
+        setPortalAttach([variantId])
+        openPortal()
+      },
+    )
+  }
+
+  /** Drag a captured frame around the canvas. */
+  function startCaptureMove(e: React.PointerEvent, id: string) {
+    if (tool !== "select" || e.button !== 0) return
+    const from = captures.find((c) => c.id === id)
+    if (!from) return
+    const zoom = camera.zoom
+    trackDrag(e, (dx, dy) =>
+      setCaptures((list) => list.map((c) => (c.id === id ? { ...c, x: from.x + dx / zoom, y: from.y + dy / zoom } : c))),
+    )
   }
 
   /** Screen point → canvas units. */
   function toCanvas(clientX: number, clientY: number) {
-    const r = rootRect!
+    const p = toLocal(clientX, clientY)
     return {
-      x: (clientX - r.left - r.width / 2 - camera.x) / camera.zoom,
-      y: (clientY - r.top - r.height / 2 - camera.y) / camera.zoom,
+      x: (p.x - p.width / 2 - camera.x) / camera.zoom,
+      y: (p.y - p.height / 2 - camera.y) / camera.zoom,
     }
   }
 
@@ -278,6 +1334,107 @@ export function HeroScreen() {
     )
   }
 
+  /**
+   * Drag a component out of the Components library: a ghost follows the pointer; dropped on an
+   * event frame, an instance lands there (centred on the drop point) and gets selected. Dropped
+   * anywhere else (back on the sidebar, empty canvas, a non-event frame), nothing is added: only
+   * event cards can carry it into the live app.
+   */
+  function startLibraryDrag(e: React.PointerEvent, component: InsertableComponent) {
+    if (!rootRect) return
+    const startX = e.clientX
+    const startY = e.clientY
+    // The ghost is placed in the root's layout px; the drop is hit-tested at the screen point.
+    const start = toLocal(startX, startY)
+    let last: { clientX: number; clientY: number } | null = null
+    trackDrag(
+      e,
+      (dx, dy) => {
+        last = { clientX: startX + dx * start.k, clientY: startY + dy * start.k }
+        setLibraryDrag({ x: start.x + dx, y: start.y + dy, component })
+      },
+      () => {
+        setLibraryDrag(null)
+        if (last) dropComponent(component, last.clientX, last.clientY)
+      },
+    )
+  }
+  /**
+   * Stable handle for the (memoized) sidebar: it always runs the latest `startLibraryDrag`, so a
+   * press reads the current camera and rects exactly as passing the function directly did.
+   */
+  const startLibraryDragRef = useRef(startLibraryDrag)
+  useLayoutEffect(() => {
+    startLibraryDragRef.current = startLibraryDrag
+  })
+  const onLibraryDragStart = useCallback(
+    (e: React.PointerEvent, component: InsertableComponent) => startLibraryDragRef.current(e, component),
+    [],
+  )
+
+  function dropComponent(component: InsertableComponent, clientX: number, clientY: number) {
+    // Hit-tested in the root's layout px (the sidebar's layout box is relative to the root).
+    const at = toLocal(clientX, clientY)
+    const overSidebar =
+      sidebarBox &&
+      at.x >= sidebarBox.left &&
+      at.x <= sidebarBox.left + sidebarBox.width &&
+      at.y >= sidebarBox.top &&
+      at.y <= sidebarBox.top + sidebarBox.height
+    if (overSidebar) return
+    const p = toCanvas(clientX, clientY)
+    const inside = (r: CanvasRect) => Math.abs(p.x - r.x) <= r.w / 2 && Math.abs(p.y - r.y) <= r.h / 2
+    // The Build Agent's finished variants first (they're cards too, and sit on top), then the app's
+    // own cards, topmost first: later elements paint over earlier ones. Only cards (they carry a
+    // title) take components.
+    const variant = [...agents.variants].reverse().find((v) => v.status === "done" && inside(v.rect))
+    const element = variant ? undefined : [...AIRBNB_ELEMENTS].reverse().find((el) => el.cardTitle && inside(elementRects[el.id]))
+    const target = variant
+      ? { id: variant.id, cardTitle: variant.source.title, rect: variant.rect }
+      : element?.cardTitle
+        ? { id: element.id, cardTitle: element.cardTitle, rect: elementRects[element.id] }
+        : undefined
+    if (!target) return
+    const { cardTitle, rect: r } = target
+    const id = `component-${nextComponentId.current++}`
+    const fresh = newComponentOf(componentLibrary, component)
+    setFrameComponents((list) => [
+      ...list,
+      {
+        id,
+        component,
+        frameId: target.id,
+        cardTitle,
+        x: Math.max(0, p.x - (r.x - r.w / 2) - fresh.size.w / 2),
+        y: Math.max(0, p.y - (r.y - r.h / 2) - fresh.size.h / 2),
+        ...fresh.instance,
+        library: componentLibrary,
+      },
+    ])
+    setSelectedComponentId(id)
+    setSelectedIds([])
+    setSelectedLayer(null)
+    setCodebaseSelected(false)
+    setAgentOpen(false)
+  }
+
+  /** Press a component instance: select it; with the Select tool, drag it around inside its frame. */
+  function pressComponent(e: React.PointerEvent, id: string) {
+    setSelectedComponentId(id)
+    setSelectedIds([])
+    setSelectedLayer(null)
+    setCodebaseSelected(false)
+    setAgentOpen(false)
+    setPickSession(null)
+    if (tool !== "select" || e.button !== 0) return
+    const from = frameComponents.find((c) => c.id === id)
+    if (!from) return
+    const zoom = camera.zoom
+    trackDrag(e, (dx, dy) =>
+      setFrameComponents((list) => list.map((c) => (c.id === id ? { ...c, x: from.x + dx / zoom, y: from.y + dy / zoom } : c))),
+    )
+  }
+
   /** Finish typing: empty text is removed, otherwise the content is saved. */
   function commitText(id: string, content: string) {
     setEditingId((current) => (current === id ? null : current))
@@ -310,11 +1467,12 @@ export function HeroScreen() {
   /** Select tool drag on empty canvas: draw a selection box; frames it touches get selected. */
   function startMarquee(e: React.PointerEvent) {
     if (!rootRect) return
-    const originX = e.clientX - rootRect.left
-    const originY = e.clientY - rootRect.top
+    const origin = toLocal(e.clientX, e.clientY)
+    const originX = origin.x
+    const originY = origin.y
     const z = camera.zoom
-    const centreX = rootRect.width / 2 + camera.x
-    const centreY = rootRect.height / 2 + camera.y
+    const centreX = origin.width / 2 + camera.x
+    const centreY = origin.height / 2 + camera.y
     const touches = (r: CanvasRect, box: Marquee) =>
       centreX + (r.x - r.w / 2) * z < box.left + box.width &&
       centreX + (r.x + r.w / 2) * z > box.left &&
@@ -332,7 +1490,7 @@ export function HeroScreen() {
         setMarquee(box)
         setCodebaseSelected(touches(codebaseRect, box))
         setSelectedIds([
-          ...CALENDAR_ELEMENTS.filter((el) => touches(elementRects[el.id], box)).map((el) => el.id),
+          ...allElements.filter((el) => touches(elementRects[el.id], box)).map((el) => el.id),
           ...drawnElements.filter((el) => touches(elementRect(el), box)).map((el) => el.id),
         ])
       },
@@ -376,21 +1534,386 @@ export function HeroScreen() {
   }
 
   /**
-   * Build Agent input: sits right of the frame's top-right corner. The shift keeps it clear of the
-   * left sidebar, the settings panel and the top bar; it's animated so the input glides aside.
+   * The Build Agent works on the selected Fairbnb frames (one or several, nothing else
+   * selected). `agentRect` is the bounding box of the selection, centre-based, in canvas units.
    */
+  const agentIds = !codebaseSelected && selectedIds.length > 0 && selectedIds.every((id) => id in elementRects) ? selectedIds : []
+  let agentRect: CanvasRect | undefined
+  if (agentIds.length > 0) {
+    const rects = agentIds.map((id) => elementRects[id])
+    const left = Math.min(...rects.map((r) => r.x - r.w / 2))
+    const right = Math.max(...rects.map((r) => r.x + r.w / 2))
+    const top = Math.min(...rects.map((r) => r.y - r.h / 2))
+    const bottom = Math.max(...rects.map((r) => r.y + r.h / 2))
+    agentRect = { x: (left + right) / 2, y: (top + bottom) / 2, w: right - left, h: bottom - top }
+  }
+  /**
+   * The selection's chat. A single frame with no chat of its own picks up the latest chat that
+   * generated variants from it (e.g. one card of a multi-card run reopens that run).
+   */
+  const agentSession =
+    agentIds.length === 0
+      ? undefined
+      : (agents.sessionFor(agentIds) ??
+        (agentIds.length === 1
+          ? agents.sessions.findLast(
+              (s) => s.elementIds.includes(agentIds[0]) && agents.variants.some((v) => v.sessionId === s.id),
+            )
+          : undefined))
+  /** Frames an agent is reading / replying about, with its chat open (tint + dashed outline). */
+  const workingIds = new Set(
+    agents.sessions
+      .filter((s) => s.working && s.phase !== "generating" && s.phase !== "building")
+      .flatMap((s) => s.elementIds),
+  )
+  /** Frames an agent is generating variants from / building: their spinning agent badge. */
+  const busySessions = agents.sessions.filter((s) => s.working && (s.phase === "generating" || s.phase === "building"))
+  const busyIds = new Set(busySessions.flatMap((s) => s.elementIds))
+
+  // When the open chat's agent starts generating / building, the chat closes and the selection
+  // clears: the canvas shows the work, the originals only their spinning agent badge.
+  const busyKey = busySessions.map((s) => s.id).join(",")
+  const openSessionId = agentOpen ? agentSession?.id : undefined
+  useEffect(() => {
+    if (openSessionId === undefined || !busySessions.some((s) => s.id === openSessionId)) return
+    setAgentOpen(false)
+    setSelectedIds([])
+    setPickSession(null)
+    // Only when an agent starts (or the open chat changes); busySessions is derived from busyKey.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busyKey, openSessionId])
+
+  /**
+   * Where dropped components sit: on the app frames and on the variants (a variant being carried
+   * takes its components with it).
+   */
+  const componentFrameRects: Record<string, CanvasRect> = { ...elementRects }
+  for (const v of agents.variants) {
+    const drag = variantDrag?.id === v.id ? variantDrag : null
+    componentFrameRects[v.id] = drag
+      ? { ...v.rect, x: v.rect.x + drag.x / camera.zoom, y: v.rect.y + drag.y / camera.zoom }
+      : v.rect
+  }
+
+  // Tell the guide (if any) what the visitor has done.
+  useEffect(() => {
+    emitGuide({ type: "selection", ids: selectedIds })
+  }, [selectedIds, emitGuide])
+  useEffect(() => {
+    emitGuide({ type: "agent", open: agentOpen })
+  }, [agentOpen, emitGuide])
+  const hasVariants = agents.variants.length > 0
+  useEffect(() => {
+    if (hasVariants) emitGuide({ type: "variants-generated" })
+  }, [hasVariants, emitGuide])
+
+  /**
+   * Guided camera: glide to show a box (canvas units, centre-based) as large as fits between the
+   * top bar and the guide card docked at the bottom. A press on the canvas stops it.
+   */
+  const glideFrame = useRef(0)
+  useEffect(() => () => cancelAnimationFrame(glideFrame.current), [])
+  const glideToBox = useCallback(
+    /** `clearLeft`: room kept free along the left edge (layout px), e.g. for an open side panel. */
+    (box: CanvasRect, clearLeft = 0) => {
+      const canvas = canvasRef.current
+      const from = cameraRef.current
+      if (!canvas || !from) return
+      const width = canvas.clientWidth
+      const height = canvas.clientHeight
+      // The same fit as the canvas's zoom limits (width-based; guided: height-capped too).
+      const fitNow = fitRef.current
+      const areaLeft = clearLeft + FOCUS_MARGIN_X
+      const areaRight = width - FOCUS_MARGIN_X
+      const areaTop = TOP_BAR_HEIGHT + FOCUS_MARGIN_Y
+      const areaBottom = height - GUIDE_CLEARANCE
+      const zoom = clamp(
+        Math.min((areaRight - areaLeft) / box.w, (areaBottom - areaTop) / box.h),
+        MIN_ZOOM * fitNow,
+        maxZoom * fitNow,
+      )
+      const to: Camera = {
+        zoom,
+        x: (areaLeft + areaRight) / 2 - width / 2 - box.x * zoom,
+        y: (areaTop + areaBottom) / 2 - height / 2 - box.y * zoom,
+      }
+      cancelAnimationFrame(glideFrame.current)
+      const start = performance.now()
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / GLIDE_MS)
+        const k = 1 - Math.pow(1 - t, 3) // ease-out
+        setCamera({ zoom: from.zoom + (to.zoom - from.zoom) * k, x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k })
+        if (t < 1) glideFrame.current = requestAnimationFrame(step)
+      }
+      glideFrame.current = requestAnimationFrame(step)
+    },
+    [maxZoom],
+  )
+
+  // The latest variant run, as it goes (for the guide). Guided: as its first copy lands, the camera
+  // glides to the row the copies are being built in, so the visitor watches them take shape.
+  const variantsFocused = useRef(new Set<number>())
+  useEffect(() => {
+    const latest = agents.variants[agents.variants.length - 1]
+    if (!latest) return
+    const run = agents.variants.filter((v) => v.sessionId === latest.sessionId)
+    const total = latest.source.variants.length
+    emitGuide({
+      type: "variants-progress",
+      done: run.filter((v) => v.status === "done").length,
+      total,
+      settled: run.length === total && run.every((v) => v.settled),
+    })
+    if (!guided || variantsFocused.current.has(latest.sessionId)) return
+    variantsFocused.current.add(latest.sessionId)
+    // The row's copies sit side by side from the first one rightward (see placeVariants).
+    const first = run[0]
+    const rowWidth = total * first.rect.w + (total - 1) * VARIANT_GAP
+    glideToBox({ x: first.rect.x - first.rect.w / 2 + rowWidth / 2, y: first.rect.y, w: rowWidth, h: first.rect.h })
+  }, [agents.variants, guided, emitGuide, glideToBox])
+
+  // Guided: glide to what the current step works on ("overview": everything on the canvas that's
+  // part of the work: the Codebase frame, the app frames, the variants and the captures;
+  // "variants": the variant row, clear of the Components library open on the left).
+  useEffect(() => {
+    if (!guideFocus) return
+    const captureRects = captures.map((c) => ({ x: c.x + c.w / 2, y: c.y + c.h / 2, w: c.w, h: c.h }))
+    const rects =
+      guideFocus === "captures"
+        ? captureRects
+        : guideFocus === "variants"
+          ? agents.variants.map((v) => v.rect)
+          : [
+              ...(showCodebase ? [codebaseRect] : []),
+              ...canvasElements.filter((el) => !el.exploration).map((el) => elementRects[el.id]),
+              ...agents.variants.map((v) => v.rect),
+              ...captureRects,
+            ]
+    if (rects.length === 0) return
+    const left = Math.min(...rects.map((r) => r.x - r.w / 2))
+    const right = Math.max(...rects.map((r) => r.x + r.w / 2))
+    const top = Math.min(...rects.map((r) => r.y - r.h / 2))
+    const bottom = Math.max(...rects.map((r) => r.y + r.h / 2))
+    glideToBox(
+      { x: (left + right) / 2, y: (top + bottom) / 2, w: right - left, h: bottom - top },
+      guideFocus === "variants" ? LIBRARY_CLEARANCE : 0,
+    )
+    // Only when the focus changes: the frames are read where they are at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [guideFocus, glideToBox])
+  const componentCount = useRef(frameComponents.length)
+  useEffect(() => {
+    if (frameComponents.length > componentCount.current) {
+      const added = frameComponents[frameComponents.length - 1]
+      emitGuide({ type: "component-added", frameId: added.frameId })
+    }
+    componentCount.current = frameComponents.length
+  }, [frameComponents, emitGuide])
+  const portalWasOpen = useRef(portalOpen)
+  useEffect(() => {
+    if (portalOpen === portalWasOpen.current) return
+    portalWasOpen.current = portalOpen
+    emitGuide(portalOpen ? { type: "portal-opened", attached: portalAttach ?? [] } : { type: "portal-closed" })
+    // Only when the Portal opens or closes (portalAttach is set together with the opening).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [portalOpen, emitGuide])
+  /**
+   * Captured in Build mode: the copy lands on the canvas as a frame, right of the Codebase frame
+   * (below the previous capture), at the size it has in the app.
+   */
+  const onPortalCapture = useCallback(
+    (capture: CapturedElement) => {
+      const units = captureUnits(capture)
+      const id = `capture-${nextCaptureId.current++}`
+      const frame = codebaseRectRef.current ?? { x: 0, y: 0, w: CODEBASE_WIDTH, h: CODEBASE_HEIGHT }
+      setCaptures((list) => {
+        const last = list[list.length - 1]
+        return [
+          ...list,
+          {
+            id,
+            capture,
+            x: frame.x + frame.w / 2 + CAPTURE_GAP,
+            y: last ? last.y + last.h + CAPTURE_GAP : frame.y - frame.h / 2,
+            w: capture.width * units,
+            h: capture.height * units,
+          },
+        ]
+      })
+      emitGuide({ type: "captured" })
+    },
+    [emitGuide],
+  )
+  /** A message was sent in the Portal's chat (stable: the Portal is memoized). */
+  const onPortalMessageSent = useCallback(() => emitGuide({ type: "portal-sent" }), [emitGuide])
+  /** GitHub sequence (create → sync → PR), for the guide. Stable: the GitHub button is memoized. */
+  const onGithubProgress = useCallback(
+    (stage: "created" | "synced" | "pr-opened") => emitGuide({ type: "github", stage }),
+    [emitGuide],
+  )
+  /** Merged: the end of the story (the canvas closes), except in the guided onboarding, where it carries on. */
+  const onPullRequestMerged = useCallback(() => {
+    emitGuide({ type: "github", stage: "merged" })
+    if (!guided) closeCanvas()
+  }, [emitGuide, guided, closeCanvas])
+
+  /** Variant rows go below everything on the canvas, one row per source (see VARIANT_GAP). */
+  const placeVariants: PlaceVariants = (sources) => {
+    // Guided: one row centred right under the Codebase frame, so a variant is a short drag from it.
+    if (guided && showCodebase) {
+      let top = codebaseRect.y + codebaseRect.h / 2 + GUIDED_VARIANT_GAP
+      return sources.map(({ elementId, count }) => {
+        const source = elementRects[elementId]
+        const rowWidth = count * source.w + (count - 1) * VARIANT_GAP
+        const left = codebaseRect.x - rowWidth / 2
+        const row = Array.from({ length: count }, (_, i) => ({
+          x: left + i * (source.w + VARIANT_GAP) + source.w / 2,
+          y: top + source.h / 2,
+          w: source.w,
+          h: source.h,
+        }))
+        top += source.h + VARIANT_GAP
+        return row
+      })
+    }
+    // Below the app's own elements, in the lane the explored screens leave free (they sit above
+    // and to either side).
+    const appRects = AIRBNB_ELEMENTS.filter((el) => !el.exploration).map((el) => elementRects[el.id])
+    const occupied = [codebaseRect, ...appRects, ...agents.variants.map((v) => v.rect)]
+    let top = Math.max(...occupied.map((r) => r.y + r.h / 2)) + VARIANT_ROW_GAP
+    return sources.map(({ elementId, count }) => {
+      const source = elementRects[elementId]
+      const left = source.x - source.w / 2
+      const row = Array.from({ length: count }, (_, i) => ({
+        x: left + i * (source.w + VARIANT_GAP) + source.w / 2,
+        y: top + source.h / 2,
+        w: source.w,
+        h: source.h,
+      }))
+      top += source.h + VARIANT_ROW_GAP
+      return row
+    })
+  }
+
+  // Agent cursors: after each step, find the piece being edited and park the cursor at its
+  // top-left corner (canvas units, so panning / zooming doesn't move it).
+  const focus = agents.focus
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const box = canvas.getBoundingClientRect()
+    // Screen px → the canvas's layout px (the screen may be drawn scaled).
+    const k = screenScale(canvas)
+    const next: Record<number, { x: number; y: number }> = {}
+    for (const [id, f] of Object.entries(focus)) {
+      if (!f) continue
+      const piece = canvas.querySelector(agentPartSelector(f.variantId, f.part))
+      if (!piece) continue
+      const r = piece.getBoundingClientRect()
+      next[Number(id)] = {
+        x: ((r.left - box.left) / k - AGENT_CURSOR_INSET - box.width / k / 2 - camera.x) / camera.zoom,
+        y: ((r.top - box.top) / k - AGENT_CURSOR_INSET - box.height / k / 2 - camera.y) / camera.zoom,
+      }
+    }
+    setCursorAt(next)
+    // Re-measure only when an agent moves on to another piece; the camera is read as it is then.
+  }, [focus])
+
+  /**
+   * Build Agent input: sits right of the selection's top-right corner. The shift keeps it clear of
+   * the left sidebar, the settings panel and the top bar; it's animated so the input glides aside.
+   * While picking a variant it glides to the selection's left instead: variant rows run rightward
+   * from their source, so on the right it would sit over the variants being picked from.
+   */
+  // Placed in the root's layout px, from layout boxes, so it holds while the screen is drawn scaled.
   let composer: { left: number; top: number; shiftX: number; shiftY: number } | null = null
-  if (activeRect && agentOpen && rootRect) {
+  if (agentRect && agentOpen && rootBox) {
     const z = camera.zoom
-    const left = rootRect.width / 2 + camera.x + (activeRect.x + activeRect.w / 2) * z + COMPOSER_GAP
-    const top = rootRect.height / 2 + camera.y + (activeRect.y - activeRect.h / 2) * z
-    const minLeft = (sidebarRect ? sidebarRect.right - rootRect.left : 0) + COMPOSER_GAP
-    const maxLeft = (panelRect ? panelRect.left - rootRect.left : rootRect.width) - COMPOSER_GAP - COMPOSER_WIDTH
+    const left = rootBox.width / 2 + camera.x + (agentRect.x + agentRect.w / 2) * z + COMPOSER_GAP
+    const top = rootBox.height / 2 + camera.y + (agentRect.y - agentRect.h / 2) * z
+    const picking = !!agentSession && pickSession === agentSession.id
+    const leftOfSelection = rootBox.width / 2 + camera.x + (agentRect.x - agentRect.w / 2) * z - COMPOSER_GAP - COMPOSER_WIDTH
+    const minLeft = (sidebarBox ? sidebarBox.left + sidebarBox.width : 0) + COMPOSER_GAP
+    const maxLeft = (panelBox ? panelBox.left : rootBox.width) - COMPOSER_GAP - COMPOSER_WIDTH
     const minTop = TOP_BAR_HEIGHT + COMPOSER_GAP
-    const maxTop = rootRect.height - COMPOSER_GAP - composerHeight
-    const clampedLeft = Math.max(minLeft, Math.min(left, maxLeft))
+    const maxTop = rootBox.height - COMPOSER_GAP - composerHeight
+    const clampedLeft = Math.max(minLeft, Math.min(picking ? leftOfSelection : left, maxLeft))
     const clampedTop = Math.max(minTop, Math.min(top, maxTop))
     composer = { left, top, shiftX: clampedLeft - left, shiftY: clampedTop - top }
+  }
+
+  /**
+   * Leaving the Portal reveals only the Codebase frame; everything else glides in from the side of
+   * it that the element sits on: elements above the frame's top edge come from above (Status Bar,
+   * Scrubber), below its bottom edge from below (events), otherwise from the left or right
+   * (Background, Toolbar). The delays sweep clockwise around the frame (top, right, bottom, left);
+   * each element starts before the previous ones have settled, so the reveal travels in a circle.
+   */
+  function entranceFor(rect: CanvasRect, source?: AppElement): CanvasEntrance | null {
+    // No entrance on this screen: the elements are simply on the canvas, under the Portal too.
+    if (!canvasEntrance) return null
+    // Before the first reveal (the screen opens in the Portal, or waits for its load-in entrance):
+    // only the Codebase frame is on the canvas. After it, the elements stay loaded under the
+    // Portal, so closing it again shows them in place instead of bringing them in again.
+    if (revealId === 0) return portalOpen || hasIntro ? "hidden" : null
+    const z = camera.zoom
+    const dx = (rect.x - codebaseRect.x) * z
+    const dy = (rect.y - codebaseRect.y) * z
+    const outsideVertically = Math.abs(rect.y - codebaseRect.y) > codebaseRect.h / 2
+    const travel = (along: number) => Math.sign(along) * Math.max(ENTER_MIN_TRAVEL, Math.abs(along) * ENTER_SPREAD)
+    // Clockwise sweep: angle from straight up (0 = top, ¼ = right, ½ = bottom, ¾ = left), measured
+    // from the top-left diagonal so everything above the frame starts the sweep.
+    const angle = Math.atan2(dx, -dy) / (2 * Math.PI) // −½…½, clockwise from up
+    const sweep = (((angle - ENTER_SWEEP_START) % 1) + 1) % 1 // 0…1 from the start diagonal
+    // The load-in may play the entrance faster (its delays and glides alike); leaving the Portal
+    // always plays it at its own pace.
+    const pace = loadIntro?.elementsTimeScale ?? 1
+    // "emerge" load-in: an app element starts exactly on its spot in the live app inside the
+    // Codebase frame (`appRect`, same size), and glides out to its place on the canvas, one after
+    // another in the app's reading order. Anything else grows out of the frame's centre. Mounted
+    // (hidden) from the start, so the glide plays as it's revealed.
+    if (emergeIntro) {
+      const index = source ? canvasElements.indexOf(source) : -1
+      const from = source?.appRect ?? { x: 0, y: 0, w: rect.w * EMERGE_START_SCALE, h: rect.h * EMERGE_START_SCALE }
+      return {
+        x: (codebaseRect.x + from.x - rect.x) * z,
+        y: (codebaseRect.y + from.y - rect.y) * z,
+        scale: from.w / rect.w,
+        quickFade: true,
+        delay: Math.round((ENTER_BASE_DELAY + Math.max(index, 0) * EMERGE_STAGGER_MS) * pace),
+        duration: Math.round(EMERGE_DURATION_MS * pace),
+        onReveal: true,
+      }
+    }
+    // "flip" load-in: once the Codebase frame has landed, the elements glide in around it from their
+    // side of it, sweeping clockwise (the v1 directional move-in). They stay mounted (hidden) from
+    // the start, so the glide plays as they're revealed (`onReveal`) rather than on a remount.
+    if (flipIntro) {
+      // After the load-in, anything new is simply there (no entrance when it mounts later).
+      if (introSteps.includes("settled")) return null
+      return {
+        x: outsideVertically ? 0 : travel(dx),
+        y: outsideVertically ? travel(dy) : 0,
+        delay: Math.round((ENTER_BASE_DELAY + sweep * ENTER_SWEEP_MS) * pace),
+        duration: Math.round(ENTRANCE_DURATION_MS * pace),
+        onReveal: true,
+      }
+    }
+    // A calm canvas with just a frame or two: it simply glides in, right away and briefly.
+    if (quickEntrance) {
+      return {
+        x: outsideVertically ? 0 : travel(dx),
+        y: outsideVertically ? travel(dy) : 0,
+        delay: QUICK_ENTER_DELAY,
+        duration: QUICK_ENTER_DURATION_MS,
+      }
+    }
+    return {
+      x: outsideVertically ? 0 : travel(dx),
+      y: outsideVertically ? travel(dy) : 0,
+      delay: Math.round((ENTER_BASE_DELAY + sweep * ENTER_SWEEP_MS) * pace),
+      duration: Math.round(ENTRANCE_DURATION_MS * pace),
+    }
   }
 
   // Scroll / trackpad pans; pinch or ⌘/Ctrl + scroll zooms toward the cursor.
@@ -402,13 +1925,18 @@ export function HeroScreen() {
 
     function fromCentre(clientX: number, clientY: number) {
       const rect = canvas.getBoundingClientRect()
-      return { px: clientX - rect.left - rect.width / 2, py: clientY - rect.top - rect.height / 2 }
+      // In the canvas's layout px (the screen may be drawn scaled).
+      const k = screenScale(canvas)
+      return { px: (clientX - rect.left - rect.width / 2) / k, py: (clientY - rect.top - rect.height / 2) / k }
     }
 
     function onWheel(e: WheelEvent) {
+      const zooming = e.ctrlKey || e.metaKey
+      // No canvas scrolling: leave the event alone so the page scrolls.
+      if (!zooming && !scrollPans) return
       e.preventDefault()
       const unit = e.deltaMode === 1 ? 16 : 1 // line-based deltas (some mice) → px
-      if (e.ctrlKey || e.metaKey) {
+      if (zooming) {
         const { px, py } = fromCentre(e.clientX, e.clientY)
         setCamera((c) => zoomAt(c, c.zoom * Math.exp(-e.deltaY * unit * WHEEL_ZOOM_SPEED), px, py, boundsRef.current))
       } else {
@@ -439,15 +1967,16 @@ export function HeroScreen() {
       canvas.removeEventListener("gesturestart", onGestureStart)
       canvas.removeEventListener("gesturechange", onGestureChange)
     }
-  }, [])
+  }, [scrollPans])
 
   function endPan() {
     lastPointer.current = null
     setPanning(false)
   }
 
-  // Single-key tool shortcuts shown in the toolbar labels (V, F, T, P)
+  // Single-key tool shortcuts shown in the toolbar labels (V, F, T, P). Off while the load-in plays.
   useEffect(() => {
+    if (!toolsEnabled || introRunning) return
     function onKeyDown(e: KeyboardEvent) {
       if (e.metaKey || e.ctrlKey || e.altKey) return
       const target = e.target as HTMLElement | null
@@ -457,18 +1986,26 @@ export function HeroScreen() {
     }
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [])
+  }, [toolsEnabled, introRunning])
 
   return (
-    <div ref={rootRef} className="relative h-dvh w-full select-none overflow-hidden bg-mi-canvas">
+    <PanelLoadInContext.Provider value={panelsEntering}>
+    <div
+      ref={rootRef}
+      data-hero-root
+      // Not interactive while the load-in plays (see `introRunning`).
+      inert={introRunning}
+      className={cn("relative h-dvh w-full select-none overflow-hidden bg-mi-canvas", className)}
+    >
       {/*
         Canvas: clicking empty space clears the selection. With the Select tool, dragging empty
-        space draws a selection box; the Frame / Text tools create an element wherever they're
-        pressed (even over another frame); other tools (or the middle button) pan.
-        Scroll / trackpad always pans.
+        space pans the camera (Shift + drag draws a selection box); the Frame / Text tools create
+        an element wherever they're pressed (even over another frame); other tools (or the middle
+        button) pan. Scroll / trackpad always pans.
       */}
       <div
         ref={canvasRef}
+        data-hero-canvas
         className={cn(
           "absolute inset-0 touch-none",
           panning
@@ -487,10 +2024,15 @@ export function HeroScreen() {
           startCreate(e)
         }}
         onPointerDown={(e) => {
+          // The visitor takes the camera: any guided glide stops where it is.
+          cancelAnimationFrame(glideFrame.current)
           setCodebaseSelected(false)
           setSelectedIds([])
+          setSelectedComponentId(null)
+          setSelectedLayer(null)
           setAgentOpen(false)
-          if (e.button === 0 && tool === "select") {
+          setPickSession(null)
+          if (e.button === 0 && tool === "select" && e.shiftKey) {
             startMarquee(e)
             return
           }
@@ -502,38 +2044,101 @@ export function HeroScreen() {
         onPointerMove={(e) => {
           const last = lastPointer.current
           if (!last) return
-          const dx = e.clientX - last.x
-          const dy = e.clientY - last.y
+          const k = screenScale(e.currentTarget) // screen px → layout px
+          const dx = (e.clientX - last.x) / k
+          const dy = (e.clientY - last.y) / k
           lastPointer.current = { x: e.clientX, y: e.clientY }
           setCamera((c) => clampCamera({ ...c, x: c.x + dx, y: c.y + dy }, bounds))
         }}
         onPointerUp={endPan}
         onPointerCancel={endPan}
       >
-        <CodebaseFrame
-          selected={codebaseSelected}
-          onSelect={selectCodebase}
-          onMoveStart={(e) => startMove(e, "codebase")}
-          onOpen={() => setPortalOpen(true)}
-          zoom={camera.zoom}
-          offsetX={camera.x + codebaseRect.x * camera.zoom}
-          offsetY={camera.y + codebaseRect.y * camera.zoom}
-        />
-        {CALENDAR_ELEMENTS.map((el) => (
+        {showCodebase && (
+          <CodebaseFrame
+            // "emerge" load-in: highlighted (green, with its capture actions) while the app's pieces
+            // come off it, without opening its settings panel.
+            selected={codebaseSelected || (emergeIntro && elementsIn && !introSteps.includes("settled"))}
+            onSelect={selectCodebase}
+            onMoveStart={(e) => startMove(e, "codebase")}
+            onOpen={openPortal}
+            covered={canvasCovered}
+            zoom={camera.zoom}
+            offsetX={camera.x + codebaseRect.x * camera.zoom}
+            offsetY={camera.y + codebaseRect.y * camera.zoom}
+            // Fades in with the live app's own opening playing inside it (the previous entrance).
+            appear={hasIntro ? (codebaseIn ? "in" : "hidden") : undefined}
+            built={codebaseBuilt}
+          />
+        )}
+        {/* Drop target: while app frames are dragged, the Codebase frame shows it takes them (dashed),
+            and lights up with "Add to Build Chat" once the pointer is over it. */}
+        {showCodebase && portalDrop && (
+          <div
+            aria-hidden="true"
+            data-cursor-id="codebase-drop-target"
+            className="pointer-events-none absolute z-[13] -translate-x-1/2 -translate-y-1/2"
+            style={{
+              left: `calc(50% + ${camera.x + codebaseRect.x * camera.zoom}px)`,
+              top: `calc(50% + ${camera.y + codebaseRect.y * camera.zoom}px)`,
+              width: codebaseRect.w * camera.zoom,
+              height: codebaseRect.h * camera.zoom,
+            }}
+          >
+            <div
+              className={cn(
+                "absolute -inset-[5px] rounded-[10px] border-2 transition-colors duration-150",
+                portalDrop === "over" ? "border-[#2fb457] bg-[#2fb457]/[0.06]" : "border-dashed border-[#2fb457]/70",
+              )}
+            />
+            {/* In the frame's own label row, at its title's size (see CodebaseFrame), at the right end */}
+            <div className="absolute inset-x-0 -top-7 flex h-6 items-center justify-end">
+              <span
+                className={cn(
+                  "flex h-5 items-center gap-1 whitespace-nowrap rounded-[5px] border bg-white px-1.5 font-medium transition-colors duration-150 [&_svg]:size-[11px]",
+                  portalDrop === "over" ? "border-[#2fb457] text-[#1e8a3f]" : "border-[#cfe8d6] text-[#2f9b52]",
+                )}
+                style={{ fontSize: 10 }}
+              >
+                <AddToChatIcon />
+                {portalDrop === "over" ? "Add to Build Chat" : "Drop on the Codebase to build"}
+              </span>
+            </div>
+          </div>
+        )}
+        {canvasElements.map((el) => {
+          const isTrip = el.id === TRIP_CARD_ID
+          return (
           <DesignFrame
-            key={el.id}
+            // Remount on each reveal so the entrance animation replays. "flip" / "emerge": never
+            // remounted (the entrance plays as the frame goes from hidden to in), so it's loaded long
+            // before it shows.
+            key={flipIntro || emergeIntro ? el.id : `${el.id}-${revealId}`}
             id={el.id}
-            label={el.name}
+            label={elementNames[el.id]}
+            onRename={(name) => setElementNames((current) => ({ ...current, [el.id]: name }))}
             rect={elementRects[el.id]}
-            naturalSize={el.rect}
-            fill={el.fill}
+            // The trip card's artwork grows with the space above its nights.
+            naturalSize={isTrip ? { w: el.rect.w, h: el.rect.h + numeralGap } : el.rect}
+            fill={elementFills[el.id]}
+            repaint={elementFills[el.id] !== el.fill ? elementFills[el.id] : null}
             radius={elementRadii[el.id]}
             border={el.border}
             bare={el.bare}
             labelOnSelect={el.labelOnSelect}
             selected={selectedIds.includes(el.id)}
-            onSelect={() => selectElement(el.id)}
-            onMoveStart={(e) => startMove(e, { elementId: el.id })}
+            // A press on the trip card's nights (or on a frame's padding layer) selects that layer
+            // instead (and doesn't move the card).
+            onSelect={(e) =>
+              isTrip && onNightsLayer(e)
+                ? selectNightsLayer()
+                : onPaddingLayer(e, el)
+                  ? selectPaddingLayer(el.id)
+                  : selectElement(el.id, e.shiftKey)
+            }
+            onMoveStart={(e) => {
+              if ((isTrip && onNightsLayer(e)) || onPaddingLayer(e, el)) return
+              startMove(e, { elementId: el.id })
+            }}
             onResizeStart={(e, corner) => startResize(e, corner, el.id)}
             onRadiusStart={(e, corner) => {
               const { w, h } = elementRects[el.id]
@@ -543,20 +2148,124 @@ export function HeroScreen() {
             }}
             showAgentButton={activeElement?.id === el.id && !agentOpen}
             onOpenAgent={() => setAgentOpen(true)}
-            working={agentOpen && agentWorking && activeElement?.id === el.id}
+            working={workingIds.has(el.id)}
+            agentBusy={busyIds.has(el.id)}
             zoom={camera.zoom}
             offsetX={camera.x}
             offsetY={camera.y}
+            entrance={entranceFor(elementRects[el.id], el)}
           >
-            {el.content}
+            {isTrip ? (
+              // The nights numeral is a selectable layer: outlined on hover; selected, it gets its
+              // selection chrome and margin guides (LayerSelectionOverlay). The wrapper is positioned
+              // so the overlay can read the numeral's offsets against it.
+              <div
+                className={cn("relative size-full", selectedLayer !== "nights" && NIGHTS_LAYER_HOVER)}
+                style={{ "--layer-line": `${1 / camera.zoom}px` } as React.CSSProperties}
+              >
+                <TripCard numeralGap={numeralGap / CQW} />
+                {selectedLayer === "nights" && (
+                  <LayerSelectionOverlay layer="nights" marginTop={numeralGap} zoom={camera.zoom} />
+                )}
+              </div>
+            ) : el.paddingLayer ? (
+              // The padding layer is selectable on its own: outlined on hover; selected, it gets its
+              // selection chrome. Its artwork reads the live padding from the CSS variables. The
+              // overlay remounts with each padding change, so it re-measures the resized layer.
+              <div
+                className={cn("relative size-full", selectedLayer !== el.id && PADDING_LAYER_HOVER)}
+                style={
+                  {
+                    "--layer-line": `${1 / camera.zoom}px`,
+                    "--layer-padding-x": `${layerPaddings[el.id].x}px`,
+                    "--layer-padding-y": `${layerPaddings[el.id].y}px`,
+                  } as React.CSSProperties
+                }
+              >
+                {el.content}
+                {selectedLayer === el.id && (
+                  <LayerSelectionOverlay
+                    key={`${layerPaddings[el.id].x}:${layerPaddings[el.id].y}`}
+                    layer={el.paddingLayer.id}
+                    marginTop={0}
+                    zoom={camera.zoom}
+                  />
+                )}
+              </div>
+            ) : (
+              el.content
+            )}
           </DesignFrame>
+          )
+        })}
+        {/* Variants generated by the Build Agent, then the agents' cursors over them */}
+        {agents.variants.map((variant) => (
+          <VariantFrame
+            key={variant.id}
+            variant={variant}
+            zoom={camera.zoom}
+            offsetX={camera.x}
+            offsetY={camera.y}
+            pickable={pickSession === variant.sessionId && variant.status === "done"}
+            onPick={() => {
+              // Building starts: the chat closes and the selection clears right away.
+              setPickSession(null)
+              setAgentOpen(false)
+              setSelectedIds([])
+              agents.build(variant.sessionId, variant.id)
+            }}
+            built={agents.builtVariant?.id === variant.id}
+            onDragStart={(e) => startVariantDrag(e, variant.id)}
+            dragOffset={variantDrag?.id === variant.id ? variantDrag : null}
+          />
         ))}
+        {/* Library components dropped into the frames (app frames and variants), over them */}
+        <FrameComponentsLayer
+          components={frameComponents}
+          frameRects={componentFrameRects}
+          camera={camera}
+          selectedId={selectedComponentId}
+          onPress={pressComponent}
+          entranceFor={entranceFor}
+          revealKey={flipIntro || emergeIntro ? 0 : revealId}
+        />
+        {/* Pieces of the live app captured in Build mode */}
+        {captures.map((item) => (
+          <CapturedFrame
+            key={item.id}
+            item={item}
+            camera={camera}
+            selected={false}
+            onPointerDown={(e) => startCaptureMove(e, item.id)}
+          />
+        ))}
+        {agentCursors &&
+          Object.entries(cursorAt).map(([id, at]) => (
+            <AgentCursor key={id} x={at.x} y={at.y} zoom={camera.zoom} offsetX={camera.x} offsetY={camera.y} />
+          ))}
+        {/* Several frames selected: their bounding box, with the Build Agent button off its corner */}
+        {agentRect && agentIds.length > 1 && (
+          <div
+            data-cursor-id="selection-group"
+            className="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2"
+            style={{
+              left: `calc(50% + ${camera.x + agentRect.x * camera.zoom}px)`,
+              top: `calc(50% + ${camera.y + agentRect.y * camera.zoom}px)`,
+              width: agentRect.w * camera.zoom,
+              height: agentRect.h * camera.zoom,
+            }}
+          >
+            <div className="absolute -inset-[3px] border border-[#2f6bf6]/60" />
+            {!agentOpen && <BuildAgentButton onClick={() => setAgentOpen(true)} />}
+          </div>
+        )}
         {drawnElements.map((el) =>
           el.kind === "frame" ? (
             <DrawnFrame
-              key={el.id}
+              key={`${el.id}-${revealId}`}
               el={el}
               camera={camera}
+              entrance={entranceFor(elementRect(el))}
               selected={selectedIds.includes(el.id)}
               onPointerDown={(e) => {
                 selectElement(el.id)
@@ -571,9 +2280,10 @@ export function HeroScreen() {
             />
           ) : (
             <CanvasText
-              key={el.id}
+              key={`${el.id}-${revealId}`}
               el={el}
               camera={camera}
+              entrance={entranceFor(elementRect(el))}
               selected={selectedIds.includes(el.id)}
               editing={editingId === el.id}
               onPointerDown={(e) => {
@@ -591,6 +2301,14 @@ export function HeroScreen() {
         )}
       </div>
 
+      {/* Edge fade: frames dissolve into the canvas colour over the last 40px at each of the
+          viewport's borders. Above the canvas content (frames go up to z-12), below the sidebar,
+          panels and top bar. */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 z-[15] bg-[linear-gradient(to_right,var(--color-mi-canvas),transparent_40px),linear-gradient(to_left,var(--color-mi-canvas),transparent_40px),linear-gradient(to_bottom,var(--color-mi-canvas),transparent_40px),linear-gradient(to_top,var(--color-mi-canvas),transparent_40px)]"
+      />
+
       {marquee && (
         <div
           aria-hidden="true"
@@ -601,31 +2319,96 @@ export function HeroScreen() {
 
       {composer && (
         <BuildAgentComposer
+          // One composer per selection, so a half-typed prompt doesn't carry over. Prefixed: a bare
+          // element id would collide with the settings panel's key (a sibling keyed by the same id),
+          // and duplicate keys make React duplicate the composer on every re-render.
+          key={`composer:${[...agentIds].sort().join("+")}`}
           {...composer}
+          session={agentSession}
+          variants={agents.variants}
+          presetPrompt={agentPrompt}
+          onSend={(text, byVisitor) => {
+            emitGuide({ type: "agent-sent" })
+            agents.send({
+              // A reopened chat (single frame showing a group's run) keeps talking to that run.
+              elementIds: agentSession?.elementIds ?? agentIds,
+              text,
+              // A real visitor's message gets the sign-up reply instead of variants (not in the guided onboarding).
+              byVisitor: byVisitor && !guided,
+              place: placeVariants,
+              originOf: (id) => ({ x: elementRects[id].x, y: elementRects[id].y }),
+              components: frameComponents,
+              // Card frames whose fill was changed on the canvas (what a fill build ships).
+              fills: AIRBNB_ELEMENTS.flatMap((el) => {
+                const fill = elementFills[el.id]
+                return el.cardTitle && fill && fill !== el.fill ? [{ frameId: el.id, cardTitle: el.cardTitle, fill }] : []
+              }),
+            })
+          }}
+          onStop={() => agentSession && agents.stop(agentSession.id)}
+          onClear={() => agentSession && agents.clear(agentSession.id)}
+          onChooseBuild={() => {
+            if (!agentSession || !agents.variants.some((v) => v.sessionId === agentSession.id)) return
+            setPickSession((current) => (current === agentSession.id ? null : agentSession.id))
+          }}
+          picking={!!agentSession && pickSession === agentSession.id}
           onClose={() => setAgentOpen(false)}
-          onWorkingChange={setAgentWorking}
           onHeightChange={setComposerHeight}
         />
       )}
 
-      {/* Top bar */}
-      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex h-11 items-center justify-between pl-2 pr-3 *:pointer-events-auto">
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            aria-label="Home"
-            className="flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
-          >
-            <HomeIcon />
-          </button>
-          <CanvasTitle />
-        </div>
+      <AgentsPopover agents={agentThumbs} />
 
-        <div className="flex items-center gap-1">
+      {/* Top bar: two floating groups (canvas title on the left, actions on the right), each on
+          its own panel background so they read over whatever is on the canvas beneath them.
+          While the Portal is open it stays on top of it, with "Back to Canvas" on the left. */}
+      <header
+        className={cn(
+          "pointer-events-none absolute inset-x-1 top-1 flex items-center justify-between *:pointer-events-auto",
+          portalOpen && !portalClosing ? "z-[60]" : "z-40",
+        )}
+      >
+        {portalOpen && !portalClosing ? (
+          // In a panel with the Undo / Redo group's surface (PORTAL_TOP_GROUP's colour, still 38px tall
+          // overall), 2px less rounded; the button a 28px pill inset by a 4px padding, with no background
+          // of its own: like the other top-bar buttons, it only tints on hover.
+          <div className="rounded-[10px] border border-transparent bg-[#ededeb] p-1">
+            <button
+              type="button"
+              aria-label="Back to canvas"
+              onClick={closePortal}
+              // Not through cn(): tailwind-merge reads the custom `text-px-12` size as a text colour and
+              // drops it in favour of `text-stone-900`. The arrow is drawn like the Portal toolbar's Back.
+              // Inner radius = the panel's 10px − its 5px margin (1px transparent border + 4px padding).
+              className="flex h-7 items-center gap-1.5 rounded-[5px] px-2.5 text-px-12 font-medium text-stone-900 transition-colors hover:bg-stone-700/5"
+            >
+              <ArrowLeft className="size-3.5 shrink-0" strokeWidth={1.5} />
+              Back to Canvas
+            </button>
+          </div>
+        ) : (
+          <div
+            className={cn("flex items-center gap-1.5", TOP_GROUP, titleIntro.className)}
+            style={titleIntro.style}
+          >
+            <button
+              type="button"
+              aria-label="Home"
+              className={cn("flex size-8 items-center justify-center text-stone-800 hover:bg-stone-700/5", TOP_BUTTON_RADIUS)}
+            >
+              <HomeIcon />
+            </button>
+            <CanvasTitle initialName={guided ? "Onboarding Demo" : "Hero Interactive Screen"} />
+          </div>
+        )}
+
+        <div className={cn("flex items-center gap-1", actionsIntro.className)} style={actionsIntro.style}>
+        {/* History: Undo / Redo in a panel of their own, left of the actions panel */}
+        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
           <button
             type="button"
             aria-label="Undo"
-            className="group relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+            className={cn("group relative flex size-8 items-center justify-center text-stone-800 hover:bg-stone-700/5", TOP_BUTTON_RADIUS)}
           >
             <UndoIcon />
             <Tooltip label="Undo" />
@@ -633,11 +2416,14 @@ export function HeroScreen() {
           <button
             type="button"
             aria-label="Redo"
-            className="group relative mr-2 flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
+            className={cn("group relative flex size-8 items-center justify-center text-stone-800 hover:bg-stone-700/5", TOP_BUTTON_RADIUS)}
           >
             <RedoIcon />
             <Tooltip label="Redo" />
           </button>
+        </div>
+        {/* Actions: code diff, preview, GitHub, Share and the profile */}
+        <div className={cn("flex items-center gap-1", portalOpen && !portalClosing ? PORTAL_TOP_GROUP : TOP_GROUP)}>
           <button
             type="button"
             aria-label="View code changes"
@@ -645,43 +2431,70 @@ export function HeroScreen() {
             aria-expanded={changesOpen}
             onClick={() => setChangesOpen((open) => !open)}
             className={cn(
-              "group relative flex h-8 items-center gap-1.5 rounded-md px-2 text-px-11 font-medium tabular-nums hover:bg-stone-700/5",
+              "group relative flex h-8 items-center gap-1.5 px-2 text-px-11 font-medium tabular-nums hover:bg-stone-700/5",
+              TOP_BUTTON_RADIUS,
               changesOpen && "bg-stone-700/5",
             )}
           >
-            <span className="text-green-700">+{CODE_CHANGES_TOTAL.added}</span>
-            <span className="text-red-600">−{CODE_CHANGES_TOTAL.removed}</span>
+            <span className="text-green-700">+{changeTotals.added}</span>
+            <span className="text-red-600">−{changeTotals.removed}</span>
             <Tooltip label="View code changes" />
           </button>
-          <button
-            type="button"
-            aria-label="Open preview"
-            className="group relative flex size-8 items-center justify-center rounded-md text-stone-800 hover:bg-stone-700/5"
-          >
-            <PlayCircleIcon />
-            <Tooltip label="Open preview" />
-          </button>
-          {/* Draft project: no repo linked yet, so the button offers to create one */}
-          <GithubButton connected={false} defaultRepoName="Hero-Interactive-Screen" />
+          {/* Not in the Portal's toolbar: the Portal is the preview */}
+          {!portalOpen && (
+            <button
+              type="button"
+              aria-label="Open preview"
+              className={cn("group relative flex size-8 items-center justify-center text-stone-800 hover:bg-stone-700/5", TOP_BUTTON_RADIUS)}
+            >
+              <PlayCircleIcon />
+              <Tooltip label="Open preview" />
+            </button>
+          )}
+          {/* Draft project: no repo linked yet, so the button offers to create one (the showcase
+              opens linked to its repo, with the sync popover open) */}
+          <GithubButton
+            connected={githubSyncOpen}
+            defaultOpen={githubSyncOpen && githubPopoverOpen && !hasIntro}
+            openOnCue={githubSyncOpen && githubPopoverOpen && githubIn}
+            defaultRepoName={
+              githubSyncOpen ? "hero-fairbnb" : guided ? "My first modeinspect project" : "Hero-Interactive-Screen"
+            }
+            changes={githubChanges}
+            pullRequest={pullRequest}
+            onMerged={onPullRequestMerged}
+            // Guided: no "View on Github" and no pull request sheet (nothing real would open).
+            prSheet={githubPrSheet && !guided}
+            viewOnGithub={!guided}
+            onProgress={onGithubProgress}
+          />
           {/* Any drawn element or moved/resized frame since the last publish makes the preview outdated */}
           <ShareButton
             previewUrl="https://hero-interactive-screen.modeinspect.app"
-            changes={[drawnElements, elementRects, elementRadii]}
+            changes={shareChanges}
           />
-          <span className="ml-1 flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-stone-200">
-            <img
-              src="/avatars/modeinspect-avatar.png"
-              alt="Your profile"
-              className="size-[80%] object-contain"
-            />
+          {/* The profile avatar closes the actions panel: a single initial on a plain background. */}
+          <span
+            role="img"
+            aria-label="Your profile"
+            className="ml-1 flex size-8 shrink-0 items-center justify-center rounded-full bg-stone-300/70 text-px-13 font-semibold leading-none text-stone-700"
+          >
+            M
           </span>
+        </div>
         </div>
       </header>
 
-      {changesOpen && <CodeChangesPopover onClose={closeChanges} />}
+      {changesOpen && <CodeChangesPopover onClose={closeChanges} extra={sessionChanges} />}
 
       {/* Tool bar */}
-      <div className="absolute left-1/2 top-2.5 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-stone-700/10 bg-white/90 p-1 shadow-[0_4px_14px_-4px_rgba(17,17,16,0.14),0_1px_3px_rgba(17,17,16,0.08)] backdrop-blur-md">
+      <div
+        className={cn(
+          "absolute left-1/2 top-1 z-40 flex -translate-x-1/2 items-center gap-0.5 rounded-xl border border-transparent bg-white/90 p-0.5 backdrop-blur-md",
+          toolbarIntro.className,
+        )}
+        style={toolbarIntro.style}
+      >
         {TOOLS.map(({ id, label, shortcut, icon: Icon }) => (
           <button
             key={id}
@@ -690,45 +2503,130 @@ export function HeroScreen() {
             aria-label={label}
             aria-keyshortcuts={shortcut}
             aria-pressed={tool === id}
-            onClick={() => setTool(id)}
+            aria-disabled={!toolsEnabled || undefined}
+            onClick={() => {
+              if (toolsEnabled) setTool(id)
+            }}
             className={cn(
-              "group relative flex size-8 items-center justify-center rounded-lg transition-colors",
-              tool === id ? "bg-[#2f6bf6] text-white" : "text-stone-700 hover:bg-stone-700/5",
+              "group relative flex size-8 items-center justify-center transition-colors",
+              TOP_BUTTON_RADIUS,
+              tool === id
+                ? "bg-[#2f6bf6] text-white"
+                : toolsEnabled
+                  ? "text-stone-700 hover:bg-stone-700/5"
+                  : "cursor-default text-stone-700",
             )}
           >
             <Icon />
-            <Tooltip label={`${label} (${shortcut})`} />
+            {toolsEnabled && <Tooltip label={`${label} (${shortcut})`} />}
           </button>
         ))}
       </div>
 
-      <LeftSidebar ref={sidebarRef} />
+      <LeftSidebar
+        ref={sidebarRef}
+        onLibraryDragStart={onLibraryDragStart}
+        names={elementNames}
+        // A canvas with its own frames lists what's on it; the others keep listing the whole app.
+        elements={extraElements ? canvasElements : undefined}
+        library={componentLibrary}
+        initialPanel={layersOpen ? "layers" : null}
+        cuePanel={sidebarCue}
+        preloadPanel={flipIntro ? (loadIntro?.sidebarPanel ?? null) : null}
+        className={sidebarIntro.className}
+        style={sidebarIntro.style}
+      />
+
+      {libraryDrag && (
+        <ComponentDragGhost
+          x={libraryDrag.x}
+          y={libraryDrag.y}
+          zoom={camera.zoom}
+          library={componentLibrary}
+          component={libraryDrag.component}
+        />
+      )}
 
       {/* Settings show for a single selection only */}
-      {codebaseSelected && selectedIds.length === 0 && <CodebaseSettingsPanel />}
-      {activeElement && activeRect && (
+      {codebaseSelected && selectedIds.length === 0 && <CodebaseSettingsPanel onOpenBuildMode={openPortal} />}
+      {selectedComponent && selectedIds.length === 0 && (
+        <ComponentSettingsPanel
+          key={`component-settings:${selectedComponent.id}`}
+          instance={selectedComponent}
+          onChange={(patch) =>
+            setFrameComponents((list) => list.map((c) => (c.id === selectedComponent.id ? { ...c, ...patch } : c)))
+          }
+        />
+      )}
+      {paddingLayerElement?.paddingLayer && (
+        <PaddingLayerSettingsPanel
+          key={`layer-settings:${paddingLayerElement.id}`}
+          name={paddingLayerElement.paddingLayer.name}
+          // Its frame's top-left, relative to the Codebase frame's top-left (canvas units).
+          x={elementRects[paddingLayerElement.id].x - elementRects[paddingLayerElement.id].w / 2 - (codebaseRect.x - codebaseRect.w / 2)}
+          y={elementRects[paddingLayerElement.id].y - elementRects[paddingLayerElement.id].h / 2 - (codebaseRect.y - codebaseRect.h / 2)}
+          height={paddingLayerElement.paddingLayer.lineHeight + 2 * layerPaddings[paddingLayerElement.id].y}
+          padding={layerPaddings[paddingLayerElement.id]}
+          onPaddingChange={(padding) => {
+            setLayerPaddings((current) => ({ ...current, [paddingLayerElement.id]: padding }))
+            emitGuide({ type: "style-changed", frameId: paddingLayerElement.id })
+          }}
+          colors={paddingLayerElement.colors ?? []}
+          onAddToChat={() => {
+            setPortalAttach([paddingLayerElement.id])
+            openPortal()
+          }}
+        />
+      )}
+      {selectedLayer === "nights" && elementRects[TRIP_CARD_ID] && (
+        <LayerSettingsPanel
+          key="layer-settings:nights"
+          name="NightsNumeral"
+          // Bottom-left of the card, inside its 1.6cqw padding; the numeral (≈ 0.82 × its size tall).
+          x={elementRects[TRIP_CARD_ID].x - elementRects[TRIP_CARD_ID].w / 2 + 1.6 * CQW - (codebaseRect.x - codebaseRect.w / 2)}
+          y={
+            elementRects[TRIP_CARD_ID].y +
+            elementRects[TRIP_CARD_ID].h / 2 -
+            1.6 * CQW -
+            NIGHTS_FONT_SIZE * 0.82 -
+            (codebaseRect.y - codebaseRect.h / 2)
+          }
+          width={7.2 * CQW}
+          height={NIGHTS_FONT_SIZE * 0.82}
+          marginTop={numeralGap}
+          onMarginTopChange={changeNumeralGap}
+          fontSize={NIGHTS_FONT_SIZE}
+          colors={[INK, RAUSCH]}
+          onAddToChat={addTripCardToChat}
+        />
+      )}
+      {settingsElement && settingsRect && (
         <FrameSettingsPanel
-          key={activeElement.id}
+          key={`settings:${settingsElement.id}`}
           ref={panelRef}
-          x={activeRect.x - activeRect.w / 2 - (codebaseRect.x - codebaseRect.w / 2)}
-          y={activeRect.y - activeRect.h / 2 - (codebaseRect.y - codebaseRect.h / 2)}
-          width={activeRect.w}
-          height={activeRect.h}
-          fill={activeElement.fill}
-          radius={elementRadii[activeElement.id]}
-          border={activeElement.border}
-          tag={activeElement.tag}
-          position={activeElement.position}
-          inset={activeElement.inset}
-          layout={activeElement.layout}
-          padding={activeElement.padding}
-          clip={activeElement.clip}
-          colors={activeElement.colors}
+          concealed={settingsConcealed}
+          x={settingsRect.x - settingsRect.w / 2 - (codebaseRect.x - codebaseRect.w / 2)}
+          y={settingsRect.y - settingsRect.h / 2 - (codebaseRect.y - codebaseRect.h / 2)}
+          width={settingsRect.w}
+          height={settingsRect.h}
+          fill={elementFills[settingsElement.id]}
+          onFillChange={changeActiveFill}
+          fillPicker={guided}
+          onAddToChat={addActiveToChat}
+          radius={elementRadii[settingsElement.id]}
+          border={settingsElement.border}
+          tag={settingsElement.tag}
+          position={settingsElement.position}
+          inset={settingsElement.inset}
+          layout={settingsElement.layout}
+          padding={settingsElement.padding}
+          clip={settingsElement.clip}
+          colors={settingsElement.colors}
         />
       )}
       {activeDrawn?.kind === "frame" && (
         <FrameSettingsPanel
-          key={activeDrawn.id}
+          key={`settings:${activeDrawn.id}`}
           x={activeDrawn.x - (codebaseRect.x - codebaseRect.w / 2)}
           y={activeDrawn.y - (codebaseRect.y - codebaseRect.h / 2)}
           width={activeDrawn.w}
@@ -740,7 +2638,7 @@ export function HeroScreen() {
       )}
       {activeDrawn?.kind === "text" && (
         <TextSettingsPanel
-          key={activeDrawn.id}
+          key={`text-settings:${activeDrawn.id}`}
           x={activeDrawn.x - (codebaseRect.x - codebaseRect.w / 2)}
           y={activeDrawn.y - (codebaseRect.y - codebaseRect.h / 2)}
           width={activeDrawn.w}
@@ -749,11 +2647,129 @@ export function HeroScreen() {
       )}
 
       {/* Zoom */}
-      <div className="absolute bottom-3 right-3 z-20 rounded-md border border-stone-700/10 bg-white/90 px-1.5 py-0.5 text-px-10 font-medium tabular-nums text-stone-700 shadow-[0_1px_2px_rgba(17,17,16,0.06)]">
-        {Math.round(camera.zoom * 100)}%
+      {/* Not through cn(): tailwind-merge would drop the custom `text-px-10` size for `text-stone-700`. */}
+      <div
+        className={`absolute bottom-3 right-3 z-20 rounded-md border border-transparent bg-white/90 px-1.5 py-0.5 text-px-10 font-medium tabular-nums text-stone-700 ${zoomIntro.className ?? ""}`}
+        style={zoomIntro.style}
+      >
+        {/* Relative to the fit, so it reads the same at any screen size (30% on opening). */}
+        {Math.round((camera.zoom / fit) * 100)}%
       </div>
 
-      {portalOpen && <PortalView onClose={closePortal} />}
+      {portalOpen && (
+        <PortalView
+          onClose={closePortal}
+          closing={portalClosing}
+          builtVariant={agents.builtVariant}
+          builtComponents={agents.builtComponents}
+          builtFills={agents.builtFills}
+          builtNumeralGap={builtNumeralGap / CQW}
+          loadMs={portalLoadMs}
+          autoPrompt={portalAutoPrompt}
+          canvasFrames={portalFrames}
+          onBuildFrames={buildFramesFromPortal}
+          showUrl={portalShowUrl}
+          initialAttached={portalAttach}
+          expandFrom={portalExpandFrom}
+          guided={guided}
+          typePrompt={portalPrompt}
+          onCapture={onPortalCapture}
+          onMessageSent={onPortalMessageSent}
+        />
+      )}
+
+      {canvasClosed && (
+        <CanvasClosed pullRequest={pullRequest} variant={pullRequest === PULL_REQUEST ? agents.builtVariant : null} />
+      )}
+
+      {reopened && <CanvasReopen />}
+    </div>
+    </PanelLoadInContext.Provider>
+  )
+}
+
+/* ------------------------------ Canvas closed ------------------------------ */
+
+/** The closing card is read for this long, then fades, leaving the plain canvas colour (ms). */
+const CLOSED_CARD_HOLD_MS = 3400
+/** The closing card's fade out (ms). */
+const CLOSED_CARD_OUT_MS = 450
+
+/**
+ * End of the story: the pull request is merged, so the canvas closes. The screen folds away into
+ * the canvas colour and a closing card sums up what shipped; then the card fades too, leaving the
+ * plain canvas colour that the next run opens out of (see CanvasReopen).
+ */
+function CanvasClosed({ pullRequest, variant }: { pullRequest: PullRequest; variant: VariantState | null }) {
+  const [leaving, setLeaving] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setLeaving(true), CLOSED_CARD_HOLD_MS)
+    return () => clearTimeout(timer)
+  }, [])
+  return (
+    <div
+      data-cursor-id="canvas-closed"
+      className="absolute inset-0 z-[55] flex items-center justify-center bg-mi-canvas animate-in fade-in duration-700"
+    >
+      <div
+        className={cn(
+          "flex max-w-[380px] flex-col items-center gap-3 px-6 text-center",
+          leaving
+            ? "animate-out fade-out zoom-out-95 slide-out-to-top-2"
+            : "animate-in fade-in zoom-in-95 slide-in-from-bottom-2 duration-500",
+        )}
+        // The card follows once the screen has folded away; on the way out it stays gone.
+        style={
+          leaving
+            ? { animationDuration: `${CLOSED_CARD_OUT_MS}ms`, animationFillMode: "forwards" }
+            : { animationDelay: "300ms", animationFillMode: "both" }
+        }
+      >
+        <span className="flex size-11 items-center justify-center rounded-full bg-mi-lime text-stone-900 shadow-[0_6px_18px_-6px_rgba(90,122,24,0.5)]">
+          <Check className="size-5" strokeWidth={2.5} />
+        </span>
+        <h2 className="text-[17px] font-semibold text-stone-900">
+          Pull request #{pullRequest.number} merged into main
+        </h2>
+        <p className="text-px-13 leading-5 text-stone-600">
+          {pullRequest.title}
+          {variant ? ` (${variant.source.title}: ${variant.spec.label})` : ""}. The canvas is closed. Goal achieved.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+/** The Portal opening out of the canvas colour at the start of a looped run (ms). */
+const REOPEN_DELAY_MS = 150
+const REOPEN_MS = 1100
+
+/**
+ * Start of a run that follows a previous one: the screen begins as the plain canvas colour the
+ * last run ended on (CanvasClosed, once its card has gone), and the Portal opens out of it from
+ * the centre, as a rounded window growing to fill the screen. The cover is a window-shaped hole
+ * whose huge box-shadow paints the canvas colour around it, so only its inset needs animating.
+ */
+function CanvasReopen() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [done, setDone] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const animation = el.animate(
+      [
+        { inset: "50% 50%", borderRadius: "28px" },
+        { inset: "-24px", borderRadius: "0px" },
+      ],
+      { duration: REOPEN_MS, delay: REOPEN_DELAY_MS, easing: "cubic-bezier(0.65, 0, 0.25, 1)", fill: "both" },
+    )
+    animation.onfinish = () => setDone(true)
+    return () => animation.cancel()
+  }, [])
+  if (done) return null
+  return (
+    <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-[55] overflow-hidden">
+      <div ref={ref} className="absolute shadow-[0_0_0_200vmax_var(--color-mi-canvas)]" />
     </div>
   )
 }
@@ -761,8 +2777,8 @@ export function HeroScreen() {
 /* ------------------------------ Canvas title ------------------------------- */
 
 /** Canvas name + file menu. "Rename" turns the name into an input: Enter/blur saves, Escape cancels. */
-function CanvasTitle() {
-  const [name, setName] = useState("Hero Interactive Screen")
+function CanvasTitle({ initialName }: { initialName: string }) {
+  const [name, setName] = useState(initialName)
   const [draft, setDraft] = useState(name)
   const [editing, setEditing] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -836,11 +2852,13 @@ function CanvasTitle() {
           aria-expanded={menuOpen}
           onClick={() => setMenuOpen((open) => !open)}
           className={cn(
-            "flex size-8 items-center justify-center rounded-md text-stone-700 hover:bg-stone-700/5",
+            "flex size-8 items-center justify-center text-stone-700 hover:bg-stone-700/5",
+            TOP_BUTTON_RADIUS,
             menuOpen && "bg-stone-700/5",
           )}
         >
-          <Ellipsis className="size-4" />
+          {/* 1.7 on lucide's 24-unit grid: the same ~1.14px stroke as the other bar icons */}
+          <Ellipsis className="size-4" strokeWidth={1.7} />
         </button>
 
         {menuOpen && (
@@ -896,7 +2914,7 @@ function Tooltip({ label }: { label: string }) {
 
 function UndoIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M4 2 1.5 4.5 4 7" />
       <path d="M1.5 4.5h7a3.5 3.5 0 0 1 0 7H5" />
     </svg>
@@ -905,7 +2923,7 @@ function UndoIcon() {
 
 function RedoIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M10 2l2.5 2.5L10 7" />
       <path d="M12.5 4.5h-7a3.5 3.5 0 0 0 0 7H9" />
     </svg>
@@ -914,7 +2932,7 @@ function RedoIcon() {
 
 function HomeIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1.19629 7.89293L6.99986 2.08936L12.8034 7.89293" />
       <path d="M2.98193 6.10742V11.911H11.0176V6.10742" />
     </svg>
@@ -923,7 +2941,7 @@ function HomeIcon() {
 
 function SelectIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12.7532 4.66913L1.829 1.1069C1.62722 1.0411 1.40557 1.09419 1.2555 1.24426C1.09984 1.39992 1.049 1.63194 1.12531 1.83843L5.16555 12.7708C5.21637 12.9083 5.34745 12.9996 5.49404 12.9996C5.64654 12.9996 5.78151 12.9009 5.82775 12.7556L7.3584 7.94503C7.44821 7.66276 7.65854 7.43484 7.93269 7.32268L12.7777 5.34062C12.9122 5.2856 13.0001 5.1547 13.0001 5.00938C13.0001 4.85447 12.9004 4.71715 12.7532 4.66913Z" />
     </svg>
   )
@@ -960,7 +2978,7 @@ function TerminalIcon() {
 
 function PlayCircleIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 14 14" aria-hidden="true">
       <circle cx="7" cy="7" r="6.5" fill="currentColor" />
       <path d="M5.6 4.4v5.2L9.6 7z" fill="white" />
     </svg>

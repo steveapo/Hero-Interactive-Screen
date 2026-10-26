@@ -7,8 +7,8 @@ import { CODEBASE_HEIGHT, CODEBASE_WIDTH } from "./codebase-frame"
 
 const PREVIEW_PATH = "/"
 
-/** Right-side settings for the selected Codebase frame. */
-export function CodebaseSettingsPanel() {
+/** Right-side settings for the selected Codebase frame. "Open Build Mode" opens it in the Portal. */
+export function CodebaseSettingsPanel({ onOpenBuildMode }: { onOpenBuildMode?: () => void } = {}) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -22,7 +22,7 @@ export function CodebaseSettingsPanel() {
   }
 
   return (
-    <aside className="absolute right-1.5 top-[46px] z-30 flex w-[326px] flex-col rounded-xl border border-stone-700/10 bg-[#f2f2f1] p-2.5 pb-3 shadow-[0_2px_10px_-2px_rgba(17,17,16,0.1),0_1px_2px_rgba(17,17,16,0.05)] animate-in fade-in slide-in-from-right-1 duration-150">
+    <aside className="absolute right-1 top-[46px] z-30 flex w-[326px] flex-col rounded-xl border border-transparent bg-[#f2f2f1] p-2.5 pb-3 shadow-[-6px_4px_20px_-6px_rgba(17,17,16,0.14),-2px_1px_4px_-1px_rgba(17,17,16,0.06),0_0_0_1px_rgba(17,17,16,0.05)] animate-in fade-in slide-in-from-right-1 duration-150">
       <h2 className="flex items-center gap-2 pt-1 text-[13px] font-semibold leading-4 text-stone-900">
         <CodebaseIcon />
         Codebase
@@ -30,6 +30,8 @@ export function CodebaseSettingsPanel() {
 
       <button
         type="button"
+        data-cursor-id="open-build-mode"
+        onClick={onOpenBuildMode}
         className="mt-2.5 flex h-8 w-full items-center justify-center rounded-md border border-[#c6dfc9] bg-[#e5efe6] text-[13px] font-medium text-[#1e7b36] transition-colors hover:bg-[#dbe9dc]"
       >
         Open Build Mode
@@ -70,15 +72,14 @@ type Resolution = { id: string; name: string; width: number; height: number; ico
 const RESOLUTIONS: Resolution[] = [
   { id: "mobile", name: "Mobile", width: 390, height: 844, icon: Smartphone },
   { id: "tablet", name: "Tablet", width: 768, height: 1024, icon: Tablet },
-  { id: "ipad-pro", name: "iPad Pro 12.9″", width: CODEBASE_WIDTH, height: CODEBASE_HEIGHT, icon: Tablet },
   { id: "laptop", name: "Laptop", width: 1280, height: 800, icon: Laptop },
-  { id: "desktop", name: "Desktop", width: 1440, height: 900, icon: Monitor },
+  { id: "desktop", name: "Desktop", width: CODEBASE_WIDTH, height: CODEBASE_HEIGHT, icon: Monitor },
 ]
 
 function ResolutionSelect() {
   const [open, setOpen] = useState(false)
-  // The Codebase frame previews the iPad Calendar at iPad Pro resolution; null = "Custom".
-  const [selectedId, setSelectedId] = useState<string | null>("ipad-pro")
+  // The Codebase frame previews the Fairbnb desktop app at desktop resolution; null = "Custom".
+  const [selectedId, setSelectedId] = useState<string | null>("desktop")
   const rootRef = useRef<HTMLDivElement>(null)
 
   const selected = RESOLUTIONS.find((r) => r.id === selectedId)
